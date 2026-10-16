@@ -3,6 +3,18 @@
 # Media, database and renders live here, OUTSIDE OneDrive.
 data_dir = "C:/shorts-data"
 
+# Downloaded videos (the big part) can live on another drive, e.g. footage_dir = "D:/shorts-footage".
+# Default: <data_dir>/footage. After changing it, run 'python -m shorts move-footage' once.
+# footage_dir = "D:/shorts-footage"
+
+# Downloads stop when the footage drive has less free space than this (GB).
+min_free_gb = 20
+
+# 'make' downloads new footage by itself when fewer unused hero videos than this are left,
+# restock_per_term videos per channel search term.
+restock_below = 15
+restock_per_term = 2
+
 # Command used to call Claude Code headless (uses your Claude subscription).
 claude_cmd = "claude"
 

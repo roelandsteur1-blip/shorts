@@ -19,7 +19,7 @@ ingest ─► scenes ─► embed ─► make (hero shot ─► script ─► fe
    ```
    `setup.ps1` installeert PyTorch met CUDA, de overige pakketten en het lettertype, en draait `shorts check`. Alles moet `[OK]` zijn.
 
-Beeld, database en renders staan in `C:\shorts-data` (buiten OneDrive). Een andere map: maak `config/local.toml` met `data_dir = "D:/shorts-data"`.
+Database en renders staan in `C:\shorts-data` (buiten OneDrive). De gedownloade video's (het grote deel) kunnen op een andere schijf: zet in `config/local.toml` bijvoorbeeld `footage_dir = "D:/shorts-footage"` en draai één keer `python -m shorts move-footage` om bestaande video's te verhuizen. Downloaden stopt als er minder dan `min_free_gb` (standaard 20 GB) vrij is.
 
 ## Dagelijks gebruik
 
@@ -31,11 +31,12 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 | 1 | `python -m shorts scenes` | Knipt in scènes, gooit zwart/titelkaarten weg, bepaalt waar de 9:16-uitsnede moet. |
 | 1 | `python -m shorts embed` | Maakt scènes doorzoekbaar met CLIP op je GPU (geen Claude-gebruik). |
 | – | `python -m shorts search "saturn rings"` | Test de beeldzoeker. |
-| 2–5 | `python -m shorts make -n 5` | Kiest 5 hero shots, laat Claude er scripts bij schrijven (1 aanroep per 5), controleert de feiten in een aparte aanroep, zoekt beeld per tekstblok en rendert. |
+| 2–5 | `python -m shorts make -n 5` | Kiest 5 hero shots, laat Claude er scripts bij schrijven (1 aanroep per 5), controleert de feiten in een aparte aanroep, zoekt beeld per tekstblok en rendert. Zijn er minder dan 15 ongebruikte video's voor een opening, dan haalt `make` eerst zelf nieuw beeld op (ingest, scenes, embed; 2 per zoekterm). Uitzetten: `--no-restock`. |
 | 6 | `python -m shorts review` | Open http://127.0.0.1:5000: video, script, elk feit met bron (twijfelgevallen oranje/rood), titel aanpassen, goedkeuren of afwijzen met reden. |
 | 7 | `python -m shorts upload` | Uploadt goedgekeurde Shorts als privé met een publicatietijd (standaard 15:00 en 21:00 UTC, max 2 per dag). |
 | 8 | `python -m shorts stats` | Haalt views, engaged views en kijkpercentage op; na ~10 Shorts met cijfers stuurt dit de hero-shotkeuze bij. |
 | – | `python -m shorts status` | Telling per stap. |
+| – | `python -m shorts cleanup` | Verwijdert video's die op zijn: alle bruikbare scènes gebruikt en die Shorts geüpload of afgewezen (plus dubbele video's). Eerst kijken: `--dry-run`. Een verwijderde video wordt nooit opnieuw gedownload. |
 | – | `python -m shorts finish` | Maakt Shorts af die halverwege stopten (bijv. Claude-limiet bereikt). |
 
 **Muziek (optioneel):** elk kanaal heeft een eigen map: `C:\shorts-data\music\<kanaal>`, voor het ruimtekanaal dus `music\space`. Zet daar mp3's uit de YouTube Audio Library in (filter "Attribution not required"). Zonder tracks is de Short stil. Daarna `python -m shorts rerender` om wachtende Shorts opnieuw te renderen.
@@ -67,5 +68,6 @@ Kopieer `config/channels/space.toml` naar bijv. `config/channels/oceans.toml`, p
 | `shorts/render.py` | ffmpeg-montage, ondertitels (ASS), metadata met bronvermelding |
 | `shorts/review.py` | Reviewpagina (Flask) |
 | `shorts/upload.py` | YouTube-upload, inplannen, statistieken |
+| `shorts/library.py` | Footage verhuizen, automatisch bijvullen, opruimen |
 
 Tests: `python -m pytest` (draait een volledige proefrender op nepbeeld, zonder GPU of Claude).

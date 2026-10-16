@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -143,7 +144,8 @@ def download_asset(conn: sqlite3.Connection, settings: Settings, asset_id: int,
         if not url:
             raise ValueError("no mp4 rendition")
         dst = settings.footage_dir / "nasa" / f"{_slug(row['source_id'])}.mp4"
-        with tempfile.TemporaryDirectory(dir=settings.data_dir) as tmp:
+        # Temp download on the footage drive: raw files can be GBs.
+        with tempfile.TemporaryDirectory(dir=settings.footage_dir) as tmp:
             raw = Path(tmp) / "raw.mp4"
             _download(url, raw, s)
             info = media.probe(raw)
@@ -171,6 +173,10 @@ def download_asset(conn: sqlite3.Connection, settings: Settings, asset_id: int,
         return False
 
 
+def free_gb(path: Path) -> float:
+    return shutil.disk_usage(path).free / 1e9
+
+
 def ingest(conn: sqlite3.Connection, settings: Settings, terms: list[str], per_term: int = 10,
            include_flagged: bool = False) -> int:
     """Search each term and download up to `per_term` new videos. Returns number downloaded."""
@@ -181,6 +187,10 @@ def ingest(conn: sqlite3.Connection, settings: Settings, terms: list[str], per_t
         got = 0
         page = 1
         while got < per_term and page <= 10:
+            if (free := free_gb(settings.footage_dir)) < settings.min_free_gb:
+                log.warning("only %.0f GB free on %s (min_free_gb = %s): stopped downloading; "
+                            "run 'python -m shorts cleanup'", free, settings.footage_dir, settings.min_free_gb)
+                return total
             items = search(term, page=page, session=s)
             if not items:
                 break

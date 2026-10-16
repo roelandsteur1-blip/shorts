@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sys
 
 from . import db
@@ -33,6 +34,12 @@ def main(argv: list[str] | None = None) -> int:
     pm = sub.add_parser("make", help="2-5. hero shots -> scripts -> fact check -> footage -> render")
     pm.add_argument("-n", "--count", type=int, default=5)
     pm.add_argument("--format", dest="format_id")
+    pm.add_argument("--no-restock", action="store_true",
+                    help="don't download new footage, even when the library is running low")
+
+    pcl = sub.add_parser("cleanup", help="delete videos that are used up (all scenes used, Shorts uploaded)")
+    pcl.add_argument("--dry-run", action="store_true", help="only show what would be deleted")
+    sub.add_parser("move-footage", help="move downloaded videos to footage_dir (after changing it)")
 
     prr = sub.add_parser("rerender", help="render Shorts again (e.g. after adding music); keeps script and footage")
     prr.add_argument("ids", nargs="*", type=int, help="short ids; default: all waiting for review")
@@ -84,8 +91,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{score:.3f}  scene {sid}  {r['title']}  {r['keyframe']}")
     elif args.cmd == "make":
         from .pipeline import make
-        done = make(conn, settings, channel, args.count, args.format_id)
+        done = make(conn, settings, channel, args.count, args.format_id, restock=not args.no_restock)
         print(f"{len(done)} Shorts ready for review: run 'python -m shorts review'")
+    elif args.cmd == "cleanup":
+        from .library import cleanup
+        n, gb = cleanup(conn, dry_run=args.dry_run)
+        print(f"{'would free' if args.dry_run else 'freed'} {gb:.1f} GB ({n} videos)")
+    elif args.cmd == "move-footage":
+        from .library import move_footage
+        n, gb = move_footage(conn, settings)
+        print(f"moved {n} videos ({gb:.1f} GB) to {settings.footage_dir}")
     elif args.cmd == "finish":
         from .pipeline import finish
         finish(conn, settings, channel)
@@ -118,6 +133,10 @@ def main(argv: list[str] | None = None) -> int:
             ("shorts", f"SELECT status, COUNT(*) FROM shorts WHERE channel='{channel.id}' GROUP BY status"),
         ]:
             print(f"{label}: " + ", ".join(f"{k} {v}" for k, v in conn.execute(sql).fetchall()))
+        from .library import unused_hero_videos
+        free = shutil.disk_usage(settings.footage_dir).free / 1e9
+        print(f"unused hero videos: {unused_hero_videos(conn, settings, channel)} "
+              f"(restock below {settings.restock_below}); {free:.0f} GB free on {settings.footage_dir}")
     return 0
 
 
@@ -150,8 +169,11 @@ def _check(settings) -> int:
         v = subprocess.run([claude, "--version"], capture_output=True, text=True)
         print(f"     {v.stdout.strip()}")
     line(True, f"data folder {settings.data_dir}")
-    if "onedrive" in str(settings.data_dir).lower():
-        line(False, "data folder outside OneDrive", "set data_dir in config/local.toml")
+    if "onedrive" in str(settings.data_dir).lower() or "onedrive" in str(settings.footage_dir).lower():
+        line(False, "data folder outside OneDrive", "set data_dir / footage_dir in config/local.toml")
+    free = shutil.disk_usage(settings.footage_dir).free / 1e9
+    line(free >= settings.min_free_gb, f"footage folder {settings.footage_dir} ({free:.0f} GB free)",
+         "free disk space or run 'python -m shorts cleanup'")
     from .render import MUSIC_EXT
     for folder in sorted(p for p in settings.music_dir.iterdir() if p.is_dir()):
         n = sum(1 for p in folder.glob("*") if p.suffix.lower() in MUSIC_EXT)

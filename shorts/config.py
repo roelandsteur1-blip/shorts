@@ -22,6 +22,10 @@ class Settings:
     clip_model: str = "ViT-B-32"
     clip_pretrained: str = "laion2b_s34b_b79k"
     default_channel: str = "space"
+    footage_root: Path | None = None  # 'footage_dir' in settings: downloaded videos (big); default data_dir/footage
+    min_free_gb: float = 20.0         # downloads stop when the footage drive has less free space than this
+    restock_below: int = 15           # 'make' downloads more footage when fewer unused hero videos are left
+    restock_per_term: int = 2         # videos per search term in one automatic restock
 
     @property
     def db_path(self) -> Path:
@@ -29,7 +33,7 @@ class Settings:
 
     @property
     def footage_dir(self) -> Path:
-        return self.data_dir / "footage"
+        return self.footage_root or self.data_dir / "footage"
 
     @property
     def keyframe_dir(self) -> Path:
@@ -91,6 +95,9 @@ def load_settings(config_dir: Path = CONFIG_DIR, **overrides) -> Settings:
         data.update(_load_toml(local))
     data.update({k: v for k, v in overrides.items() if v is not None})
     data["data_dir"] = Path(data["data_dir"])
+    if data.get("footage_dir"):
+        data["footage_root"] = Path(data.pop("footage_dir"))
+    data.pop("footage_dir", None)
     return Settings(**data)
 
 

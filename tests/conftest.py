@@ -28,7 +28,8 @@ class FakeEncoder:
 
 @pytest.fixture
 def settings(tmp_path):
-    s = Settings(data_dir=tmp_path / "data", encoder="libx264")
+    # restock_below=0: tests never download footage unless they ask for it.
+    s = Settings(data_dir=tmp_path / "data", encoder="libx264", restock_below=0)
     s.ensure_dirs()
     return s
 
