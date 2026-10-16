@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Add channel{% endblock %}{% block body %}
+<h1>Add a channel</h1>
+<div class="cards">
+<div class="card"><h2 style="margin-top:0">A new YouTube channel</h2>
+<p class="muted">YouTube has no way to create a channel through its API, so this one step is by hand:</p>
+<ol>
+<li>Open <a href="https://www.youtube.com/create_channel" target="_blank" rel="noopener">youtube.com/create_channel</a>
+while logged in with your Google account. To keep several channels under one login, choose a name of your own:
+that makes a <b>Brand Account</b>.</li>
+<li>Give it a name, picture and banner (can be done later).</li>
+<li>Come back here and continue: you'll connect it at the end.</li>
+</ol>
+<p><a class="button primary" href="/channels/new/describe">I made it, continue</a></p></div>
+<div class="card"><h2 style="margin-top:0">A channel I already have</h2>
+<p class="muted">Describe it, pick footage, then connect it to YouTube; the dashboard shows which channel the login found so you can confirm it's the right one.</p>
+<p><a class="button primary" href="/channels/new/describe">Continue</a></p></div>
+</div>
+{% endblock %}

@@ -68,6 +68,9 @@ def main(argv: list[str] | None = None) -> int:
     pu.add_argument("--limit", type=int)
     pu.add_argument("--no-schedule", action="store_true", help="upload as private without a publish time")
 
+    pcn = sub.add_parser("connect", help="log in to YouTube for this channel and show which channel it is")
+    pcn.add_argument("--fresh", action="store_true", help="forget the saved login first (other account)")
+
     sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
     sub.add_parser("status", help="show counts per step")
 
@@ -152,6 +155,12 @@ def main(argv: list[str] | None = None) -> int:
         from .upload import upload_approved
         ids = upload_approved(conn, settings, channel, args.limit, schedule=not args.no_schedule)
         print(f"uploaded {len(ids)}: " + " ".join(f"https://youtu.be/{i}" for i in ids))
+    elif args.cmd == "connect":
+        from .upload import connect
+        found = connect(settings, channel, fresh=args.fresh)
+        print(f"logged in: YouTube channel '{found['title']}' ({found['id']})")
+        if channel.youtube_channel_id and channel.youtube_channel_id != found["id"]:
+            print(f"!! this is not the channel confirmed for '{channel.id}' ({channel.youtube_channel_id})")
     elif args.cmd == "stats":
         from .upload import fetch_stats
         print(f"stats for {fetch_stats(conn, settings, channel)} Shorts")

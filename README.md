@@ -81,7 +81,11 @@ Sleutels en tokens staan alleen in `C:\shorts-data\secrets`, nooit in deze repo.
 
 ## Een tweede kanaal
 
-Kopieer `config/channels/space.toml` naar bijv. `config/channels/oceans.toml`, pas niche, zoektermen, formats en stijl aan, en gebruik `--channel oceans`. Elk kanaal krijgt een eigen login-token. Zie het plan (sectie 7) voor wanneer dat zinvol is.
+Op het dashboard: **Add channel**. Een nieuw YouTube-kanaal maak je eerst zelf aan (de API kan dat niet; kies een eigen naam, dan wordt het een Brand Account). Daarna: naam, taal en niche invullen, *Draft with Claude* vult hashtags, categorieën, bronnen, zoektermen en formats voor, jij past aan en slaat op. Op de kanaalpagina staan dan de stappen: muziekmap, **Connect YouTube** (opent een browser op de laptop; het dashboard laat zien welk kanaal de login vond en jij bevestigt het) en **Try it** (`make -n 3`).
+
+Uploaden weigert als de login bij een ander kanaal hoort dan het bevestigde (handig met meerdere Brand Accounts onder één Google-account). Alle kanalen delen één Google Cloud-project en dus de uploadlimiet per dag.
+
+Instellingen wijzigen kan op dezelfde pagina; de oude TOML blijft bewaard als `.bak`. Met de hand bewerken van `config/channels/<id>.toml` werkt ook. Vanaf de commandoregel: `python -m shorts --channel <id> connect`.
 
 ## Code
 
@@ -98,7 +102,8 @@ Kopieer `config/channels/space.toml` naar bijv. `config/channels/oceans.toml`, p
 | `shorts/render.py` | ffmpeg-montage, ondertitels (ASS), metadata met bronvermelding |
 | `shorts/web/`, `shorts/templates/` | Dashboard (Flask): home, make, review, jobs, library, sources |
 | `shorts/jobs.py` | Achtergrondtaken: één zware taak tegelijk, voortgang uit `PROGRESS`-regels |
-| `shorts/upload.py` | YouTube-upload, inplannen, statistieken |
+| `shorts/upload.py` | YouTube-upload, inplannen, statistieken, kanaalcontrole |
+| `shorts/channels.py`, `shorts/tomlw.py` | Kanaal-TOML aanmaken en bewerken vanuit het dashboard, concept via Claude |
 | `shorts/library.py` | Footage verhuizen, automatisch bijvullen, opruimen |
 
 Tests: `python -m pytest` (draait een volledige proefrender op nepbeeld, zonder GPU of Claude).

@@ -1,0 +1,92 @@
+{% extends "base.html" %}{% block title %}{{ 'Add channel' if new else d.name }}{% endblock %}{% block body %}
+<h1>{{ 'Describe the channel' if new else d.name }}</h1>
+{% if created %}<p class="ok">Channel saved. Finish the steps on the right, then press Try it.</p>{% endif %}
+{% if saved %}<p class="ok">Saved (previous version kept as {{ d.id }}.toml.bak).</p>{% endif %}
+{% for e in errors %}<p class="bad">{{ e }}</p>{% endfor %}
+<div class="grid" style="grid-template-columns:1fr 340px">
+<form method="post" action="{{ '/channels/new' if new else '/channels/' ~ d.id }}" id="chform">
+<div class="card">
+<label>Name<input type="text" name="name" value="{{ d.name or '' }}" required></label>
+{% if new %}<label>Id (file name, can't change later)<input type="text" name="id" value="{{ d.id or '' }}" required pattern="[a-z][a-z0-9_]{1,30}"></label>{% endif %}
+<label>Language<select name="language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == d.language }}>{{ v }}</option>{% endfor %}</select></label>
+<label>Niche, in one line<input type="text" name="niche" value="{{ d.niche or '' }}" placeholder="e.g. Dutch history from old newsreels"></label>
+<p><button type="button" id="draft">Draft with Claude</button> <span class="muted" id="draftmsg">fills hashtags, footage, search terms and formats from the name and niche</span></p>
+<label>Hashtags<input type="text" name="hashtags" value="{{ (d.hashtags or [])|join(' ') }}"></label>
+</div>
+
+<div class="card"><h3 style="margin-top:0">Footage</h3>
+<p class="muted">Categories the Shorts are made from (usable scenes in the library now):</p>
+<p>{% for c in cats %}<label style="display:inline-block;margin:2px 14px 2px 0"><input type="checkbox" name="categories" value="{{ c.id }}" {{ 'checked' if c.id in (d.categories or []) }}> {{ c.label }} <span class="muted">({{ counts.get(c.id, 0) }})</span></label>{% endfor %}</p>
+<p class="muted">Sources to download from when those run low:</p>
+<p>{% for m in sources %}<label style="display:inline-block;margin:2px 14px 2px 0"><input type="checkbox" name="sources" value="{{ m.NAME }}" {{ 'checked' if m.NAME in (d.sources or []) }}> {{ m.LABEL }}</label>{% endfor %}</p>
+<label>Extra search terms (one per line)<textarea name="search_terms" rows="4">{{ (d.search_terms or [])|join('\n') }}</textarea></label>
+<label>What a scroll-stopping first frame looks like (for picking hero shots)<input type="text" name="hero_query" value="{{ d.hero_query or '' }}" placeholder="default: a stunning dramatic space image"></label>
+</div>
+
+<div class="card"><h3 style="margin-top:0">Formats</h3>
+{% set blank = {'id': '', 'title': '', 'brief': '', 'enabled': True} %}
+{% set extra = [1, 3 - (d.formats or [])|length]|max if new else 1 %}
+{% set fmts = (d.formats or []) + [blank] * extra %}
+<input type="hidden" name="format_count" value="{{ fmts|length }}">
+{% for f in fmts %}{% set i = loop.index0 %}
+<div style="border-top:1px solid var(--line);padding-top:6px;margin-top:6px">
+<label style="display:inline"><input type="checkbox" name="format_enabled_{{ i }}" value="1" {{ 'checked' if f.enabled is not defined or f.enabled }}> on</label>
+{% if not f.id %}<span class="muted"> · add a format</span>{% endif %}
+<label>Id<input type="text" name="format_id_{{ i }}" value="{{ f.id }}"></label>
+<label>Title<input type="text" name="format_title_{{ i }}" value="{{ f.title }}"></label>
+<label>Brief for the script writer<textarea name="format_brief_{{ i }}" rows="3">{{ f.brief }}</textarea></label></div>
+{% endfor %}
+</div>
+
+<div class="card"><h3 style="margin-top:0">Length and uploads</h3>
+<label>Shortest / longest Short (seconds)<span style="display:flex;gap:8px"><input type="number" name="min_seconds" value="{{ d.min_seconds }}"><input type="number" name="max_seconds" value="{{ d.max_seconds }}"></span></label>
+<label>Uploads per day<input type="number" name="uploads_per_day" value="{{ d.uploads_per_day }}" min="1" max="20"></label>
+<label>Upload times, UTC (Netherlands = UTC+1 in winter, UTC+2 in summer)<input type="text" name="publish_times_utc" value="{{ (d.publish_times_utc or [])|join(', ') }}"></label>
+<label><input type="checkbox" name="auto_run" value="1" {{ 'checked' if d.auto_run }}> Daily auto-run: make Shorts and schedule the approved ones every day (needs the daily task, see Schedule page)</label>
+</div>
+<p><button class="primary">{{ 'Save channel' if new else 'Save settings' }}</button></p>
+</form>
+
+{% if not new %}<div>
+<div class="card"><h3 style="margin-top:0">1. Footage</h3>
+{% for c in d.categories or [] %}<span class="pill">{{ c }}: {{ counts.get(c, 0) }} scenes</span>{% else %}<p class="warn">Pick at least one category.</p>{% endfor %}</div>
+<div class="card"><h3 style="margin-top:0">2. Music</h3>
+<p class="muted">Put mp3s from the YouTube Audio Library ("Attribution not required") in<br><code>{{ music }}</code></p>
+<p>{% if tracks %}<span class="ok">{{ tracks }} tracks</span>{% else %}<span class="warn">no tracks yet: Shorts will be silent</span>{% endif %}</p></div>
+<div class="card"><h3 style="margin-top:0">3. YouTube</h3>
+{% if d.youtube_channel_id %}<p class="ok">Connected to {{ found.title if found else d.youtube_channel_id }}</p>
+{% elif found %}<p>The login found this channel:</p>
+<p>{% if found.thumbnail %}<img src="{{ found.thumbnail }}" alt="" style="width:40px;border-radius:50%;vertical-align:middle"> {% endif %}<b>{{ found.title }}</b></p>
+<form method="post" action="/channels/{{ d.id }}/confirm"><button class="primary">Yes, that's the one</button></form>
+<form method="post" action="/channels/{{ d.id }}/connect" style="margin-top:6px"><input type="hidden" name="fresh" value="1"><button>No, log in with another account</button></form>
+{% else %}<p class="muted">{% if connected %}Logged in, channel not checked yet.{% else %}Not connected.{% endif %} A browser window opens on this laptop: log in with the account that owns the channel.</p>{% endif %}
+{% if connect_job and connect_job.status in ('queued', 'running') %}<p class="muted">Waiting for the login in your browser… <a href="/jobs/{{ connect_job.id }}">details</a></p>
+{% elif not found and not d.youtube_channel_id %}<form method="post" action="/channels/{{ d.id }}/connect"><button class="primary">Connect YouTube</button></form>
+{% elif d.youtube_channel_id %}<form method="post" action="/channels/{{ d.id }}/connect"><input type="hidden" name="fresh" value="1"><button>Connect again</button></form>{% endif %}
+</div>
+<div class="card"><h3 style="margin-top:0">4. Try it</h3>
+<p class="muted">Downloads footage for the chosen categories if needed, then makes 3 Shorts to review.</p>
+<form method="post" action="/channels/{{ d.id }}/try"><button class="primary">Try it</button></form></div>
+</div>{% endif %}
+</div>
+<script>
+document.getElementById('draft').onclick = async () => {
+  const f = document.getElementById('chform').elements, msg = document.getElementById('draftmsg');
+  msg.textContent = 'Claude is drafting (about half a minute)...';
+  const body = new URLSearchParams({name: f['name'].value, niche: f['niche'].value, language: f['language'].value});
+  const r = await fetch('/channels/draft', {method: 'POST', body}); const d = await r.json();
+  if (d.error) { msg.textContent = d.error; return; }
+  if (f['id'] && !f['id'].value) f['id'].value = f['name'].value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
+  f['hashtags'].value = (d.hashtags || []).join(' ');
+  f['search_terms'].value = (d.search_terms || []).join('\n');
+  if (d.hero_query) f['hero_query'].value = d.hero_query;
+  for (const box of document.querySelectorAll('input[name=categories]')) box.checked = (d.categories || []).includes(box.value);
+  for (const box of document.querySelectorAll('input[name=sources]')) box.checked = (d.sources || []).includes(box.value);
+  (d.formats || []).forEach((fm, i) => {
+    if (!f['format_id_' + i]) return;
+    f['format_id_' + i].value = fm.id; f['format_title_' + i].value = fm.title; f['format_brief_' + i].value = fm.brief;
+  });
+  msg.textContent = 'Check and edit, then save.';
+};
+</script>
+{% endblock %}

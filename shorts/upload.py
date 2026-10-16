@@ -58,6 +58,46 @@ def youtube(settings: Settings, channel: Channel):
     return build("youtube", "v3", credentials=credentials(settings, channel), cache_discovery=False)
 
 
+def my_channel(yt) -> dict:
+    """The YouTube channel the saved login belongs to: {id, title, thumbnail}."""
+    res = yt.channels().list(part="snippet", mine=True).execute()
+    items = res.get("items") or []
+    if not items:
+        raise RuntimeError("this Google account has no YouTube channel (create one first)")
+    sn = items[0]["snippet"]
+    thumb = ((sn.get("thumbnails") or {}).get("default") or {}).get("url")
+    return {"id": items[0]["id"], "title": sn.get("title"), "thumbnail": thumb}
+
+
+def found_path(settings: Settings, channel_id: str) -> Path:
+    return settings.secrets_dir / f"channel-{channel_id}.json"
+
+
+def connect(settings: Settings, channel: Channel, fresh: bool = False) -> dict:
+    """'Connect YouTube': log in (browser on this laptop), then look up which channel that login
+    owns and save it, so the dashboard can ask "is this the right channel?"."""
+    token = settings.secrets_dir / f"token-{channel.id}.json"
+    if fresh and token.exists():
+        token.unlink()
+    found = my_channel(youtube(settings, channel))
+    found_path(settings, channel.id).write_text(json.dumps(found, indent=2), encoding="utf-8")
+    return found
+
+
+def check_channel(yt, channel: Channel) -> None:
+    """Refuse to upload when the saved login belongs to another channel than the one confirmed on
+    'Connect YouTube' (several Brand Accounts share one Google login)."""
+    if not channel.youtube_channel_id:
+        log.warning("'%s' has no confirmed YouTube channel yet: use Connect YouTube on its dashboard "
+                    "page so uploads can't go to the wrong channel", channel.id)
+        return
+    found = my_channel(yt)
+    if found["id"] != channel.youtube_channel_id:
+        raise RuntimeError(f"the saved login is for YouTube channel '{found['title']}' ({found['id']}), "
+                           f"not the one connected to '{channel.id}' ({channel.youtube_channel_id}): "
+                           "connect YouTube again for this channel")
+
+
 def next_slots(conn: sqlite3.Connection, channel: Channel, n: int,
                now: datetime | None = None) -> list[datetime]:
     """Next n free publish times: channel.publish_times_utc each day, at most uploads_per_day,
@@ -114,6 +154,7 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
     if not rows:
         return []
     yt = youtube(settings, channel)
+    check_channel(yt, channel)
     slots = next_slots(conn, channel, len(rows)) if schedule else [None] * len(rows)
     done = []
     for s, slot in zip(rows, slots):
