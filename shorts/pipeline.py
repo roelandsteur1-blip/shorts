@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 
-from . import db, factcheck, hero, render, script, shots
+from . import db, factcheck, hero, progress, render, script, shots
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: 
     else:
         log.info("picked %d hero shots", len(heroes))
         # 3. Scripts with a source per fact (batched Claude calls).
+        progress.report(0, len(heroes), "script")
         script.write_scripts(conn, settings, channel, fmt_id, heroes)
 
     finish(conn, settings, channel)
@@ -46,10 +47,13 @@ def finish(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> No
     pending = ids("scripted")
     if pending:
         log.info("fact checking %d scripts", len(pending))
+        progress.report(0, len(pending), "fact check")
         factcheck.check(conn, settings, pending)
 
     # 4b + 5. Footage per text block, then render. Failed ones are retried each run.
-    for sid in ids("checked") + ids("failed"):
+    todo = ids("checked") + ids("failed")
+    for n, sid in enumerate(todo):
+        progress.report(n, len(todo), "render")
         try:
             shots.assign(conn, settings, sid)
             out = render.render_short(conn, settings, channel, sid)
@@ -57,3 +61,5 @@ def finish(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> No
         except Exception as e:  # noqa: BLE001 - mark and keep going with the rest of the batch
             log.exception("short %d failed", sid)
             db.set_short(conn, sid, status="failed", error=str(e)[:1000])
+    if todo:
+        progress.report(len(todo), len(todo), "render")

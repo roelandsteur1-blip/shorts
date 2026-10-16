@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Review{% endblock %}{% block body %}
+<form method="get" style="max-width:300px"><input type="hidden" name="status" value="{{ status }}">
+<select name="channel" onchange="this.form.submit()"><option value="">All channels</option>
+{% for ch in channels %}<option value="{{ ch.id }}" {{ 'selected' if ch.id == channel }}>{{ ch.name }}</option>{% endfor %}</select></form>
+<p>{% for st, label in [('rendered','To review'),('approved','Approved'),('scheduled','Scheduled'),('uploaded','Uploaded'),('rejected','Rejected'),('failed','Failed')] %}
+<a href="/review?status={{ st }}{% if channel %}&channel={{ channel }}{% endif %}" class="{{ 'on' if st == status }}">{{ label }} ({{ counts.get(st, 0) }})</a> &nbsp;
+{% endfor %}</p>
+<table><tr><th>#</th><th>Channel</th><th>Title</th><th>Hook</th><th>Length</th><th>Fact check</th></tr>
+{% for s in shorts %}<tr>
+<td><a href="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">{{ s.id }}</a></td><td>{{ s.channel }}</td>
+<td><a href="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">{{ s.title }}</a></td>
+<td>{{ s.hook }}</td><td>{{ '%.0f'|format(s.duration or 0) }}s</td>
+<td>{% if s.flagged %}<span class="warn">{{ s.flagged }} to check</span>{% else %}<span class="ok">all supported</span>{% endif %}</td>
+</tr>{% endfor %}</table>
+{% endblock %}

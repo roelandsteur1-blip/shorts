@@ -11,6 +11,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import progress
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -151,6 +152,7 @@ def process_all(conn: sqlite3.Connection, settings: Settings, workers: int | Non
                 save_scenes(conn, asset["id"], found)
                 total += len(found)
                 log.info("[%d/%d] %s: %d scenes", done, len(rows), asset["source_id"], len(found))
+                progress.report(done, len(rows), "cut scenes")
             except Exception as e:  # noqa: BLE001
                 log.warning("scene detection failed for %s: %s", asset["source_id"], e)
                 conn.execute("UPDATE assets SET status='failed', error=? WHERE id=?",

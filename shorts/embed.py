@@ -11,6 +11,7 @@ from typing import Protocol
 
 import numpy as np
 
+from . import progress
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ def embed_pending(conn: sqlite3.Connection, settings: Settings, batch_size: int 
         conn.commit()
         done += len(chunk)
         log.info("embedded %d/%d scenes", done, len(rows))
+        progress.report(done, len(rows), "embed")
     if done:
         from .dedupe import reject_duplicate_scenes
         if dups := reject_duplicate_scenes(conn):

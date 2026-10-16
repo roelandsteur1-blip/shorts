@@ -14,7 +14,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
 
-from . import dedupe, media
+from . import dedupe, media, progress
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -205,6 +205,7 @@ def ingest(conn: sqlite3.Connection, settings: Settings, terms: list[str], per_t
                 log.info("[%s] downloading %s", term, data["nasa_id"])
                 if download_asset(conn, settings, asset_id, s):
                     got += 1
+                    progress.report(total + got, len(terms) * per_term, "download")
             page += 1
         log.info("[%s] %d new videos", term, got)
         total += got

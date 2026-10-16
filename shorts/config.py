@@ -1,12 +1,14 @@
 """Settings and per-channel configuration."""
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG_DIR = ROOT / "config"
+# SHORTS_CONFIG_DIR / --config-dir: another config folder (tests, or jobs started by the dashboard).
+CONFIG_DIR = Path(os.environ.get("SHORTS_CONFIG_DIR") or ROOT / "config")
 
 
 def _load_toml(path: Path) -> dict:
@@ -26,6 +28,11 @@ class Settings:
     min_free_gb: float = 20.0         # downloads stop when the footage drive has less free space than this
     restock_below: int = 15           # 'make' downloads more footage when fewer unused hero videos are left
     restock_per_term: int = 2         # videos per search term in one automatic restock
+    config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR
+
+    @property
+    def config_dir(self) -> Path:
+        return self.config_root or CONFIG_DIR
 
     @property
     def db_path(self) -> Path:
@@ -76,6 +83,12 @@ class Channel:
     publish_times_utc: list[str] = field(default_factory=lambda: ["15:00"])
     hashtags: list[str] = field(default_factory=list)
     music_folder: str | None = None  # subfolder of data_dir/music; default: channel id
+    # Footage categories this channel uses (config/categories.toml); empty = every category.
+    categories: list[str] = field(default_factory=list)
+    # Footage sources restock downloads from (shorts/sources); empty = NASA only.
+    sources: list[str] = field(default_factory=list)
+    youtube_channel_id: str | None = None  # set by 'Connect YouTube'; upload refuses another channel
+    auto_run: bool = False                 # daily make + upload (python -m shorts daily)
 
     @property
     def enabled_formats(self) -> list[dict]:
@@ -88,7 +101,12 @@ class Channel:
         raise KeyError(f"unknown format {format_id!r} for channel {self.id}")
 
 
-def load_settings(config_dir: Path = CONFIG_DIR, **overrides) -> Settings:
+def _dir(config_dir: Path | None) -> Path:
+    return Path(config_dir) if config_dir else CONFIG_DIR
+
+
+def load_settings(config_dir: Path | None = None, **overrides) -> Settings:
+    config_dir = _dir(config_dir)
     data = _load_toml(config_dir / "settings.toml")
     local = config_dir / "local.toml"
     if local.exists():
@@ -98,16 +116,17 @@ def load_settings(config_dir: Path = CONFIG_DIR, **overrides) -> Settings:
     if data.get("footage_dir"):
         data["footage_root"] = Path(data.pop("footage_dir"))
     data.pop("footage_dir", None)
+    data["config_root"] = config_dir
     return Settings(**data)
 
 
-def load_channel(channel_id: str, config_dir: Path = CONFIG_DIR) -> Channel:
-    path = config_dir / "channels" / f"{channel_id}.toml"
+def load_channel(channel_id: str, config_dir: Path | None = None) -> Channel:
+    path = _dir(config_dir) / "channels" / f"{channel_id}.toml"
     if not path.exists():
         raise FileNotFoundError(f"no channel config at {path}")
     data = _load_toml(path)
     return Channel(**data)
 
 
-def list_channels(config_dir: Path = CONFIG_DIR) -> list[str]:
-    return sorted(p.stem for p in (config_dir / "channels").glob("*.toml"))
+def list_channels(config_dir: Path | None = None) -> list[str]:
+    return sorted(p.stem for p in (_dir(config_dir) / "channels").glob("*.toml"))

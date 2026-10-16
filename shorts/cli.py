@@ -5,6 +5,7 @@ import argparse
 import logging
 import shutil
 import sys
+from pathlib import Path
 
 from . import db
 from .config import list_channels, load_channel, load_settings
@@ -14,6 +15,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="shorts", description="YouTube Shorts pipeline")
     p.add_argument("--channel", help="channel id (config/channels/<id>.toml)")
     p.add_argument("--data-dir", help="override data_dir from settings")
+    p.add_argument("--config-dir", help="use another config folder (default: config/ in the repo)")
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -46,10 +48,10 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("finish", help="4-5. resume fact check/render for Shorts that stopped halfway")
 
-    pr = sub.add_parser("review", help="6. open the review page")
-    pr.add_argument("--port", type=int, default=5000)
-    pr.add_argument("--remote", action="store_true",
-                    help="reachable from your phone (wifi/Tailscale), behind a password")
+    for name, text in (("dashboard", "open the dashboard on http://127.0.0.1:5000 (this laptop only)"),
+                       ("review", "6. same as 'dashboard'")):
+        pr = sub.add_parser(name, help=text)
+        pr.add_argument("--port", type=int, default=5000)
 
     pu = sub.add_parser("upload", help="7. upload approved Shorts, scheduled with publishAt")
     pu.add_argument("--limit", type=int)
@@ -62,6 +64,9 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
 
+    if args.config_dir:
+        from . import config
+        config.CONFIG_DIR = Path(args.config_dir).resolve()
     settings = load_settings(data_dir=args.data_dir)
     settings.ensure_dirs()
     channel = load_channel(args.channel or settings.default_channel)
@@ -117,9 +122,9 @@ def main(argv: list[str] | None = None) -> int:
                       "only Shorts that are not uploaded yet can be re-rendered)")
                 continue
             print(f"short {sid}: {render_short(conn, settings, channel, sid)}")
-    elif args.cmd == "review":
-        from .review import serve
-        serve(settings, args.port, remote=args.remote)
+    elif args.cmd in ("dashboard", "review"):
+        from .web import serve
+        serve(settings, args.port)
     elif args.cmd == "upload":
         from .upload import upload_approved
         ids = upload_approved(conn, settings, channel, args.limit, schedule=not args.no_schedule)

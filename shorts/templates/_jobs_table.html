@@ -1,0 +1,6 @@
+<table><tr><th>#</th><th>Channel</th><th>Job</th><th>Status</th><th>Progress</th><th>Started</th></tr>
+{% for j in recent %}<tr><td><a href="/jobs/{{ j.id }}">{{ j.id }}</a></td><td>{{ j.channel or '' }}</td>
+<td><a href="/jobs/{{ j.id }}">{{ j.label }}</a></td>
+<td class="{{ {'done':'ok','failed':'bad','interrupted':'warn','stopped':'warn'}.get(j.status, '') }}">{{ j.status }}</td>
+<td>{% if j.progress %}{{ j.progress }} {{ j.progress_done }}/{{ j.progress_total }}{% endif %}</td><td class="muted">{{ j.started_at or '' }}</td></tr>{% endfor %}
+</table>

@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Job {{ job.id }}{% endblock %}{% block body %}
+<h1>{{ job.label }} <span class="muted" style="font-size:16px">{{ job.channel or '' }} · job {{ job.id }}</span></h1>
+<div class="card">
+<p>Status: <b id="status">{{ job.status }}</b> <span class="muted" id="step">{% if job.progress %}{{ job.progress }} {{ job.progress_done }}/{{ job.progress_total }}{% endif %}</span></p>
+<div class="bar"><div id="bar" style="width:{{ job.progress_done|pct(job.progress_total) }}%"></div></div>
+<p class="muted"><code>python -m shorts {% if job.channel %}--channel {{ job.channel }} {% endif %}{{ job.command|args }}</code></p>
+<p id="buttons">
+{% if job.status in ('queued', 'running') %}<form class="inline" method="post" action="/jobs/{{ job.id }}/stop"><button class="danger">Stop</button></form>{% endif %}
+{% if follow_up %}<form class="inline" method="post" action="/jobs/{{ job.id }}/again"><button class="primary">{{ follow_up[0] }}</button></form>{% endif %}
+{% if job.status == 'done' and (job.command|args).startswith('make') %}<a class="button" href="/review?channel={{ job.channel }}">Review</a>{% endif %}
+</p></div>
+<pre class="log" id="log">{{ log }}</pre>
+{% if job.status in ('queued', 'running') %}
+<script>
+const box = document.getElementById('log');
+async function poll(){
+  const r = await fetch('/jobs/{{ job.id }}.json'); const j = await r.json();
+  document.getElementById('status').textContent = j.status;
+  document.getElementById('step').textContent = j.progress ? `${j.progress} ${j.progress_done}/${j.progress_total}` : '';
+  document.getElementById('bar').style.width = (j.progress_total ? 100 * j.progress_done / j.progress_total : 0) + '%';
+  const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+  box.textContent = j.log; if (atEnd) box.scrollTop = box.scrollHeight;
+  if (j.status === 'queued' || j.status === 'running') setTimeout(poll, 2000); else location.reload();
+}
+box.scrollTop = box.scrollHeight; setTimeout(poll, 2000);
+</script>{% endif %}
+{% endblock %}

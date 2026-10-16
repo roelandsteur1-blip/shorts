@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block title %}Home{% endblock %}{% block body %}
+{% if running %}<div class="card">{% for j in running %}
+<p><a href="/jobs/{{ j.id }}">{{ j.label }}</a> <span class="muted">({{ j.channel or 'all' }}) · {{ j.status }}{% if j.progress %} · {{ j.progress }} {{ j.progress_done }}/{{ j.progress_total }}{% endif %}</span></p>
+{% endfor %}</div>{% endif %}
+<div class="cards">
+{% for c in cards %}<div class="card">
+<h2 style="margin:0">{{ c.ch.name }}</h2>
+<p class="muted" style="margin-top:2px">{{ c.ch.id }} · {{ c.ch.niche }} ·
+{% if c.connected %}<span class="ok">YouTube connected</span>{% else %}<span class="warn">YouTube not connected</span>{% endif %}</p>
+<p><span class="stat"><b>{{ c.review }}</b>to review</span><span class="stat"><b>{{ c.approved }}</b>approved</span>
+<span class="stat"><b>{{ c.scheduled_week }}</b>next 7 days</span><span class="stat"><b>{{ c.footage_left }}</b>videos left</span>
+{% if c.failed %}<span class="stat bad"><b>{{ c.failed }}</b>failed</span>{% endif %}</p>
+{% if c.categories %}<p class="muted">{% for cat, n in c.categories %}<span class="pill">{{ cat }}: {{ n }}</span>{% endfor %}</p>{% endif %}
+{% if c.last_job %}<p class="muted">Last job: <a href="/jobs/{{ c.last_job.id }}">{{ c.last_job.label }}</a> · {{ c.last_job.status }}</p>{% endif %}
+<p><a class="button primary" href="/make?channel={{ c.ch.id }}">Make Shorts</a>
+<a class="button" href="/review?channel={{ c.ch.id }}">Review</a>
+<a class="button" href="/schedule?channel={{ c.ch.id }}">Schedule</a>
+<a class="button" href="/channels/{{ c.ch.id }}">Settings</a></p>
+</div>{% endfor %}
+<div class="card"><h2 style="margin:0">Add channel</h2><p class="muted">New YouTube channel or one you already have.</p>
+<p><a class="button primary" href="/channels/new">Add channel</a></p></div>
+</div>
+{% endblock %}

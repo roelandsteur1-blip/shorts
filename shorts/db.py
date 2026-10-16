@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS stats (
     shares         INTEGER,
     subs_gained    INTEGER
 );
+
+-- Background jobs started from the dashboard: each runs `python -m shorts --channel <id> <command>`.
+CREATE TABLE IF NOT EXISTS jobs (
+    id             INTEGER PRIMARY KEY,
+    channel        TEXT,
+    command        TEXT NOT NULL,              -- JSON list of CLI arguments after --channel
+    label          TEXT,
+    heavy          INTEGER NOT NULL DEFAULT 1, -- 1 = uses GPU/CPU/Claude: one at a time
+    status         TEXT NOT NULL DEFAULT 'queued',
+        -- queued, running, done, failed, stopped, interrupted (laptop restarted mid-job)
+    pid            INTEGER,
+    exit_code      INTEGER,
+    progress       TEXT,                       -- e.g. 'render'
+    progress_done  INTEGER,
+    progress_total INTEGER,
+    log_path       TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    started_at     TEXT,
+    finished_at    TEXT
+);
 """
 
 
@@ -121,11 +141,20 @@ def connect(path: Path | str) -> sqlite3.Connection:
     return conn
 
 
+# Columns added after the first databases were created: (table, column, type).
+ADDED_COLUMNS = [
+    ("assets", "fingerprint", "BLOB"),
+]
+
+
 def _migrate(conn: sqlite3.Connection) -> None:
     """Add columns introduced after a database was created."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(assets)")}
-    if "fingerprint" not in cols:
-        conn.execute("ALTER TABLE assets ADD COLUMN fingerprint BLOB")
+    changed = False
+    for table, col, typ in ADDED_COLUMNS:
+        if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            changed = True
+    if changed:
         conn.commit()
 
 

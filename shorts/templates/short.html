@@ -1,5 +1,5 @@
-{% extends "base.html" %}{% block body %}
-<h1>#{{ s.id }} · {{ s.topic }}</h1>
+{% extends "base.html" %}{% block title %}#{{ s.id }}{% endblock %}{% block body %}
+<h1>#{{ s.id }} · {{ s.topic }} <span class="muted" style="font-size:16px">{{ s.channel }}</span></h1>
 <div class="grid">
 <div>{% if s.video_path %}<video src="/video/{{ s.id }}" controls autoplay loop playsinline></video>{% endif %}
 <p class="muted">{{ s.format_id }} · {{ '%.1f'|format(s.duration or 0) }}s · status {{ s.status }}{% if s.reject_reason %} · {{ s.reject_reason }}{% endif %}</p></div>
@@ -12,7 +12,7 @@
 </table></div>
 <div class="card"><h3>Script</h3><ol>{% for b in blocks %}<li>{{ b.text }} <span class="muted">({{ b.seconds }}s · {{ b.visual }})</span></li>{% endfor %}</ol></div>
 <div class="card"><h3>Footage</h3>{% for a in assets %}<p><a href="{{ a.source_url }}" target="_blank" rel="noopener">{{ a.title }}</a> <span class="muted">· {{ a.license }} · {{ a.credit }}</span>{% if a.needs_check %} <span class="bad">rights check needed</span>{% endif %}</p>{% endfor %}</div>
-<form method="post" class="card">
+<form method="post" class="card" action="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">
 <label>Title<input type="text" name="title" value="{{ s.title }}" maxlength="100"></label>
 <label>Tags<input type="text" name="tags" value="{{ tags }}"></label>
 <p class="muted" style="white-space:pre-wrap">{{ s.description }}</p>
@@ -21,6 +21,6 @@
 <input type="text" name="note" placeholder="note (optional)" style="width:200px">
 <button class="reject" name="action" value="reject">Reject</button>
 &nbsp; <button name="action" value="save">Save title</button></p>
-{% if next_id %}<p><a href="/short/{{ next_id }}">Skip to next →</a></p>{% endif %}
+{% if next_id %}<p><a href="/short/{{ next_id }}{% if channel %}?channel={{ channel }}{% endif %}">Skip to next →</a></p>{% endif %}
 </form></div></div>
 {% endblock %}

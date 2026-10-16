@@ -5,7 +5,7 @@ import json
 import logging
 import sqlite3
 
-from . import db, llm
+from . import db, llm, progress
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -47,6 +47,7 @@ def _item(conn: sqlite3.Connection, short_id: int) -> str:
 
 def check(conn: sqlite3.Connection, settings: Settings, short_ids: list[int], batch_size: int = 5) -> None:
     for i in range(0, len(short_ids), batch_size):
+        progress.report(i, len(short_ids), "fact check")
         ids = short_ids[i:i + batch_size]
         prompt = PROMPT.format(items="\n\n".join(_item(conn, sid) for sid in ids))
         try:

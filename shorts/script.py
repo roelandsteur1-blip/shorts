@@ -7,7 +7,7 @@ import math
 import re
 import sqlite3
 
-from . import llm
+from . import llm, progress
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
@@ -158,6 +158,7 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
     fmt = channel.format(fmt_id)
     created = []
     for i in range(0, len(hero_scene_ids), batch_size):
+        progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
         prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id))
         replies = llm.ask_json(prompt, settings.claude_cmd)
