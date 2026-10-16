@@ -48,9 +48,27 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 - **Home**: per kanaal een kaart met Shorts om te reviewen, goedgekeurd, ingepland voor de komende 7 dagen, aantal ongebruikte video's en de laatste taak. Knoppen *Make Shorts*, *Review*, *Schedule*.
 - **Make**: kies kanaal, aantal en format en start. Het werk draait op de achtergrond als `python -m shorts --channel <id> make -n N`, met de huidige stap (download / script / feitencheck / render), "3 van 10", de laatste logregels en een Stop-knop. Er draait één zware taak tegelijk; de rest wacht in de rij. Reviewen kan intussen gewoon.
 - **Review**: dezelfde reviewpagina als eerst, met een kanaalfilter.
+- **Library**: per categorie het aantal bruikbare scènes en hoeveel video's elk kanaal nog over heeft. Klik een categorie voor de plaatjes; een verkeerde categorie verplaats je met één klik (wordt onthouden en helpt de automatische sortering). *Uncategorised* is de wachtrij om met de hand te sorteren. Nieuwe categorie: naam typen, *Draft with Claude* vult trefwoorden, CLIP-beschrijvingen en zoekhints in.
+- **Sources**: elke bron met aan/uit, licentie, gedownload en afgewezen (met de redenen), en een proefzoektocht.
 - **Jobs**: alle taken met hun log. Is de laptop midden in een taak herstart, dan staat die op *interrupted*: een `make` krijgt de knop *Finish* (draait `finish`), andere taken *Run again*.
 
 Logbestanden van taken staan in `C:\shorts-data\logs`.
+
+## Beeldbronnen en categorieën
+
+Naast NASA kan de pipeline beeld halen uit **Internet Archive**, **Prelinger Archives**, **Library of Congress** en **Wikimedia Commons** (geen API-sleutel nodig). Elke bron heeft een eigen module in `shorts/sources/` die zoekt, de licentie per video beoordeelt en het bestand aanwijst. Alleen publiek domein, CC0 en CC BY worden gebruikt; CC BY-SA, niet-commerciële licenties en video's zonder herkenbare licentie worden afgewezen (en geteld op de Sources-pagina). Voor CC BY komt de verplichte naamsvermelding vanzelf in de beschrijving, zonder links.
+
+Gemengde archieven worden per **scène** in categorieën gesorteerd (`config/categories.toml`: ruimte, oorlog, geschiedenis, luchtvaart, natuur, oceaan, wetenschap, steden, vervoer, sport, dagelijks leven, rampen): eerst op de eigen metadata van het archief, dan met CLIP op de GPU, en alleen als die het oneens zijn of allebei twijfelen met één Claude-aanroep per 50 video's. Wat daarna nog twijfelt staat bij *Uncategorised* op de Library-pagina, om met één klik te sorteren.
+
+Per kanaal in de TOML: `categories = ["space"]` en `sources = ["nasa"]`. Hero shots en beeld per tekstblok komen alleen uit scènes in de categorieën van het kanaal; `make` vult de categorieën bij die bijna op zijn, met de zoekhints van elke categorie per bron.
+
+| Commando | Wat het doet |
+| :-- | :-- |
+| `python -m shorts sources` | Lijst van bronnen: aan/uit, licentie, gedownload, afgewezen. |
+| `python -m shorts sources --try loc "rocket"` | Proefzoektocht zonder downloaden: per video de licentiebeslissing. |
+| `python -m shorts ingest --source prelinger --term "subject:(aviation)"` | Downloaden van één bron. |
+| `python -m shorts restock` | Bijvullen van de categorieën van het kanaal die bijna op zijn. |
+| `python -m shorts categorize` | Nieuwe scènes sorteren (`--all`: alles opnieuw, handmatige keuzes blijven). |
 
 ## Uploaden instellen (fase 2)
 
@@ -69,7 +87,8 @@ Kopieer `config/channels/space.toml` naar bijv. `config/channels/oceans.toml`, p
 
 | Bestand | Stap |
 | :-- | :-- |
-| `shorts/ingest_nasa.py` | NASA Image and Video Library downloaden, rechtencheck, geluid eraf |
+| `shorts/sources/` | Beeldbronnen (NASA, Internet Archive, Prelinger, Library of Congress, Commons); `common.py` doet opslaan, rechtencheck, downloaden, geluid eraf, dubbele overslaan |
+| `shorts/categorize.py`, `config/categories.toml` | Scènes in categorieën sorteren (metadata, CLIP, Claude) |
 | `shorts/scenes.py` | Scènedetectie, scores (beweging, contrast, titelkaart), uitsnede |
 | `shorts/embed.py` | CLIP-embeddings en zoeken |
 | `shorts/hero.py` | Hero shot kiezen (+ terugkoppeling uit statistieken) |
@@ -77,7 +96,7 @@ Kopieer `config/channels/space.toml` naar bijv. `config/channels/oceans.toml`, p
 | `shorts/factcheck.py` | Aparte feitencheck |
 | `shorts/shots.py` | Beeld per tekstblok |
 | `shorts/render.py` | ffmpeg-montage, ondertitels (ASS), metadata met bronvermelding |
-| `shorts/web/`, `shorts/templates/` | Dashboard (Flask): home, make, review, jobs |
+| `shorts/web/`, `shorts/templates/` | Dashboard (Flask): home, make, review, jobs, library, sources |
 | `shorts/jobs.py` | Achtergrondtaken: één zware taak tegelijk, voortgang uit `PROGRESS`-regels |
 | `shorts/upload.py` | YouTube-upload, inplannen, statistieken |
 | `shorts/library.py` | Footage verhuizen, automatisch bijvullen, opruimen |

@@ -25,14 +25,19 @@ def test_move_footage(library, settings, tmp_path):
 
 
 def test_restock_only_when_low(library, settings, channel, monkeypatch):
-    import shorts.ingest_nasa as ingest_mod
+    import shorts.sources.common as common
     calls = []
-    monkeypatch.setattr(ingest_mod, "ingest", lambda *a, **k: calls.append(k) or 0)
+    monkeypatch.setattr(common, "ingest", lambda conn, s, source, queries, **k: calls.append((source, queries, k)) or 0)
     settings.restock_below = 1
     assert lib.restock(library, settings, channel) == 0 and calls == []  # 2 unused videos >= 1
     settings.restock_below = 5
     lib.restock(library, settings, channel)
-    assert calls == [{"per_term": settings.restock_per_term}]
+    assert len(calls) == 1
+    source, queries, kw = calls[0]
+    assert source == "nasa" and kw == {"per_term": settings.restock_per_term}
+    # The space category's NASA search hints plus the channel's own search terms, once each.
+    assert "rocket launch" in queries and "black hole visualization" in queries
+    assert len(queries) == len(set(queries))
 
 
 def test_cleanup_keeps_footage_until_uploaded(library, settings, channel, monkeypatch):

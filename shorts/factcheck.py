@@ -10,18 +10,18 @@ from .config import Settings
 
 log = logging.getLogger(__name__)
 
-PROMPT = """You are a strict fact checker for short science videos about space.
+PROMPT = """You are a strict fact checker for short factual videos.
 For each Short below you get the on-screen text, the list of claimed facts with their source,
-and the original NASA description of the footage.
+and the archive's original description of the footage.
 
 For every fact decide:
-- "supported": the quote/source clearly supports it, or it is textbook-level established science
+- "supported": the quote/source clearly supports it, or it is textbook-level established knowledge
   stated precisely (no rounding that changes meaning, no superlatives that are false).
 - "unclear": plausible but you cannot confirm it from the source or it is phrased too loosely.
 - "unsupported": wrong, exaggerated, or the URL is not a real page you know.
 Also list any factual claim in the on-screen text that is NOT in the facts list as an extra fact
 with verdict "unclear" or "unsupported", and check that the on-screen text does not misdescribe
-what the footage shows according to the NASA description.
+what the footage shows according to the archive description.
 
 Shorts:
 {items}
@@ -42,7 +42,7 @@ def _item(conn: sqlite3.Connection, short_id: int) -> str:
         "SELECT claim, source_url, source_quote FROM facts WHERE short_id=?", (short_id,))]
     return (f"Short {s['id']}:\n  On-screen text: {' / '.join(blocks)}\n"
             f"  Facts: {json.dumps(facts, ensure_ascii=False)}\n"
-            f"  NASA title: {s['title']}\n  NASA description: {(s['description'] or '')[:2500]}")
+            f"  Footage title: {s['title']}\n  Archive description: {(s['description'] or '')[:2500]}")
 
 
 def check(conn: sqlite3.Connection, settings: Settings, short_ids: list[int], batch_size: int = 5) -> None:

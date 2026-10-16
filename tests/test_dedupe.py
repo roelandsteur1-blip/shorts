@@ -2,7 +2,7 @@ import subprocess
 
 from conftest import make_video
 from shorts import dedupe, media
-from shorts.ingest_nasa import upsert_metadata
+from shorts.sources.nasa import upsert_metadata
 
 
 def test_normalise_title_strips_format_tags():

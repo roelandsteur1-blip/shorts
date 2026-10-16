@@ -21,9 +21,20 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("check", help="check that ffmpeg, GPU, Claude Code and folders are ready")
 
-    pi = sub.add_parser("ingest", help="1. download NASA videos for the channel's search terms")
+    pi = sub.add_parser("ingest", help="1. download videos for the channel's search terms (or restock its categories)")
     pi.add_argument("--per-term", type=int, default=5)
     pi.add_argument("--term", action="append", help="search term (repeatable); default: channel terms")
+    pi.add_argument("--source", help="footage source (default: nasa); see 'python -m shorts sources'")
+
+    prs = sub.add_parser("restock", help="1. download footage for the channel's categories that run low")
+    prs.add_argument("--force", action="store_true", help="also when nothing is running low")
+
+    pcat = sub.add_parser("categorize", help="1. sort new scenes into categories (metadata, CLIP, Claude)")
+    pcat.add_argument("--all", action="store_true", help="re-sort everything (keeps hand-sorted scenes)")
+
+    psrc = sub.add_parser("sources", help="list footage sources, or try one: sources --try loc \"rocket\"")
+    psrc.add_argument("--try", dest="try_source", nargs=2, metavar=("SOURCE", "QUERY"),
+                      help="search without downloading and show the rights decision per item")
 
     sub.add_parser("dedupe", help="1. find re-published copies already in the library (run once after updating)")
     sub.add_parser("scenes", help="1. cut downloaded videos into scenes and score them")
@@ -76,9 +87,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "check":
         return _check(settings)
     if args.cmd == "ingest":
-        from .ingest_nasa import ingest
-        n = ingest(conn, settings, args.term or channel.search_terms, per_term=args.per_term)
+        from .sources.common import ingest
+        n = ingest(conn, settings, args.source or "nasa", args.term or channel.search_terms, per_term=args.per_term)
         print(f"downloaded {n} new videos")
+    elif args.cmd == "restock":
+        from .library import restock
+        need = 10 ** 6 if args.force else 0
+        print(f"downloaded {restock(conn, settings, channel, need=need)} new videos")
+    elif args.cmd == "categorize":
+        from .categorize import resort, sort_pending
+        if args.all:
+            resort(conn)
+        counts = sort_pending(conn, settings)
+        print("sorted scenes: " + (", ".join(f"{k} {v}" for k, v in counts.items()) or "nothing new"))
+    elif args.cmd == "sources":
+        return _sources(conn, settings, args.try_source)
     elif args.cmd == "dedupe":
         from .dedupe import dedupe_library
         res = dedupe_library(conn)
@@ -144,6 +167,41 @@ def main(argv: list[str] | None = None) -> int:
         free = shutil.disk_usage(settings.footage_dir).free / 1e9
         print(f"unused hero videos: {unused_hero_videos(conn, settings, channel)} "
               f"(restock below {settings.restock_below}); {free:.0f} GB free on {settings.footage_dir}")
+        if channel.categories:
+            print("per category: " + ", ".join(
+                f"{c} {unused_hero_videos(conn, settings, channel, c)}" for c in channel.categories))
+        unsorted = conn.execute("SELECT COUNT(*) FROM scenes WHERE rejected=0 AND sorted=0").fetchone()[0]
+        if unsorted:
+            print(f"{unsorted} scenes not sorted into categories yet (python -m shorts categorize)")
+    return 0
+
+
+def _sources(conn, settings, try_source) -> int:
+    from . import sources
+    if try_source:
+        import requests
+        from .sources.common import check
+        name, query = try_source
+        mod = sources.get(name)
+        s = requests.Session()
+        key = sources.api_key(settings, name)
+        items = mod.search(query, page=1, session=s, key=key)
+        print(f"{len(items)} results for '{query}' on {mod.LABEL} (nothing is downloaded)")
+        for item in items[:15]:
+            item, r = check(item, s, key)
+            verdict = f"REJECT {r.reject}" if r.reject else f"OK {r.license}" + (" (rights check)" if r.needs_check else "")
+            print(f"- {item.title[:70]!r} [{item.source_id}]\n    {verdict}"
+                  + (f"\n    credit: {r.attribution}" if r.attribution else "")
+                  + (f"\n    file: {item.file_url}" if item.file_url else ""))
+        return 0
+    for mod in sources.all_sources():
+        ok, why = sources.usable(settings, mod.NAME)
+        n = dict(conn.execute("SELECT status, COUNT(*) FROM assets WHERE source=? GROUP BY status",
+                              (mod.NAME,)).fetchall())
+        print(f"{mod.NAME:17} {'on ' if ok else 'off'} {mod.LABEL}: {mod.LICENSE}"
+              + (f"  [{why}]" if why else "")
+              + f"\n{'':21}downloaded {sum(v for k, v in n.items() if k not in ('rejected', 'failed', 'new', 'duplicate'))}, "
+                f"rejected by rights check {n.get('rejected', 0)}")
     return 0
 
 

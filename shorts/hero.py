@@ -5,7 +5,8 @@ import sqlite3
 
 import numpy as np
 
-from . import db, embed
+from . import db, embed, sources
+from .categorize import scene_filter
 from .config import Settings
 
 # What a scroll-stopping first frame looks like, as text for CLIP.
@@ -14,14 +15,20 @@ MIN_HERO_SECONDS = 4.0  # the hook block is usually 3-4 s; a shorter shot would 
 
 
 def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: int,
-               use_clip: bool = True) -> list[int]:
+               use_clip: bool = True, categories: list[str] | None = None,
+               query: str | None = None) -> list[int]:
     """Return up to n hero scene ids, at most one per source video, never reusing a video
-    that already opened a Short on this channel. Footage flagged for a rights check is skipped."""
+    that already opened a Short on this channel. Footage flagged for a rights check is skipped,
+    and so is stock B-roll (Pexels etc.: fine between blocks, no story to tell as a hero).
+    categories: only scenes sorted into one of these (the channel's); none = any scene."""
+    cond, args = scene_filter(categories)
+    stock = sources.stock_sources()
     rows = conn.execute(
-        """SELECT sc.id, sc.asset_id, sc.motion, sc.contrast, sc.start, sc.end, sc.embedding
-             FROM scenes sc JOIN assets a ON a.id = sc.asset_id
-            WHERE sc.rejected = 0 AND a.needs_check = 0 AND (sc.end - sc.start) >= ?""",
-        (MIN_HERO_SECONDS,),
+        f"""SELECT sc.id, sc.asset_id, sc.motion, sc.contrast, sc.start, sc.end, sc.embedding
+              FROM scenes sc JOIN assets a ON a.id = sc.asset_id
+             WHERE sc.rejected = 0 AND a.needs_check = 0 AND (sc.end - sc.start) >= ?
+               AND a.source NOT IN ({",".join("?" * len(stock))}) AND {cond}""",
+        (MIN_HERO_SECONDS, *stock, *args),
     ).fetchall()
     used_assets = db.used_hero_assets(conn, channel)
     used_scenes = db.used_scene_ids(conn, channel)  # also scenes already shown as B-roll
@@ -38,7 +45,7 @@ def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: in
     score = 0.45 * np.clip(motion / 0.05, 0, 1) + 0.30 * np.clip(contrast / 0.25, 0, 1)
 
     if use_clip and rows[0]["embedding"] is not None:
-        q = embed.get_encoder(settings).texts([HERO_QUERY])[0]
+        q = embed.get_encoder(settings).texts([query or HERO_QUERY])[0]
         mat = np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
         sims = mat @ q
         span = sims.max() - sims.min()

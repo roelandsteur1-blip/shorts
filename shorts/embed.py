@@ -134,13 +134,17 @@ def _get_index(conn: sqlite3.Connection) -> _Index:
 
 
 def search(conn: sqlite3.Connection, settings: Settings, query: str, k: int = 10,
-           exclude: set[int] | None = None, asset_id: int | None = None) -> list[tuple[int, float]]:
-    """Best scenes for a text query: CLIP similarity plus a small boost when NASA's own
-    title/keywords mention the query words. Returns [(scene_id, score)]."""
+           exclude: set[int] | None = None, asset_id: int | None = None,
+           allowed: set[int] | None = None) -> list[tuple[int, float]]:
+    """Best scenes for a text query: CLIP similarity plus a small boost when the archive's own
+    title/keywords mention the query words. allowed: only these scenes (a channel's categories).
+    Returns [(scene_id, score)]."""
     index = _get_index(conn)
     mask = np.ones(len(index.ids), dtype=bool)
     if asset_id is not None:
         mask &= index.assets == asset_id
+    if allowed is not None:
+        mask &= np.isin(index.ids, np.fromiter(allowed, dtype=np.int64, count=len(allowed)))
     if exclude:
         mask &= ~np.isin(index.ids, np.fromiter(exclude, dtype=np.int64))
     sel = np.where(mask)[0]

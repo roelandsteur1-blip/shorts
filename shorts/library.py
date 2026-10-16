@@ -48,29 +48,69 @@ def move_footage(conn: sqlite3.Connection, settings: Settings) -> tuple[int, flo
     return moved, size
 
 
-def unused_hero_videos(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> int:
-    """Videos that can still open a Short on this channel."""
-    return len(hero.candidates(conn, settings, channel.id, 10 ** 9, use_clip=False))
+def unused_hero_videos(conn: sqlite3.Connection, settings: Settings, channel: Channel,
+                       category: str | None = None) -> int:
+    """Videos that can still open a Short on this channel (in one of its categories, or in
+    `category` only)."""
+    cats = [category] if category else channel.categories
+    return len(hero.candidates(conn, settings, channel.id, 10 ** 9, use_clip=False, categories=cats))
+
+
+def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
+                 need: int = 0) -> list[tuple[str, list[str]]]:
+    """(source, search queries) to run: for each of the channel's categories that is running low,
+    the category's search hints per source the channel uses. The channel's own search_terms are
+    added for its first category (they describe its niche)."""
+    from . import sources
+    from .categorize import load_categories
+
+    cats = {c.id: c for c in load_categories(settings)}
+    wanted = [c for c in channel.categories if c in cats] or [None]
+    total = unused_hero_videos(conn, settings, channel)
+    low = [c for c in wanted if total < need
+           or unused_hero_videos(conn, settings, channel, c) < settings.restock_below]
+    plan: dict[str, list[str]] = {}
+    for src in channel.sources or ["nasa"]:
+        ok, why = sources.usable(settings, src)
+        if not ok:
+            log.info("restock skips %s: %s", src, why)
+            continue
+        for c in low:
+            queries = cats[c].queries(src) if c else []
+            if c == wanted[0]:
+                queries = queries + channel.search_terms
+            plan[src] = list(dict.fromkeys(plan.get(src, []) + queries))
+    return [(src, qs) for src, qs in plan.items() if qs]
 
 
 def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need: int = 0) -> int:
-    """Download, cut and embed new footage when fewer than settings.restock_below (or `need`)
-    unused hero videos are left. Returns the number of new videos."""
+    """Download, cut, embed and sort new footage when the channel's categories have fewer than
+    settings.restock_below (or, in total, `need`) unused hero videos left. One download serves
+    every channel whose categories it lands in. Returns the number of new videos."""
     left = unused_hero_videos(conn, settings, channel)
-    if left >= max(settings.restock_below, need):
+    if left >= max(settings.restock_below, need) and all(
+            unused_hero_videos(conn, settings, channel, c) >= settings.restock_below
+            for c in channel.categories):
         return 0
+    from .categorize import sort_pending
     from .embed import embed_pending
-    from .ingest_nasa import ingest
+    from .sources import common
     from .scenes import process_all
 
-    log.info("only %d unused hero videos left: downloading more footage", left)
-    new = ingest(conn, settings, channel.search_terms, per_term=settings.restock_per_term)
+    plan = restock_plan(conn, settings, channel, need)
+    log.info("only %d unused hero videos left: downloading more footage from %s", left,
+             ", ".join(src for src, _ in plan) or "nowhere (no usable source)")
+    new = 0
+    for src, queries in plan:
+        new += common.ingest(conn, settings, src, queries, per_term=settings.restock_per_term)
     if new == 0:
-        log.warning("no new footage found for the search terms of '%s': add more search_terms to "
-                    "config/channels/%s.toml (or free disk space)", channel.id, channel.id)
+        log.warning("no new footage found for '%s': add search hints to its categories, more "
+                    "search_terms or sources to config/channels/%s.toml (or free disk space)",
+                    channel.id, channel.id)
         return 0
     process_all(conn, settings)
     embed_pending(conn, settings)
+    sort_pending(conn, settings)
     log.info("added %d videos; %d unused hero videos now", new, unused_hero_videos(conn, settings, channel))
     return new
 

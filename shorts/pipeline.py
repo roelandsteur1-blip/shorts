@@ -13,9 +13,12 @@ log = logging.getLogger(__name__)
 def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: int,
          format_id: str | None = None, restock: bool = True) -> list[int]:
     fmt_id = format_id or channel.enabled_formats[0]["id"]
-    from .ingest_nasa import recheck_rights
+    from .sources.common import recheck_rights
     if flagged := recheck_rights(conn):
         log.info("%d videos newly flagged for a rights check; they won't be used", flagged)
+    # Scenes cut since the last run get their categories (cheap: metadata + CLIP).
+    from .categorize import sort_pending
+    sort_pending(conn, settings)
 
     # 1. Footage running low: download, cut and embed more before picking.
     if restock:
@@ -23,7 +26,8 @@ def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: 
         restock_library(conn, settings, channel, need=count)
 
     # 2. Hero shots first; the script is written around them.
-    heroes = hero.candidates(conn, settings, channel.id, count)
+    heroes = hero.candidates(conn, settings, channel.id, count, categories=channel.categories,
+                             query=channel.hero_query)
     if not heroes:
         log.warning("no unused hero shots left: run 'shorts ingest' to grow the library")
     else:
@@ -55,7 +59,7 @@ def finish(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> No
     for n, sid in enumerate(todo):
         progress.report(n, len(todo), "render")
         try:
-            shots.assign(conn, settings, sid)
+            shots.assign(conn, settings, sid, channel.categories)
             out = render.render_short(conn, settings, channel, sid)
             log.info("rendered short %d -> %s", sid, out)
         except Exception as e:  # noqa: BLE001 - mark and keep going with the rest of the batch

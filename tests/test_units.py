@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 from shorts import render, script, upload
 from shorts.config import list_channels
-from shorts.ingest_nasa import needs_rights_check, pick_rendition
+from shorts.sources.nasa import needs_rights_check, pick_rendition
 from shorts.llm import extract_json
 
 

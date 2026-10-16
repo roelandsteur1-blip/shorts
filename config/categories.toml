@@ -1,0 +1,168 @@
+# Footage categories. Mixed archives (Internet Archive, Prelinger, Library of Congress, Commons, ...)
+# are sorted into these per scene; a channel picks categories in its own TOML (categories = [...]).
+#
+#   keywords      matched against the archive's own title, subjects and description (step 1)
+#   clip_prompts  what the category looks like, for the local CLIP check on each scene (step 2)
+#   search        per-source search hints used when restocking this category (a string or a list)
+#
+# Add one here or on the dashboard's Library page ("Draft with Claude" fills these fields).
+
+[[category]]
+id = "space"
+label = "Space"
+keywords = ["space", "rocket", "launch", "astronaut", "spacewalk", "satellite", "orbit", "nasa", "planet",
+            "moon", "mars", "jupiter", "saturn", "galaxy", "nebula", "telescope", "space station", "apollo",
+            "space shuttle", "spacecraft", "astronomy", "solar system", "comet"]
+clip_prompts = ["a rocket launching into the sky", "an astronaut in a spacesuit", "a planet seen from space",
+                "stars and a galaxy in deep space", "the earth seen from orbit"]
+[category.search]
+nasa = ["rocket launch", "space station", "spacewalk", "Mars rover", "Jupiter", "Saturn", "solar flare",
+        "earth from space", "moon landing", "galaxy", "nebula", "Artemis", "aurora from space"]
+internet_archive = "subject:(space OR rocket OR astronaut OR nasa)"
+prelinger = "subject:(space OR rocket OR missile OR satellite)"
+loc = "space flight"
+commons = "rocket launch"
+
+[[category]]
+id = "war"
+label = "War & military"
+keywords = ["war", "army", "navy", "battle", "wwii", "world war", "tank", "bomber", "military", "soldier",
+            "soldiers", "troops", "warship", "submarine", "infantry", "artillery", "air force", "marines",
+            "combat", "d-day", "korean war", "vietnam war"]
+clip_prompts = ["soldiers on a battlefield", "a warship at sea", "fighter planes in formation",
+                "a military tank driving", "an explosion of artillery fire"]
+[category.search]
+internet_archive = "subject:(war OR military OR army OR navy)"
+prelinger = "subject:(war OR military OR army OR navy OR defense)"
+loc = "world war, 1939-1945"
+commons = "World War II film"
+
+[[category]]
+id = "history"
+label = "History (general)"
+keywords = ["history", "historic", "historical", "newsreel", "news reel", "president", "parade",
+            "ceremony", "coronation", "election", "speech", "1900s", "1920s", "1930s", "1940s", "1950s",
+            "depression", "immigration", "suffrage"]
+clip_prompts = ["an old black and white newsreel", "a crowd at a historic parade",
+                "a politician giving a speech in the 1940s", "an early twentieth century street scene"]
+[category.search]
+internet_archive = "subject:(history OR newsreel)"
+prelinger = "subject:(history OR newsreel OR americana)"
+loc = "newsreels"
+commons = "newsreel"
+
+[[category]]
+id = "aviation"
+label = "Aviation"
+keywords = ["aviation", "airplane", "aeroplane", "aircraft", "airliner", "jet", "pilot", "flight", "airport",
+            "helicopter", "glider", "airship", "zeppelin", "wright brothers", "air show", "propeller"]
+clip_prompts = ["an airplane flying in the sky", "a pilot in a cockpit", "a jet taking off from a runway",
+                "a vintage propeller plane"]
+[category.search]
+internet_archive = "subject:(aviation OR airplane OR aircraft)"
+prelinger = "subject:(aviation OR airplanes OR aircraft)"
+loc = "aeronautics"
+commons = "aircraft flight"
+
+[[category]]
+id = "nature"
+label = "Nature & animals"
+keywords = ["nature", "animal", "animals", "wildlife", "bird", "birds", "forest", "insect", "mammal",
+            "zoo", "flower", "plants", "mountains", "landscape", "national park", "lion", "bear", "deer"]
+clip_prompts = ["a wild animal in nature", "a bird flying", "a green forest landscape", "flowers in a meadow",
+                "mountains and a valley"]
+[category.search]
+internet_archive = "subject:(nature OR wildlife OR animals)"
+prelinger = "subject:(nature OR animals OR wildlife)"
+loc = "animals"
+commons = "wildlife video"
+
+[[category]]
+id = "ocean"
+label = "Ocean"
+keywords = ["ocean", "sea", "underwater", "marine", "fish", "whale", "coral", "reef", "beach", "waves",
+            "diver", "diving", "shark", "dolphin", "ship", "sailing"]
+clip_prompts = ["underwater with fish and coral", "ocean waves crashing", "a whale swimming in the sea",
+                "a diver underwater"]
+[category.search]
+internet_archive = "subject:(ocean OR underwater OR marine)"
+prelinger = "subject:(ocean OR sea OR navy OR ships)"
+loc = "ocean"
+commons = "underwater video"
+
+[[category]]
+id = "science"
+label = "Science & technology"
+keywords = ["science", "scientist", "laboratory", "experiment", "technology", "computer", "electricity",
+            "atomic", "atom", "nuclear", "chemistry", "physics", "engineering", "invention", "robot",
+            "medicine", "microscope", "research"]
+clip_prompts = ["a scientist in a laboratory", "a vintage computer", "a chemistry experiment",
+                "a microscope view of cells", "industrial machinery"]
+[category.search]
+internet_archive = "subject:(science OR technology OR educational)"
+prelinger = "subject:(science OR technology OR atomic OR industry)"
+loc = "science"
+commons = "science experiment"
+
+[[category]]
+id = "cities"
+label = "Cities & architecture"
+keywords = ["city", "cities", "street", "skyline", "building", "buildings", "architecture", "skyscraper",
+            "bridge", "new york", "downtown", "urban", "construction"]
+clip_prompts = ["a city skyline", "a busy city street", "a skyscraper under construction", "a large bridge"]
+[category.search]
+internet_archive = "subject:(city OR cities OR architecture)"
+prelinger = "subject:(cities OR urban OR architecture)"
+loc = "city and town life"
+commons = "city timelapse"
+
+[[category]]
+id = "transport"
+label = "Transport"
+keywords = ["train", "railroad", "railway", "locomotive", "car", "cars", "automobile", "highway", "traffic",
+            "bus", "truck", "ship", "steamship", "subway", "motorcycle", "transportation"]
+clip_prompts = ["a steam locomotive", "cars driving on a highway", "a train at a station", "a vintage automobile"]
+[category.search]
+internet_archive = "subject:(railroad OR trains OR automobiles OR transportation)"
+prelinger = "subject:(transportation OR automobiles OR railroads OR highways)"
+loc = "railroads"
+commons = "train video"
+
+[[category]]
+id = "sport"
+label = "Sport"
+keywords = ["sport", "sports", "football", "baseball", "boxing", "olympics", "race", "racing", "athlete",
+            "tennis", "golf", "basketball", "swimming", "skiing", "stadium"]
+clip_prompts = ["athletes competing in a race", "a boxing match", "a football game in a stadium", "a skier on a slope"]
+[category.search]
+internet_archive = "subject:(sports OR olympics)"
+prelinger = "subject:(sports OR recreation)"
+loc = "sports"
+commons = "sports video"
+
+[[category]]
+id = "everyday"
+label = "Everyday life (retro)"
+keywords = ["everyday", "family", "home", "kitchen", "school", "children", "shopping", "household",
+            "housewife", "teenagers", "dating", "etiquette", "social guidance", "americana", "suburb",
+            "advertising", "commercial"]
+clip_prompts = ["a 1950s family at home", "children in a classroom", "a vintage kitchen",
+                "people shopping in an old store"]
+[category.search]
+internet_archive = "subject:(americana OR family OR advertising)"
+prelinger = "subject:(americana OR family OR social guidance OR advertising)"
+loc = "everyday life"
+commons = "home movie"
+
+[[category]]
+id = "disasters"
+label = "Disasters & weather"
+keywords = ["disaster", "flood", "fire", "hurricane", "tornado", "earthquake", "storm", "volcano",
+            "eruption", "explosion", "crash", "weather", "lightning", "blizzard", "tsunami"]
+clip_prompts = ["a tornado over fields", "a flooded street", "a volcano erupting", "a building on fire",
+                "lightning in a storm"]
+[category.search]
+internet_archive = "subject:(disaster OR flood OR hurricane OR fire)"
+prelinger = "subject:(disasters OR floods OR fires OR weather)"
+loc = "natural disasters"
+commons = "storm video"

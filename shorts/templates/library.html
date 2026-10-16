@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% block title %}Library{% endblock %}{% block body %}
+<h1>Footage library</h1>
+<p class="muted">Every scene is sorted into categories: archive metadata first, then CLIP on the GPU, Claude only when those disagree.
+Sorted by: {% for m, n in methods.items() %}{{ m }} {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+<p>{% if unsorted %}<span class="warn">{{ unsorted }} scenes not sorted yet.</span> {% endif %}
+<form class="inline" method="post" action="/library/sort"><button class="primary">Sort new footage</button></form>
+<form class="inline" method="post" action="/library/sort"><input type="hidden" name="all" value="1"><button title="After adding or editing a category; hand-sorted scenes are kept">Re-sort all</button></form></p>
+<div class="cards">
+{% for c in cats %}<a class="card" href="/library/{{ c.id }}" style="text-decoration:none;color:inherit">
+<h3 style="margin:0">{{ c.label }}</h3>
+<p><span class="stat"><b>{{ counts.get(c.id, 0) }}</b>usable scenes</span></p>
+{% for ch, n in left[c.id] %}<p class="muted" style="margin:2px 0">{{ ch.name }}: {{ n }} videos left for a hero shot</p>{% endfor %}
+</a>{% endfor %}
+<a class="card" href="/library/uncategorised" style="text-decoration:none;color:inherit">
+<h3 style="margin:0">Uncategorised</h3><p><span class="stat"><b class="{{ 'warn' if uncat }}">{{ uncat }}</b>to sort by hand</span></p></a>
+</div>
+
+<h2>Add a category</h2>
+<form method="post" action="/library/categories" class="card" id="newcat">
+<label>Name<input type="text" name="name" id="catname" placeholder="e.g. Trains, Cold War, Volcanoes"></label>
+<p><button type="button" id="draft">Draft with Claude</button> <span class="muted" id="draftmsg"></span></p>
+<label>Id<input type="text" name="id" required pattern="[a-z][a-z0-9_]{1,30}"></label>
+<label>Label<input type="text" name="label"></label>
+<label>Keywords (comma separated, as archives use them in titles and subjects)<textarea name="keywords" rows="3"></textarea></label>
+<label>What it looks like (one CLIP prompt per line)<textarea name="clip_prompts" rows="4"></textarea></label>
+<label>Search hints per source (one per line: source = query)<textarea name="search" rows="5"></textarea></label>
+<p><button class="primary">Save category</button> <span class="muted">Then press Re-sort all to sort existing footage into it.</span></p>
+</form>
+<script>
+document.getElementById('draft').onclick = async () => {
+  const f = document.getElementById('newcat').elements, msg = document.getElementById('draftmsg');
+  msg.textContent = 'Claude is drafting (about half a minute)...';
+  const r = await fetch('/library/draft', {method: 'POST', body: new URLSearchParams({name: f.name.value})});
+  const d = await r.json();
+  if (d.error) { msg.textContent = 'Failed: ' + d.error; return; }
+  f.id.value = d.id || ''; f.label.value = d.label || f.name.value;
+  f.keywords.value = (d.keywords || []).join(', ');
+  f.clip_prompts.value = (d.clip_prompts || []).join('\n');
+  f.search.value = Object.entries(d.search || {}).map(([k, v]) => `${k} = ${v}`).join('\n');
+  msg.textContent = 'Check and edit, then save.';
+};
+</script>
+{% endblock %}

@@ -89,6 +89,7 @@ class Channel:
     sources: list[str] = field(default_factory=list)
     youtube_channel_id: str | None = None  # set by 'Connect YouTube'; upload refuses another channel
     auto_run: bool = False                 # daily make + upload (python -m shorts daily)
+    hero_query: str | None = None          # what a scroll-stopping first frame looks like (CLIP)
 
     @property
     def enabled_formats(self) -> list[dict]:

@@ -222,6 +222,18 @@ def clean_text(text: str) -> str:
     return (text or "").replace("<", "").replace(">", "")
 
 
+def footage_credit(asset) -> str:
+    """Credit for one clip, names only (no links): the license's required attribution when there
+    is one, else the archive and license, e.g. 'NASA (public domain)'."""
+    if asset["attribution"]:
+        return asset["attribution"]
+    if asset["source"] == "nasa":
+        return "NASA (public domain)"
+    from .sources import label
+    lic = asset["license"] or ""
+    return f"{label(asset['source'])} ({lic})" if lic and lic != "unknown" else label(asset["source"])
+
+
 def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int) -> dict:
     s = conn.execute("SELECT * FROM shorts WHERE id=?", (short_id,)).fetchone()
     assets = conn.execute(
@@ -233,12 +245,13 @@ def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int) -> dict:
     base = (s["description"] or "").split("\n\nFootage:")[0].strip()
     credit_lines = []
     for a in assets:
-        who = a["attribution"] or ("NASA (public domain)" if a["source"] == "nasa" else a["source"].upper())
-        credit_lines.append(f"- {who}: {a['title']}")
+        credit_lines.append(f"- {footage_credit(a)}: {a['title']}")
     parts = [base, "", "Footage:", *dict.fromkeys(credit_lines)]
     if sources:
         parts += ["", "Sources: " + ", ".join(sources)]
-    parts += ["", "NASA does not endorse this channel.", "", " ".join(channel.hashtags)]
+    if any(a["source"] == "nasa" for a in assets):
+        parts += ["", "NASA does not endorse this channel."]
+    parts += ["", " ".join(channel.hashtags)]
     tags = json.loads(s["tags"] or "[]")
     title = clean_text(s["title"]).strip() or clean_text(s["topic"] or s["hook"] or "").replace("*", "").strip()
     return {

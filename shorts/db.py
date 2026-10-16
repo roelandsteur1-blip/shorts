@@ -7,7 +7,7 @@ from pathlib import Path
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS assets (
     id            INTEGER PRIMARY KEY,
-    source        TEXT NOT NULL,              -- 'nasa', 'svs', 'esa', ...
+    source        TEXT NOT NULL,              -- shorts/sources module: 'nasa', 'internet_archive', ...
     source_id     TEXT NOT NULL,              -- e.g. NASA nasa_id
     title         TEXT,
     description   TEXT,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS assets (
     width         INTEGER,
     height        INTEGER,
     date_created  TEXT,
-    status        TEXT NOT NULL DEFAULT 'new',-- new, downloaded, scened, failed, duplicate
+    status        TEXT NOT NULL DEFAULT 'new',-- new, downloaded, scened, failed, duplicate, rejected (rights), cleaned
     fingerprint   BLOB,                       -- frame hashes, to spot re-published footage
     error         TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -106,6 +106,25 @@ CREATE TABLE IF NOT EXISTS stats (
     subs_gained    INTEGER
 );
 
+-- Footage categories per scene (shorts/categorize.py). confidence 0 + method 'manual' means
+-- "not this category" (a correction by hand that a re-sort keeps).
+CREATE TABLE IF NOT EXISTS scene_categories (
+    scene_id    INTEGER NOT NULL REFERENCES scenes(id),
+    category    TEXT NOT NULL,
+    confidence  REAL NOT NULL,
+    method      TEXT NOT NULL,                 -- source, metadata, clip, metadata+clip, claude, manual
+    PRIMARY KEY (scene_id, category)
+);
+CREATE INDEX IF NOT EXISTS scene_categories_cat ON scene_categories(category);
+
+-- Rollup for quick counts: usable scenes per video and category.
+CREATE TABLE IF NOT EXISTS asset_categories (
+    asset_id    INTEGER NOT NULL,
+    category    TEXT NOT NULL,
+    scenes      INTEGER NOT NULL,
+    PRIMARY KEY (asset_id, category)
+);
+
 -- Background jobs started from the dashboard: each runs `python -m shorts --channel <id> <command>`.
 CREATE TABLE IF NOT EXISTS jobs (
     id             INTEGER PRIMARY KEY,
@@ -144,6 +163,7 @@ def connect(path: Path | str) -> sqlite3.Connection:
 # Columns added after the first databases were created: (table, column, type).
 ADDED_COLUMNS = [
     ("assets", "fingerprint", "BLOB"),
+    ("scenes", "sorted", "INTEGER NOT NULL DEFAULT 0"),  # 1 = categorize has looked at it
 ]
 
 

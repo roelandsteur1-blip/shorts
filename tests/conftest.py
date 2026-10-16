@@ -74,7 +74,7 @@ def make_video(path: Path, seconds: int = 24) -> None:
 def library(conn, settings, tmp_path):
     """Two ingested 'NASA' videos, audio stripped, scened and embedded."""
     from shorts import media, scenes
-    from shorts.ingest_nasa import upsert_metadata
+    from shorts.sources.nasa import upsert_metadata
 
     for n, title in enumerate(["Saturn rings flyby", "Rocket launch at night"]):
         raw = tmp_path / f"raw{n}" / "raw.mp4"
@@ -91,6 +91,8 @@ def library(conn, settings, tmp_path):
     conn.commit()
     scenes.process_all(conn, settings)
     embed.embed_pending(conn, settings)
+    from shorts.categorize import sort_pending
+    sort_pending(conn, settings)
     return conn
 
 

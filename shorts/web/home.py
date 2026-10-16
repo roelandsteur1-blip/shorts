@@ -29,6 +29,7 @@ def channel_card(ch) -> dict:
         "failed": counts.get("failed", 0),
         "scheduled_week": week,
         "footage_left": unused_hero_videos(c, settings(), ch),
+        "categories": [(cat, unused_hero_videos(c, settings(), ch, cat)) for cat in ch.categories],
         "last_job": last_job,
     }
 

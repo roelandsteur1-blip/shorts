@@ -4,7 +4,11 @@ name = "Space Shorts"
 language = "en"
 niche = "space exploration and astronomy"
 
-# NASA Image and Video Library search terms used to grow the footage library.
+# Footage categories (config/categories.toml) and sources (shorts/sources) this channel uses.
+categories = ["space"]
+sources = ["nasa"]
+
+# Extra search terms for restocking (on top of the categories' own search hints).
 search_terms = [
   "rocket launch", "space station", "spacewalk", "Mars rover", "Jupiter",
   "Saturn", "solar flare", "sun", "earth from space", "moon landing",

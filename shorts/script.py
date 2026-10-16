@@ -17,7 +17,7 @@ WORDS_PER_SECOND = 3.0
 MIN_BLOCK_SECONDS = 1.6
 
 PROMPT = """You write on-screen text for YouTube Shorts on the channel "{channel_name}" ({niche}).
-There is NO voice-over: the text on screen is the whole story, read silently over real NASA footage.
+There is NO voice-over: the text on screen is the whole story, read silently over real archive footage ({archives}).
 Language: {language_name}.
 
 Format: "{format_title}"
@@ -30,9 +30,9 @@ Rules:
 - {min_blocks} to {max_blocks} text blocks, each at most {max_words} words. Plain words, no emoji,
   no hashtags. Wrap one or two key words per block in *asterisks* to highlight them.
 - Block 1 is the hook: a question, a surprising claim or "you're looking at...". Never "Did you know".
-- Every factual claim must be true and must be listed in "facts" with a source. Prefer the NASA
-  description given below (source "nasa" + the exact supporting quote). If a fact is general
-  knowledge not in that text, give a specific, real nasa.gov / esa.int / jpl.nasa.gov URL you are
+- Every factual claim must be true and must be listed in "facts" with a source. Prefer the archive
+  description given below (source "archive" + the exact supporting quote). If a fact is general
+  knowledge not in that text, give a specific, real {url_hint} URL you are
   sure exists, and the quote it supports; do not invent URLs. When in doubt, leave the fact out.
 - For blocks after the first, "visual" describes in 3-8 plain words what footage should show
   (e.g. "Saturn rings close up", "astronaut floating inside station"). Block 1 visual is "hero".
@@ -46,7 +46,7 @@ Hero shots:
 
 Answer with only a JSON array, one object per hero shot, in the same order:
 [{{"hero": <hero number>, "topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
-  "facts": [{{"claim": "...", "source": "nasa" or "https://...", "quote": "..."}}],
+  "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", "description": "...", "tags": ["..."]}}]
 """
 
@@ -56,11 +56,23 @@ LANGS = {"en": "English", "nl": "Dutch", "de": "German", "es": "Spanish", "fr": 
 def hero_context(conn: sqlite3.Connection, scene_id: int) -> dict:
     r = conn.execute(
         """SELECT sc.id AS scene_id, sc.start, sc.end, a.id AS asset_id, a.title, a.description,
-                  a.keywords, a.date_created, a.source_url, a.credit
+                  a.keywords, a.date_created, a.source_url, a.credit, a.source
              FROM scenes sc JOIN assets a ON a.id = sc.asset_id WHERE sc.id = ?""",
         (scene_id,),
     ).fetchone()
-    return dict(r)
+    return dict(r) | {"archive": archive_name(r["source"])}
+
+
+def archive_name(source: str) -> str:
+    from .sources import label
+    return "NASA" if source == "nasa" else label(source)
+
+
+def url_hint(channel: Channel) -> str:
+    """Where Claude should look for sources beyond the footage description."""
+    if not channel.categories or "space" in channel.categories:
+        return "nasa.gov / esa.int / jpl.nasa.gov"
+    return "reputable (museum, national archive, university, government or encyclopedia)"
 
 
 def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: list[str]) -> str:
@@ -68,10 +80,11 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
     min_blocks = max(3, math.ceil(channel.min_seconds / 3.0))
     hero_text = "\n\n".join(
         f"Hero {i + 1}:\n"
-        f"  NASA title: {h['title']}\n"
+        f"  Archive: {h['archive']}\n"
+        f"  Title: {h['title']}\n"
         f"  Date: {(h.get('date_created') or '')[:10]}\n"
         f"  Keywords: {h.get('keywords') or ''}\n"
-        f"  NASA description: {(h.get('description') or '').strip()[:2500]}\n"
+        f"  Description: {(h.get('description') or '').strip()[:2500]}\n"
         f"  The hero shot is {h['end'] - h['start']:.1f}s taken from {h['start']:.0f}s into this video."
         for i, h in enumerate(heroes)
     )
@@ -81,7 +94,8 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
         format_title=fmt["title"], format_brief=fmt["brief"].strip(),
         min_blocks=min_blocks, max_blocks=max_blocks, max_words=MAX_WORDS,
         past_topics="; ".join(past_topics[-80:]) or "(none yet)",
-        heroes=hero_text,
+        heroes=hero_text, url_hint=url_hint(channel),
+        archives=", ".join(dict.fromkeys(h.get("archive", "NASA") for h in heroes)),
     )
 
 
@@ -141,7 +155,7 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str, hero: d
     conn.executemany(
         "INSERT INTO facts (short_id, claim, source_url, source_quote) VALUES (?,?,?,?)",
         [(short_id, f.get("claim", ""),
-          hero["source_url"] if f.get("source") in (None, "", "nasa") else f["source"],
+          hero["source_url"] if f.get("source") in (None, "", "nasa", "archive") else f["source"],
           f.get("quote")) for f in data.get("facts") or []],
     )
     conn.commit()

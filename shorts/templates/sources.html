@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}Sources{% endblock %}{% block body %}
+<h1>Footage sources</h1>
+<p class="muted">A channel downloads from the sources in its settings; switching one off here stops it for every channel.
+CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p>
+<table><tr><th>Source</th><th>License</th><th>Downloaded</th><th>Rejected (rights)</th><th></th></tr>
+{% for r in rows %}<tr>
+<td><b>{{ r.mod.LABEL }}</b> <span class="muted">{{ r.mod.NAME }}</span><br>
+{% if r.usable %}<span class="ok">in use</span>{% else %}<span class="warn">{{ r.why }}</span>{% endif %}
+{% if r.mod.HERO_OK is defined and not r.mod.HERO_OK %}<br><span class="muted">stock B-roll: used between text blocks, never as hero shot</span>{% endif %}</td>
+<td>{{ r.mod.LICENSE }}{% if r.mod.NOTE is defined %}<br><span class="muted">{{ r.mod.NOTE }}</span>{% endif %}</td>
+<td>{{ r.downloaded }}{% if r.failed %} <span class="muted">({{ r.failed }} failed)</span>{% endif %}</td>
+<td>{{ r.rejected }}{% for x in r.reasons %}<br><span class="muted" style="font-size:12px">{{ x.n }}× {{ x.error }}</span>{% endfor %}</td>
+<td style="min-width:240px">
+<form method="post" action="/sources/{{ r.mod.NAME }}" class="inline"><input type="hidden" name="enabled" value="{{ '0' if r.on else '1' }}">
+<button>{{ 'Switch off' if r.on else 'Switch on' }}</button></form>
+{% if r.mod.NEEDS_KEY %}<form method="post" action="/sources/{{ r.mod.NAME }}" style="margin-top:6px">
+<input type="password" name="api_key" placeholder="{{ 'key saved: paste to replace' if r.has_key else 'API key (free)' }}" autocomplete="off">
+<button style="margin-top:4px">Save key</button>{% if r.mod.KEY_URL is defined %} <a href="{{ r.mod.KEY_URL }}" target="_blank" rel="noopener">get a key</a>{% endif %}</form>{% endif %}
+{% if r.mod.IMPORT_ONLY is defined and r.mod.IMPORT_ONLY %}<p class="muted" style="font-size:12px">Import folder: {{ r.mod.folder_hint }}</p>
+{% elif r.usable %}<form method="post" action="/sources/{{ r.mod.NAME }}/try" style="margin-top:6px">
+<input type="text" name="query" placeholder="try a search (no download)"></form>{% endif %}
+</td></tr>{% endfor %}
+</table>
+{% block imports %}{% endblock %}
+{% endblock %}

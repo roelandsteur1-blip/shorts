@@ -44,7 +44,7 @@ def same_title(conn: sqlite3.Connection, title: str | None, exclude_id: int | No
         return None
     day = (date or "")[:10]
     for r in conn.execute("""SELECT id, title, date_created FROM assets
-                              WHERE status NOT IN ('failed', 'duplicate')"""):
+                              WHERE status NOT IN ('failed', 'duplicate', 'rejected')"""):
         if (r["id"] != exclude_id and normalise_title(r["title"]) == key
                 and (r["date_created"] or "")[:10] == day):
             return r["id"]
@@ -120,7 +120,7 @@ def similar(fp_a: bytes, fp_b: bytes) -> bool:
 
 def same_footage(conn: sqlite3.Connection, fp: bytes, exclude_id: int | None = None) -> int | None:
     for r in conn.execute("""SELECT id, fingerprint FROM assets
-                              WHERE fingerprint IS NOT NULL AND status NOT IN ('failed', 'duplicate')"""):
+                              WHERE fingerprint IS NOT NULL AND status NOT IN ('failed', 'duplicate', 'rejected')"""):
         if r["id"] != exclude_id and similar(fp, r["fingerprint"]):
             return r["id"]
     return None
@@ -164,7 +164,7 @@ def dedupe_library(conn: sqlite3.Connection) -> dict:
     copies (the oldest one stays). Removes the duplicate files' scenes from use."""
     out = {"fingerprinted": 0, "duplicate_videos": 0, "duplicate_scenes": 0}
     todo = conn.execute("""SELECT id, path FROM assets WHERE fingerprint IS NULL AND path IS NOT NULL
-                            AND status NOT IN ('failed', 'duplicate') ORDER BY id""").fetchall()
+                            AND status NOT IN ('failed', 'duplicate', 'rejected') ORDER BY id""").fetchall()
     # OpenCV decodes outside the GIL, so threads use all cores; only this thread writes the DB.
     workers = max(1, min(len(todo), (os.cpu_count() or 2) - 1))
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -175,7 +175,7 @@ def dedupe_library(conn: sqlite3.Connection) -> dict:
     conn.commit()
     # Shortest first: when a short B-roll cut is contained in a longer video, the longer one stays.
     rows = conn.execute("""SELECT id, title, date_created, fingerprint, duration FROM assets
-                            WHERE status NOT IN ('failed', 'duplicate')
+                            WHERE status NOT IN ('failed', 'duplicate', 'rejected')
                             ORDER BY COALESCE(duration, 0), id""").fetchall()
     for r in rows:
         if conn.execute("SELECT status FROM assets WHERE id=?", (r["id"],)).fetchone()[0] == "duplicate":
