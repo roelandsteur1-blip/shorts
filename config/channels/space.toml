@@ -1,0 +1,53 @@
+# One file per channel. A second channel is a second file, nothing else.
+id = "space"
+name = "Space Shorts"
+language = "en"
+niche = "space exploration and astronomy"
+
+# NASA Image and Video Library search terms used to grow the footage library.
+search_terms = [
+  "rocket launch", "space station", "spacewalk", "Mars rover", "Jupiter",
+  "Saturn", "solar flare", "sun", "earth from space", "moon landing",
+  "black hole visualization", "galaxy", "nebula", "Artemis", "aurora from space",
+]
+
+# Short length in seconds (text-only reads slower than listening).
+min_seconds = 15
+max_seconds = 30
+
+# Uploads per day once uploading starts (plan: start with 1-2).
+uploads_per_day = 2
+publish_times_utc = ["15:00", "21:00"]
+
+hashtags = ["#space", "#nasa", "#astronomy", "#shorts"]
+
+# Fixed formats (the series). Phase 1 uses just one; add more later.
+[[formats]]
+id = "what_youre_seeing"
+title = "What you're actually seeing"
+brief = """Explain what is actually happening in the hero shot, the thing most viewers
+would not know. Open with a hook that makes the viewer look twice at the image.
+Build to one surprising fact near the end."""
+
+[[formats]]
+id = "scale_of"
+title = "Scale of..."
+enabled = false
+brief = """Make the viewer feel the size, distance, speed or energy of the subject in the
+hero shot through one or two concrete comparisons to everyday things."""
+
+[[formats]]
+id = "today_in_history"
+title = "Today in space history"
+enabled = false
+brief = """Tell the short story behind the event in the hero shot as a mini drama:
+the stakes, the moment, what happened next."""
+
+[style]
+font = "Montserrat ExtraBold"
+font_size = 88
+primary_color = "&H00FFFFFF"   # ASS colour: white
+highlight_color = "&H0000D7FF" # ASS colour: gold (BGR)
+outline = 6
+margin_v = 760                 # text block sits a bit above centre
+hook_font_size = 104

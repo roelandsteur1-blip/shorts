@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shorts review</title>
+<style>
+:root{--bg:#0f1115;--card:#181b22;--text:#e8eaf0;--muted:#9aa3b2;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--accent:#58a6ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,sans-serif}
+a{color:var(--accent)}main{max-width:1200px;margin:0 auto;padding:16px}
+nav a{margin-right:14px}.card{background:var(--card);border-radius:10px;padding:14px;margin:10px 0}
+.grid{display:grid;grid-template-columns:380px 1fr;gap:20px}@media(max-width:800px){.grid{grid-template-columns:1fr}}
+video{width:100%;border-radius:10px;background:#000}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}
+input[type=text],textarea,select{width:100%;background:#0b0d11;color:var(--text);border:1px solid #2a2f3a;border-radius:6px;padding:8px}
+button{border:0;border-radius:8px;padding:10px 18px;font-weight:600;cursor:pointer}
+.approve{background:var(--ok);color:#000}.reject{background:var(--bad);color:#fff}
+table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #2a2f3a;text-align:left;vertical-align:top}
+</style></head><body><main>
+<nav><a href="/?status=rendered">To review</a><a href="/?status=approved">Approved</a><a href="/?status=scheduled">Scheduled</a><a href="/?status=rejected">Rejected</a></nav>
+{% block body %}{% endblock %}
+</main></body></html>

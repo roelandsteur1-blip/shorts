@@ -1,0 +1,10 @@
+requests>=2.31
+numpy>=1.26
+opencv-python-headless>=4.9
+scenedetect>=0.6.4
+open_clip_torch>=2.24
+pillow>=10.0
+flask>=3.0
+google-api-python-client>=2.120
+google-auth-oauthlib>=1.2
+pytest>=8.0

@@ -1,0 +1,14 @@
+[project]
+name = "shorts-pipeline"
+version = "0.1.0"
+description = "Automated pipeline for space/astronomy YouTube Shorts from public-domain footage"
+requires-python = ">=3.11"
+
+[project.scripts]
+shorts = "shorts.cli:main"
+
+[tool.setuptools]
+packages = ["shorts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

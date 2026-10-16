@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block body %}
+<h1>{{ status|capitalize }} ({{ shorts|length }})</h1>
+<p class="muted">{% for k, v in counts.items() %}{{ k }}: {{ v }} &nbsp; {% endfor %}</p>
+<table><tr><th>#</th><th>Title</th><th>Hook</th><th>Length</th><th>Fact check</th></tr>
+{% for s in shorts %}<tr>
+<td><a href="/short/{{ s.id }}">{{ s.id }}</a></td><td><a href="/short/{{ s.id }}">{{ s.title }}</a></td>
+<td>{{ s.hook }}</td><td>{{ '%.0f'|format(s.duration or 0) }}s</td>
+<td>{% if s.flagged %}<span class="warn">{{ s.flagged }} to check</span>{% else %}<span class="ok">all supported</span>{% endif %}</td>
+</tr>{% endfor %}</table>
+{% endblock %}

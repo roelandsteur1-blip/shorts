@@ -1,0 +1,17 @@
+# Global settings. Override any value in config/local.toml (not committed).
+
+# Media, database and renders live here, OUTSIDE OneDrive.
+data_dir = "C:/shorts-data"
+
+# Command used to call Claude Code headless (uses your Claude subscription).
+claude_cmd = "claude"
+
+# Video encoder: "auto" tries h264_nvenc (RTX GPU) and falls back to libx264.
+encoder = "auto"
+
+# Image/text embedding model (runs locally on the GPU).
+clip_model = "ViT-B-32"
+clip_pretrained = "laion2b_s34b_b79k"
+
+# Default channel used when --channel is not given.
+default_channel = "space"
