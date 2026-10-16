@@ -7,3 +7,4 @@ secrets/
 *.json.token
 client_secret*.json
 fonts/*.ttf
+*.egg-info/

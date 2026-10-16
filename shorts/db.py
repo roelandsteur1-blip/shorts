@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS assets (
     width         INTEGER,
     height        INTEGER,
     date_created  TEXT,
-    status        TEXT NOT NULL DEFAULT 'new',-- new, downloaded, scened, failed
+    status        TEXT NOT NULL DEFAULT 'new',-- new, downloaded, scened, failed, duplicate
+    fingerprint   BLOB,                       -- frame hashes, to spot re-published footage
     error         TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (source, source_id)
@@ -115,7 +116,16 @@ def connect(path: Path | str) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after a database was created."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(assets)")}
+    if "fingerprint" not in cols:
+        conn.execute("ALTER TABLE assets ADD COLUMN fingerprint BLOB")
+        conn.commit()
 
 
 def set_short(conn: sqlite3.Connection, short_id: int, **fields) -> None:

@@ -20,7 +20,7 @@ class FakeEncoder:
         return v / np.linalg.norm(v)
 
     def images(self, paths):
-        return np.stack([self._vec(Path(p).name) for p in paths])
+        return np.stack([self._vec(str(Path(p).parent.name) + Path(p).name) for p in paths])
 
     def texts(self, texts):
         return np.stack([self._vec(t) for t in texts])

@@ -13,7 +13,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 import requests
 
-from . import media
+from . import dedupe, media
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -134,6 +134,10 @@ def download_asset(conn: sqlite3.Connection, settings: Settings, asset_id: int,
                    session: requests.Session | None = None) -> bool:
     s = session or requests.Session()
     row = conn.execute("SELECT * FROM assets WHERE id=?", (asset_id,)).fetchone()
+    if (orig := dedupe.same_title(conn, row["title"], asset_id, row["date_created"])) is not None:
+        log.info("skip %s: same title as asset %s", row["source_id"], orig)
+        dedupe.mark_duplicate(conn, asset_id, orig, "same title")
+        return False
     try:
         url = pick_rendition(asset_files(row["source_id"], s))
         if not url:
@@ -147,11 +151,16 @@ def download_asset(conn: sqlite3.Connection, settings: Settings, asset_id: int,
                 raise ValueError(f"duration {info['duration']:.0f}s out of range")
             if info["height"] < 720:
                 raise ValueError(f"resolution too low ({info['width']}x{info['height']})")
+            fp = dedupe.fingerprint(str(raw))
+            if fp and (orig := dedupe.same_footage(conn, fp, asset_id)) is not None:
+                log.info("skip %s: same footage as asset %s", row["source_id"], orig)
+                dedupe.mark_duplicate(conn, asset_id, orig, "same footage")
+                return False
             media.strip_audio(raw, dst)
         conn.execute(
-            """UPDATE assets SET file_url=?, path=?, duration=?, width=?, height=?,
+            """UPDATE assets SET file_url=?, path=?, duration=?, width=?, height=?, fingerprint=?,
                       status='downloaded', error=NULL WHERE id=?""",
-            (url, str(dst), info["duration"], info["width"], info["height"], asset_id),
+            (url, str(dst), info["duration"], info["width"], info["height"], fp, asset_id),
         )
         conn.commit()
         return True
@@ -171,7 +180,7 @@ def ingest(conn: sqlite3.Connection, settings: Settings, terms: list[str], per_t
     for term in terms:
         got = 0
         page = 1
-        while got < per_term and page <= 5:
+        while got < per_term and page <= 10:
             items = search(term, page=page, session=s)
             if not items:
                 break

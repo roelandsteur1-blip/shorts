@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     pi.add_argument("--per-term", type=int, default=5)
     pi.add_argument("--term", action="append", help="search term (repeatable); default: channel terms")
 
+    sub.add_parser("dedupe", help="1. find re-published copies already in the library (run once after updating)")
     sub.add_parser("scenes", help="1. cut downloaded videos into scenes and score them")
     sub.add_parser("embed", help="1. make scenes searchable (CLIP on the GPU)")
 
@@ -64,6 +65,11 @@ def main(argv: list[str] | None = None) -> int:
         from .ingest_nasa import ingest
         n = ingest(conn, settings, args.term or channel.search_terms, per_term=args.per_term)
         print(f"downloaded {n} new videos")
+    elif args.cmd == "dedupe":
+        from .dedupe import dedupe_library
+        res = dedupe_library(conn)
+        print(f"fingerprinted {res['fingerprinted']} videos; {res['duplicate_videos']} duplicate videos "
+              f"and {res['duplicate_scenes']} duplicate scenes taken out of use")
     elif args.cmd == "scenes":
         from .scenes import process_all
         print(f"{process_all(conn, settings)} scenes")

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import sqlite3
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -137,7 +138,10 @@ def process_all(conn: sqlite3.Connection, settings: Settings, workers: int | Non
         return 0
     workers = workers or max(1, (os.cpu_count() or 2) - 1)
     total = 0
-    with ProcessPoolExecutor(max_workers=min(workers, len(rows))) as pool:
+    # "spawn" everywhere (the Windows default): forking a process that already loaded OpenCV
+    # or PyTorch threads can deadlock on Linux.
+    ctx = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=min(workers, len(rows)), mp_context=ctx) as pool:
         futures = {pool.submit(analyse_video, r["id"], r["path"], r["duration"],
                                str(settings.keyframe_dir)): r for r in rows}
         for done, fut in enumerate(as_completed(futures), 1):

@@ -89,6 +89,10 @@ def embed_pending(conn: sqlite3.Connection, settings: Settings, batch_size: int 
         conn.commit()
         done += len(chunk)
         log.info("embedded %d/%d scenes", done, len(rows))
+    if done:
+        from .dedupe import reject_duplicate_scenes
+        if dups := reject_duplicate_scenes(conn):
+            log.info("%d scenes look the same as a scene from another video; they won't be reused", dups)
     return done
 
 
