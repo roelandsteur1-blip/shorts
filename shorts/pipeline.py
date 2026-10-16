@@ -13,6 +13,9 @@ log = logging.getLogger(__name__)
 def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: int,
          format_id: str | None = None) -> list[int]:
     fmt_id = format_id or channel.enabled_formats[0]["id"]
+    from .ingest_nasa import recheck_rights
+    if flagged := recheck_rights(conn):
+        log.info("%d videos newly flagged for a rights check; they won't be used", flagged)
 
     # 2. Hero shots first; the script is written around them.
     heroes = hero.candidates(conn, settings, channel.id, count)

@@ -35,6 +35,7 @@ def test_extract_json_from_fenced_reply():
 def test_rights_check_flags_third_party():
     assert needs_rights_check({"description": "Video courtesy of SpaceX"})
     assert needs_rights_check({"photographer": "ESA/NASA"})
+    assert needs_rights_check({"title": "Rocket Lab Launches NASA's PREFIRE Mission"})
     assert not needs_rights_check({"description": "NASA's Perseverance rover on Mars", "center": "JPL"})
 
 

@@ -31,6 +31,8 @@ MAX_SECONDS = 40 * 60
 THIRD_PARTY = re.compile(
     r"courtesy|copyright|©|\(c\)|all rights reserved|spacex|blue origin|boeing|"
     r"lockheed|northrop|roscosmos|jaxa|\besa\b|getty|associated press|\bap\b|reuters|"
+    r"rocket ?lab|united launch alliance|\bula\b|arianespace|virgin (galactic|orbit)|"
+    r"sierra (space|nevada)|firefly|axiom|intuitive machines|astrobotic|relativity space|"
     r"used with permission",
     re.IGNORECASE,
 )
@@ -77,6 +79,19 @@ def credit_of(data: dict) -> str:
 def needs_rights_check(data: dict) -> bool:
     text = " ".join(str(data.get(k, "")) for k in ("photographer", "secondary_creator", "description", "title"))
     return bool(THIRD_PARTY.search(text))
+
+
+def recheck_rights(conn: sqlite3.Connection) -> int:
+    """Re-apply the third-party check to footage already in the library (the rules grow over
+    time). Only ever adds flags; clearing one is a manual decision. Returns newly flagged count."""
+    n = 0
+    for r in conn.execute("SELECT id, title, description, credit FROM assets WHERE needs_check = 0").fetchall():
+        if needs_rights_check({"title": r["title"], "description": r["description"],
+                               "photographer": r["credit"]}):
+            conn.execute("UPDATE assets SET needs_check = 1 WHERE id = ?", (r["id"],))
+            n += 1
+    conn.commit()
+    return n
 
 
 def _download(url: str, dst: Path, session: requests.Session) -> None:
