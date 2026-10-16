@@ -56,8 +56,17 @@ def check(conn: sqlite3.Connection, settings: Settings, short_ids: list[int], ba
             continue
         if isinstance(results, dict):
             results = [results]
-        for res in results:
-            apply_result(conn, int(res.get("short")), res.get("facts") or [])
+        for res in results if isinstance(results, list) else []:
+            try:
+                sid = int(res.get("short"))
+            except (TypeError, ValueError, AttributeError):
+                log.warning("fact check reply without a valid short id: %s", str(res)[:200])
+                continue
+            # Only Shorts from this batch; anything not answered stays 'scripted' and is retried.
+            if sid in ids:
+                apply_result(conn, sid, res.get("facts") or [])
+            else:
+                log.warning("fact check answered for short %s, which was not in this batch", sid)
 
 
 def apply_result(conn: sqlite3.Connection, short_id: int, checked: list[dict]) -> None:

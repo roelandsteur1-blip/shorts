@@ -100,29 +100,55 @@ def _words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 2}
 
 
+class _Index:
+    """All searchable scenes in memory, so a search doesn't re-read every embedding from SQLite."""
+
+    def __init__(self, conn: sqlite3.Connection, key: tuple):
+        rows = conn.execute(
+            """SELECT sc.id, sc.asset_id, sc.embedding, a.title, a.keywords FROM scenes sc
+                 JOIN assets a ON a.id = sc.asset_id
+                WHERE sc.embedding IS NOT NULL AND sc.rejected = 0 ORDER BY sc.id""").fetchall()
+        self.key = key
+        self.ids = np.array([r["id"] for r in rows], dtype=np.int64)
+        self.assets = np.array([r["asset_id"] for r in rows], dtype=np.int64)
+        self.mat = (np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
+                    if rows else np.zeros((0, 1), dtype=np.float32))
+        self.words = [_words(f"{r['title'] or ''} {r['keywords'] or ''}") for r in rows]
+
+
+_index: _Index | None = None
+
+
+def _get_index(conn: sqlite3.Connection) -> _Index:
+    global _index
+    # Cheap fingerprint of the searchable set; changes when scenes are embedded or rejected.
+    key = tuple(conn.execute(
+        """SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(id), 0) FROM scenes
+            WHERE embedding IS NOT NULL AND rejected = 0""").fetchone()) + (
+        id(conn), conn.execute("PRAGMA database_list").fetchone()[2])
+    if _index is None or _index.key != key:
+        _index = _Index(conn, key)
+    return _index
+
+
 def search(conn: sqlite3.Connection, settings: Settings, query: str, k: int = 10,
            exclude: set[int] | None = None, asset_id: int | None = None) -> list[tuple[int, float]]:
     """Best scenes for a text query: CLIP similarity plus a small boost when NASA's own
     title/keywords mention the query words. Returns [(scene_id, score)]."""
-    sql = """SELECT sc.id, sc.embedding, a.title, a.keywords FROM scenes sc
-              JOIN assets a ON a.id = sc.asset_id
-             WHERE sc.embedding IS NOT NULL AND sc.rejected = 0"""
-    params: tuple = ()
+    index = _get_index(conn)
+    mask = np.ones(len(index.ids), dtype=bool)
     if asset_id is not None:
-        sql += " AND sc.asset_id = ?"
-        params = (asset_id,)
-    rows = conn.execute(sql, params).fetchall()
-    exclude = exclude or set()
-    rows = [r for r in rows if r["id"] not in exclude]
-    if not rows:
+        mask &= index.assets == asset_id
+    if exclude:
+        mask &= ~np.isin(index.ids, np.fromiter(exclude, dtype=np.int64))
+    sel = np.where(mask)[0]
+    if not len(sel):
         return []
-    mat = np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
     q = get_encoder(settings).texts([query])[0]
-    sims = mat @ q
+    sims = index.mat[sel] @ q
     qw = _words(query)
     if qw:
-        boost = np.array([len(qw & _words(f"{r['title'] or ''} {r['keywords'] or ''}")) / len(qw)
-                          for r in rows], dtype=np.float32)
+        boost = np.array([len(qw & index.words[i]) / len(qw) for i in sel], dtype=np.float32)
         sims = sims + 0.05 * boost
     order = np.argsort(-sims)[:k]
-    return [(int(rows[i]["id"]), float(sims[i])) for i in order]
+    return [(int(index.ids[sel[i]]), float(sims[i])) for i in order]

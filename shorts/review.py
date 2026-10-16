@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from flask import Flask, abort, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, g, redirect, render_template, request, send_file, url_for
 
 from . import db
 from .config import Settings
@@ -17,7 +17,15 @@ def create_app(settings: Settings) -> Flask:
     app = Flask(__name__)
 
     def conn() -> sqlite3.Connection:
-        return db.connect(settings.db_path)
+        if "conn" not in g:
+            g.conn = db.connect(settings.db_path)
+        return g.conn
+
+    @app.teardown_appcontext
+    def close_conn(_exc) -> None:
+        c = g.pop("conn", None)
+        if c is not None:
+            c.close()
 
     @app.get("/")
     def index():

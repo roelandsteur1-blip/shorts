@@ -10,7 +10,7 @@ from .config import Settings
 
 # What a scroll-stopping first frame looks like, as text for CLIP.
 HERO_QUERY = "a stunning dramatic space image, rocket launch fire, glowing planet, explosion of light"
-MIN_HERO_SECONDS = 2.5
+MIN_HERO_SECONDS = 4.0  # the hook block is usually 3-4 s; a shorter shot would freeze
 
 
 def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: int,
@@ -24,7 +24,11 @@ def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: in
         (MIN_HERO_SECONDS,),
     ).fetchall()
     used_assets = db.used_hero_assets(conn, channel)
-    rows = [r for r in rows if r["asset_id"] not in used_assets]
+    used_scenes = db.used_scene_ids(conn, channel)  # also scenes already shown as B-roll
+    rows = [r for r in rows if r["asset_id"] not in used_assets and r["id"] not in used_scenes]
+    # Scenes not embedded yet (run 'embed') would switch CLIP scoring off for all: leave them out.
+    if use_clip and any(r["embedding"] is not None for r in rows):
+        rows = [r for r in rows if r["embedding"] is not None]
     if not rows:
         return []
 
@@ -33,7 +37,7 @@ def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: in
     # Movement helps up to a point; shaky/flashing footage scores no higher.
     score = 0.45 * np.clip(motion / 0.05, 0, 1) + 0.30 * np.clip(contrast / 0.25, 0, 1)
 
-    if use_clip and all(r["embedding"] is not None for r in rows):
+    if use_clip and rows[0]["embedding"] is not None:
         q = embed.get_encoder(settings).texts([HERO_QUERY])[0]
         mat = np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
         sims = mat @ q

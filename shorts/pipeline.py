@@ -43,8 +43,8 @@ def finish(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> No
         log.info("fact checking %d scripts", len(pending))
         factcheck.check(conn, settings, pending)
 
-    # 4b + 5. Footage per text block, then render.
-    for sid in ids("checked"):
+    # 4b + 5. Footage per text block, then render. Failed ones are retried each run.
+    for sid in ids("checked") + ids("failed"):
         try:
             shots.assign(conn, settings, sid)
             out = render.render_short(conn, settings, channel, sid)

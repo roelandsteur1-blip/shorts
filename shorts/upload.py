@@ -29,6 +29,7 @@ def _client_secret(settings: Settings) -> Path:
 
 
 def credentials(settings: Settings, channel: Channel):
+    from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -38,8 +39,13 @@ def credentials(settings: Settings, channel: Channel):
     if token.exists():
         creds = Credentials.from_authorized_user_file(str(token), SCOPES)
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    elif not creds or not creds.valid:
+        try:
+            creds.refresh(Request())
+        except RefreshError as e:
+            # Expired or revoked (in Testing mode Google drops refresh tokens after 7 days): log in again.
+            log.warning("saved login for '%s' no longer works (%s); logging in again", channel.name, e)
+            creds = None
+    if not creds or not creds.valid:
         flow = InstalledAppFlow.from_client_secrets_file(str(_client_secret(settings)), SCOPES)
         print(f"Log in with the Google account that owns the '{channel.name}' channel.")
         creds = flow.run_local_server(port=0)
@@ -120,7 +126,7 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
         while response is None:
             _, response = request.next_chunk()
         vid = response["id"]
-        db.set_short(conn, s["id"], status="scheduled" if slot else "published", youtube_id=vid,
+        db.set_short(conn, s["id"], status="scheduled" if slot else "uploaded", youtube_id=vid,
                      publish_at=iso(slot) if slot else None)
         log.info("uploaded short %s as https://youtu.be/%s (publish %s)", s["id"], vid, iso(slot) if slot else "private")
         done.append(vid)

@@ -163,10 +163,16 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
         replies = llm.ask_json(prompt, settings.claude_cmd)
         if isinstance(replies, dict):
             replies = [replies]
-        for reply in replies:
+        done_heroes: set[int] = set()
+        for reply in replies if isinstance(replies, list) else []:
             try:
-                hero = heroes[int(reply.get("hero", 0)) - 1]
-                created.append(save_script(conn, channel, fmt_id, hero, reply))
-            except (ValueError, IndexError, TypeError) as e:
+                n = int(reply.get("hero"))
+                # Only hero numbers from this batch, each once: a missing or wrong number must never
+                # attach a script to the wrong footage.
+                if not 1 <= n <= len(heroes) or n in done_heroes:
+                    raise ValueError(f"unexpected hero number {reply.get('hero')!r}")
+                created.append(save_script(conn, channel, fmt_id, heroes[n - 1], reply))
+                done_heroes.add(n)
+            except (ValueError, TypeError, AttributeError) as e:
                 log.warning("skipping a script: %s", e)
     return created

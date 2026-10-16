@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS shorts (
     description    TEXT,
     tags           TEXT,
     status         TEXT NOT NULL DEFAULT 'planned',
-        -- planned, scripted, checked, rendered, approved, rejected, scheduled, published, failed
+        -- planned, scripted, checked, rendered, approved, rejected, scheduled, uploaded (private,
+        -- no publish time), failed
     factcheck_ok   INTEGER,                    -- 1 all facts supported, 0 at least one flagged
     video_path     TEXT,
     duration       REAL,

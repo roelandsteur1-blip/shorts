@@ -39,11 +39,14 @@ def ask(prompt: str, claude_cmd: str = "claude", timeout: int = 600) -> str:
     exe = find_claude(claude_cmd) or claude_cmd
     # Run in an empty folder so Claude Code doesn't pick up this repo's files as context.
     with tempfile.TemporaryDirectory() as cwd:
-        proc = subprocess.run(
-            [exe, "-p", "--output-format", "json"],
-            input=prompt, capture_output=True, text=True, encoding="utf-8",
-            errors="replace", timeout=timeout, cwd=cwd,
-        )
+        try:
+            proc = subprocess.run(
+                [exe, "-p", "--output-format", "json"],
+                input=prompt, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", timeout=timeout, cwd=cwd,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise LLMError(f"claude did not answer within {timeout}s") from e
     if proc.returncode != 0:
         raise LLMError(f"claude exited with {proc.returncode}: {proc.stderr.strip()[-1000:]}")
     try:

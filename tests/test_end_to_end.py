@@ -25,7 +25,9 @@ def test_make_renders_reviewable_short(library, settings, channel, monkeypatch):
     assert channel.min_seconds - 0.5 <= info["duration"] <= channel.max_seconds + 1
     assert s["factcheck_ok"] == 0  # one fact flagged 'unclear'
     assert "NASA (public domain)" in s["description"]
-    assert "https://science.nasa.gov/saturn/" in s["description"]
+    # Sources are named, not linked (links in a Shorts description are not clickable).
+    assert "Sources: NASA Image and Video Library, NASA Science" in s["description"]
+    assert "http" not in s["description"]
 
     # Two Shorts never open with the same source video.
     heroes = library.execute("""SELECT sc.asset_id FROM shorts s JOIN scenes sc ON sc.id=s.hero_scene_id""").fetchall()

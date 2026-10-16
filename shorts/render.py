@@ -8,6 +8,7 @@ import random
 import re
 import sqlite3
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from . import db, media
 from .config import Channel, Settings
@@ -69,12 +70,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 # ---------- video ----------
 
 def _segment_filter(idx: int, seconds: float, crop_x: float, width: int, height: int,
-                    mode: str, drift: float) -> str:
-    """Scale/crop one input to 1080x1920 with a slow pan or zoom so the frame never feels static."""
+                    mode: str, drift: float, hold: float = 0.0) -> str:
+    """Scale/crop one input to 1080x1920 with a slow pan or zoom so the frame never feels static.
+    hold > 0: the scene is shorter than the block, so its last frame is held instead of running
+    on past the cut into the next shot of the source video."""
     frames = max(1, round(seconds * FPS))
+    src = f"[{idx}:v]fps={FPS}" + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0 else "")
     if mode == "blur":
         return (
-            f"[{idx}:v]fps={FPS},split=2[bg{idx}][fg{idx}];"
+            f"{src},split=2[bg{idx}][fg{idx}];"
             f"[bg{idx}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=24:2,eq=brightness=-0.08[bgb{idx}];"
             f"[fg{idx}]scale={W}:-2[fgs{idx}];"
             f"[bgb{idx}][fgs{idx}]overlay=(W-w)/2:(H-h)/2,trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
@@ -84,7 +88,7 @@ def _segment_filter(idx: int, seconds: float, crop_x: float, width: int, height:
     pan = drift * W * 0.06
     x = f"max(0,min(iw-ow,{crop_x:.3f}*iw-ow/2+({pan:.1f})*t/{dur:.3f}))"
     return (
-        f"[{idx}:v]fps={FPS},scale={int(W * 1.08)}:{int(H * 1.08)}:force_original_aspect_ratio=increase:"
+        f"{src},scale={int(W * 1.08)}:{int(H * 1.08)}:force_original_aspect_ratio=increase:"
         f"force_divisible_by=2:flags=lanczos,crop={W}:{H}:x='{x}':y='(ih-oh)/2',"
         f"trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
     )
@@ -137,11 +141,14 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         if start + b["seconds"] > b["end"] + 0.05:
             start = max(b["start"], b["end"] - b["seconds"])
         offsets[b["scene_id"]] = off + b["seconds"]
-        inputs += ["-ss", f"{start:.3f}", "-t", f"{b['seconds'] + 0.2:.3f}", "-i", b["path"]]
+        # Never read past the scene's end: that is a cut to another shot (or a title card).
+        avail = max(b["end"] - start, 0.1)
+        hold = b["seconds"] + 0.2 - avail if avail < b["seconds"] + 0.2 else 0.0
+        inputs += ["-ss", f"{start:.3f}", "-t", f"{min(b['seconds'] + 0.2, avail):.3f}", "-i", b["path"]]
         mode = choose_mode(b["width"] or W, b["height"] or H, b["crop_x"] if b["crop_x"] is not None else 0.5)
         drift = 1 if i % 2 == 0 else -1
         filters.append(_segment_filter(i, b["seconds"], b["crop_x"] if b["crop_x"] is not None else 0.5,
-                                       b["width"] or W, b["height"] or H, mode, drift))
+                                       b["width"] or W, b["height"] or H, mode, drift, hold))
 
     n = len(blocks)
     total = sum(b["seconds"] for b in blocks)
@@ -175,7 +182,9 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
 
     meta = metadata(conn, channel, short_id)
     (work / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    db.set_short(conn, short_id, status="rendered", video_path=str(out), duration=total,
+    # A re-render of an approved Short stays approved; everything else goes (back) to review.
+    current = conn.execute("SELECT status FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
+    db.set_short(conn, short_id, status="approved" if current == "approved" else "rendered", video_path=str(out), duration=total,
                  music=str(music) if music else None, description=meta["description"])
     return out
 
@@ -190,28 +199,52 @@ def _run_in(cwd: Path, args: list[str]) -> None:
         os.chdir(old)
 
 
+# Links in a Shorts description are not clickable, so sources are named, not linked.
+SOURCE_NAMES = [
+    ("jpl.nasa.gov", "NASA JPL"), ("svs.gsfc.nasa.gov", "NASA Scientific Visualization Studio"),
+    ("science.nasa.gov", "NASA Science"), ("images.nasa.gov", "NASA Image and Video Library"),
+    ("nasa.gov", "NASA"), ("esa.int", "ESA"), ("esahubble.org", "ESA/Hubble"),
+    ("esawebb.org", "ESA/Webb"), ("noaa.gov", "NOAA"),
+]
+
+
+def source_name(url: str) -> str:
+    host = urlsplit(url).hostname or url
+    host = host.lower().removeprefix("www.")
+    for domain, name in SOURCE_NAMES:
+        if host == domain or host.endswith("." + domain):
+            return name
+    return host
+
+
+def clean_text(text: str) -> str:
+    """YouTube rejects titles and descriptions containing < or >."""
+    return (text or "").replace("<", "").replace(">", "")
+
+
 def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int) -> dict:
     s = conn.execute("SELECT * FROM shorts WHERE id=?", (short_id,)).fetchone()
     assets = conn.execute(
-        """SELECT DISTINCT a.title, a.source, a.source_url, a.license, a.attribution FROM blocks b
+        """SELECT DISTINCT a.title, a.source, a.license, a.attribution FROM blocks b
              JOIN scenes sc ON sc.id = b.scene_id JOIN assets a ON a.id = sc.asset_id
             WHERE b.short_id = ? ORDER BY b.idx""", (short_id,)).fetchall()
-    sources = sorted({f["source_url"] for f in conn.execute(
+    sources = sorted({source_name(f["source_url"]) for f in conn.execute(
         "SELECT source_url FROM facts WHERE short_id=? AND source_url IS NOT NULL", (short_id,))})
     base = (s["description"] or "").split("\n\nFootage:")[0].strip()
     credit_lines = []
     for a in assets:
         who = a["attribution"] or ("NASA (public domain)" if a["source"] == "nasa" else a["source"].upper())
-        credit_lines.append(f"- {who}: {a['source_url']}")
-    parts = [base, "", "Footage:", *credit_lines]
+        credit_lines.append(f"- {who}: {a['title']}")
+    parts = [base, "", "Footage:", *dict.fromkeys(credit_lines)]
     if sources:
-        parts += ["", "Sources:", *[f"- {u}" for u in sources]]
+        parts += ["", "Sources: " + ", ".join(sources)]
     parts += ["", "NASA does not endorse this channel.", "", " ".join(channel.hashtags)]
     tags = json.loads(s["tags"] or "[]")
+    title = clean_text(s["title"]).strip() or clean_text(s["topic"] or s["hook"] or "").replace("*", "").strip()
     return {
-        "title": s["title"],
-        "description": "\n".join(parts).strip()[:4900],
-        "tags": tags,
+        "title": title[:100],
+        "description": clean_text("\n".join(parts).strip())[:4900],
+        "tags": [clean_text(t) for t in tags if clean_text(t).strip()],
         "categoryId": "28",  # Science & Technology
         "containsSyntheticMedia": bool(s["synthetic"]),
         "selfDeclaredMadeForKids": False,

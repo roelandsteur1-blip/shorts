@@ -132,7 +132,8 @@ def mark_duplicate(conn: sqlite3.Connection, asset_id: int, original_id: int, wh
     conn.commit()
 
 
-def reject_duplicate_scenes(conn: sqlite3.Connection, threshold: float = SCENE_SIMILARITY) -> int:
+def reject_duplicate_scenes(conn: sqlite3.Connection, threshold: float = SCENE_SIMILARITY,
+                            chunk: int = 1024) -> int:
     """Reject scenes that look the same as a scene from another (older) video. Scenes inside one
     video are left alone: consecutive chunks of a long shot are meant to look alike."""
     rows = conn.execute("""SELECT id, asset_id, embedding FROM scenes
@@ -142,12 +143,15 @@ def reject_duplicate_scenes(conn: sqlite3.Connection, threshold: float = SCENE_S
     mat = np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
     assets = np.array([r["asset_id"] for r in rows])
     keep = np.ones(len(rows), dtype=bool)
-    sims = mat @ mat.T
-    for i in range(len(rows)):
-        if not keep[i]:
-            continue
-        dup = (sims[i] >= threshold) & (assets != assets[i]) & (np.arange(len(rows)) > i) & keep
-        keep[dup] = False
+    idx = np.arange(len(rows))
+    # Similarities a chunk of rows at a time: a full N x N matrix would need ~10 GB at 50k scenes.
+    for c in range(0, len(rows), chunk):
+        sims = mat[c:c + chunk] @ mat.T
+        for i in range(c, min(c + chunk, len(rows))):
+            if not keep[i]:
+                continue
+            dup = (sims[i - c] >= threshold) & (assets != assets[i]) & (idx > i) & keep
+            keep[dup] = False
     rejected = [(int(rows[i]["id"]),) for i in np.where(~keep)[0]]
     conn.executemany("UPDATE scenes SET rejected=1, reject_reason='duplicate of another video' WHERE id=?",
                      rejected)

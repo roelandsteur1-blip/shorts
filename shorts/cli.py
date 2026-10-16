@@ -94,6 +94,11 @@ def main(argv: list[str] | None = None) -> int:
         ids = args.ids or [r[0] for r in conn.execute(
             "SELECT id FROM shorts WHERE channel=? AND status='rendered' ORDER BY id", (channel.id,))]
         for sid in ids:
+            row = conn.execute("SELECT status, youtube_id FROM shorts WHERE id=?", (sid,)).fetchone()
+            if row is None or row["youtube_id"] or row["status"] not in ("rendered", "approved", "failed"):
+                print(f"short {sid}: skipped (status {row['status'] if row else 'unknown'}; "
+                      "only Shorts that are not uploaded yet can be re-rendered)")
+                continue
             print(f"short {sid}: {render_short(conn, settings, channel, sid)}")
     elif args.cmd == "review":
         from .review import serve
