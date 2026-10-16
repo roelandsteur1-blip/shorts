@@ -105,3 +105,18 @@ def test_search_cache_follows_rejections(library, settings):
     library.execute("UPDATE scenes SET rejected=1 WHERE id=?", (first,))
     library.commit()
     assert first not in [s for s, _ in embed.search(library, settings, "saturn", k=100)]
+
+
+def test_remote_review_needs_password(settings):
+    from shorts.review import create_app, review_password
+    pw = review_password(settings)
+    assert pw == review_password(settings)  # made once, then reused
+    client = create_app(settings, password=pw).test_client()
+    assert client.get("/").status_code == 302
+    assert client.get("/video/1").headers["Location"].startswith("/login")
+    assert b"Wrong password" in client.post("/login", data={"password": "nope"}).data
+    r = client.post("/login?next=/short/1", data={"password": pw})
+    assert r.headers["Location"].endswith("/short/1")
+    assert client.get("/").status_code == 200
+    r = client.post("/login?next=//evil.example", data={"password": pw})
+    assert r.headers["Location"] == "/"

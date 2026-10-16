@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
 
     pr = sub.add_parser("review", help="6. open the review page")
     pr.add_argument("--port", type=int, default=5000)
+    pr.add_argument("--remote", action="store_true",
+                    help="reachable from your phone (wifi/Tailscale), behind a password")
 
     pu = sub.add_parser("upload", help="7. upload approved Shorts, scheduled with publishAt")
     pu.add_argument("--limit", type=int)
@@ -117,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"short {sid}: {render_short(conn, settings, channel, sid)}")
     elif args.cmd == "review":
         from .review import serve
-        serve(settings, args.port)
+        serve(settings, args.port, remote=args.remote)
     elif args.cmd == "upload":
         from .upload import upload_approved
         ids = upload_approved(conn, settings, channel, args.limit, schedule=not args.no_schedule)

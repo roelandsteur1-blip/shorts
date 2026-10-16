@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block body %}
+<h1>Shorts review</h1>
+<form method="post" class="card" style="max-width:360px">
+<label>Password<input type="password" name="password" autofocus autocomplete="current-password"></label>
+{% if error %}<p class="bad">{{ error }}</p>{% endif %}
+<p><button class="approve">Log in</button></p>
+</form>
+{% endblock %}
