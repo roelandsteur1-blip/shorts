@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import cv2
@@ -84,13 +86,14 @@ def reject_reason(score: dict) -> str | None:
     return None
 
 
-def process_asset(conn: sqlite3.Connection, settings: Settings, asset: sqlite3.Row) -> int:
-    path = asset["path"]
-    cuts = split_long(detect_cuts(path), asset["duration"] or 0)
+def analyse_video(asset_id: int, path: str, duration: float, kf_dir: str) -> list[dict]:
+    """Cut and score one video. Pure (no database), so it can run in a worker process."""
+    cv2.setNumThreads(1)  # parallelism comes from running several videos at once
+    cuts = split_long(detect_cuts(path), duration or 0)
     cap = cv2.VideoCapture(path)
-    kf_dir = settings.keyframe_dir / str(asset["id"])
-    kf_dir.mkdir(parents=True, exist_ok=True)
-    n = 0
+    out_dir = Path(kf_dir) / str(asset_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    found = []
     try:
         for start, end in cuts:
             times = np.linspace(start + 0.1, end - 0.1, SAMPLES)
@@ -98,36 +101,55 @@ def process_asset(conn: sqlite3.Connection, settings: Settings, asset: sqlite3.R
             if len(frames) < 2:
                 continue
             score = score_frames(frames)
-            kf = kf_dir / f"{start:08.2f}.jpg"
+            kf = out_dir / f"{start:08.2f}.jpg"
             cv2.imwrite(str(kf), frames[len(frames) // 2], [cv2.IMWRITE_JPEG_QUALITY, 88])
-            reason = reject_reason(score)
-            conn.execute(
-                """INSERT INTO scenes (asset_id, start, end, keyframe, motion, contrast, brightness,
-                                       text_like, crop_x, rejected, reject_reason)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                (asset["id"], start, end, str(kf), score["motion"], score["contrast"],
-                 score["brightness"], score["text_like"], score["crop_x"], int(reason is not None), reason),
-            )
-            n += 1
+            found.append({"start": start, "end": end, "keyframe": str(kf), **score,
+                          "reason": reject_reason(score)})
     finally:
         cap.release()
-    conn.execute("UPDATE assets SET status='scened' WHERE id=?", (asset["id"],))
+    return found
+
+
+def save_scenes(conn: sqlite3.Connection, asset_id: int, found: list[dict]) -> None:
+    conn.executemany(
+        """INSERT INTO scenes (asset_id, start, end, keyframe, motion, contrast, brightness,
+                               text_like, crop_x, rejected, reject_reason)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        [(asset_id, f["start"], f["end"], f["keyframe"], f["motion"], f["contrast"], f["brightness"],
+          f["text_like"], f["crop_x"], int(f["reason"] is not None), f["reason"]) for f in found],
+    )
+    conn.execute("UPDATE assets SET status='scened' WHERE id=?", (asset_id,))
     conn.commit()
-    return n
 
 
-def process_all(conn: sqlite3.Connection, settings: Settings) -> int:
-    rows = conn.execute("SELECT * FROM assets WHERE status='downloaded'").fetchall()
+def process_asset(conn: sqlite3.Connection, settings: Settings, asset: sqlite3.Row) -> int:
+    found = analyse_video(asset["id"], asset["path"], asset["duration"], str(settings.keyframe_dir))
+    save_scenes(conn, asset["id"], found)
+    return len(found)
+
+
+def process_all(conn: sqlite3.Connection, settings: Settings, workers: int | None = None) -> int:
+    """Analyse all downloaded videos in parallel (one per CPU core, minus one to keep the
+    laptop usable); only this process writes to the database."""
+    rows = [r for r in conn.execute("SELECT * FROM assets WHERE status='downloaded'").fetchall()
+            if r["path"] and Path(r["path"]).exists()]
+    if not rows:
+        return 0
+    workers = workers or max(1, (os.cpu_count() or 2) - 1)
     total = 0
-    for asset in rows:
-        if not asset["path"] or not Path(asset["path"]).exists():
-            continue
-        try:
-            n = process_asset(conn, settings, asset)
-            log.info("%s: %d scenes", asset["source_id"], n)
-            total += n
-        except Exception as e:  # noqa: BLE001
-            log.warning("scene detection failed for %s: %s", asset["source_id"], e)
-            conn.execute("UPDATE assets SET status='failed', error=? WHERE id=?", (str(e)[:500], asset["id"]))
-            conn.commit()
+    with ProcessPoolExecutor(max_workers=min(workers, len(rows))) as pool:
+        futures = {pool.submit(analyse_video, r["id"], r["path"], r["duration"],
+                               str(settings.keyframe_dir)): r for r in rows}
+        for done, fut in enumerate(as_completed(futures), 1):
+            asset = futures[fut]
+            try:
+                found = fut.result()
+                save_scenes(conn, asset["id"], found)
+                total += len(found)
+                log.info("[%d/%d] %s: %d scenes", done, len(rows), asset["source_id"], len(found))
+            except Exception as e:  # noqa: BLE001
+                log.warning("scene detection failed for %s: %s", asset["source_id"], e)
+                conn.execute("UPDATE assets SET status='failed', error=? WHERE id=?",
+                             (str(e)[:500], asset["id"]))
+                conn.commit()
     return total
