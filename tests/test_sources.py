@@ -376,10 +376,11 @@ def test_try_reports_failed_search(settings, monkeypatch, capsys):
 
 def test_commons_takes_1080p_transcode_of_4k_and_checks_duration():
     url = "https://upload.wikimedia.org/wikipedia/commons/3/37/NASA%E2%80%99s_Launch.webm"
-    assert commons.pick_url({"url": url, "height": 2160, "size": 3_177_877_106}) == (
+    tracked = url + "?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original"
+    assert commons.pick_url({"url": tracked, "height": 2160, "size": 3_177_877_106}) == (
         "https://upload.wikimedia.org/wikipedia/commons/transcoded/3/37/NASA%E2%80%99s_Launch.webm/"
         "NASA%E2%80%99s_Launch.webm.1080p.vp9.webm")
-    assert commons.pick_url({"url": url, "height": 1080, "size": 90_000_000}) == url
+    assert commons.pick_url({"url": tracked, "height": 1080, "size": 90_000_000}) == url
     item = sources.Item(source="commons", source_id="1", license_hint="Public domain",
                         extra={"duration": 6329.4})
     assert "out of range" in commons.rights(item).reject

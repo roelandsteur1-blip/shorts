@@ -55,7 +55,7 @@ def search(query: str, page: int = 1, session: requests.Session | None = None, k
 def pick_url(info: dict) -> str:
     """The original file, or Commons' own 1080p transcode when the original is over 1080p or too
     large to download (4K NASA uploads run to several GB)."""
-    url = info["url"]
+    url = info["url"].split("?", 1)[0]  # imageinfo adds ?utm_source=... tracking
     if int(info.get("height") or 0) <= 1080 and int(info.get("size") or 0) <= MAX_BYTES:
         return url
     m = re.match(r"(https://upload\.wikimedia\.org/wikipedia/commons)/(\w/\w\w/)([^/]+)$", url)

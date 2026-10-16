@@ -18,7 +18,9 @@ from . import Item, Rights, api_key, get
 
 log = logging.getLogger(__name__)
 
-UA = {"User-Agent": "shorts-pipeline/0.2 (personal project; public-domain footage for YouTube Shorts)"}
+# Wikimedia (and others) ask for a contact link in the User-Agent and rate-limit requests without one.
+UA = {"User-Agent": "shorts-pipeline/0.2 (https://github.com/roelandsteur1-blip/shorts; "
+                    "personal project; public-domain footage for YouTube Shorts)"}
 MAX_BYTES = 2_500_000_000
 MIN_SECONDS = 4
 MAX_SECONDS = 40 * 60
