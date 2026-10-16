@@ -9,8 +9,10 @@ same footage again under a new id (4K re-release, B-roll package, re-edit). Thre
 from __future__ import annotations
 
 import logging
+import os
 import re
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
@@ -157,12 +159,15 @@ def dedupe_library(conn: sqlite3.Connection) -> dict:
     """Backfill fingerprints for footage downloaded before this check existed and mark later
     copies (the oldest one stays). Removes the duplicate files' scenes from use."""
     out = {"fingerprinted": 0, "duplicate_videos": 0, "duplicate_scenes": 0}
-    for r in conn.execute("""SELECT id, path FROM assets WHERE fingerprint IS NULL AND path IS NOT NULL
-                              AND status NOT IN ('failed', 'duplicate') ORDER BY id""").fetchall():
-        fp = fingerprint(r["path"])
-        if fp:
-            conn.execute("UPDATE assets SET fingerprint=? WHERE id=?", (fp, r["id"]))
-            out["fingerprinted"] += 1
+    todo = conn.execute("""SELECT id, path FROM assets WHERE fingerprint IS NULL AND path IS NOT NULL
+                            AND status NOT IN ('failed', 'duplicate') ORDER BY id""").fetchall()
+    # OpenCV decodes outside the GIL, so threads use all cores; only this thread writes the DB.
+    workers = max(1, min(len(todo), (os.cpu_count() or 2) - 1))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for r, fp in zip(todo, pool.map(lambda r: fingerprint(r["path"]), todo)):
+            if fp:
+                conn.execute("UPDATE assets SET fingerprint=? WHERE id=?", (fp, r["id"]))
+                out["fingerprinted"] += 1
     conn.commit()
     # Shortest first: when a short B-roll cut is contained in a longer video, the longer one stays.
     rows = conn.execute("""SELECT id, title, date_created, fingerprint, duration FROM assets
