@@ -10,7 +10,13 @@
 {% if f.source_quote %}<br><span class="muted">“{{ f.source_quote }}”</span>{% endif %}
 {% if f.source_url %}<br><a href="{{ f.source_url }}" target="_blank" rel="noopener">source</a>{% endif %}</td></tr>{% endfor %}
 </table></div>
-<div class="card"><h3>Script</h3><ol>{% for b in blocks %}<li>{{ b.text }} <span class="muted">({{ b.seconds }}s · {{ b.visual }})</span></li>{% endfor %}</ol></div>
+<div class="card"><h3>Script{% if s.edited %} <span class="muted" style="font-size:13px">edited by hand</span>{% endif %}</h3>
+{% if s.youtube_id %}<ol>{% for b in blocks %}<li>{{ b.text }} <span class="muted">({{ b.seconds }}s · {{ b.visual }})</span></li>{% endfor %}</ol>
+{% else %}<form method="post" action="/short/{{ s.id }}/blocks">
+{% for b in blocks %}<label style="margin:4px 0"><span class="muted" style="font-size:12px">{{ loop.index }} · {{ b.seconds }}s · {{ b.visual }}</span>
+<input type="text" name="block_{{ b.idx }}" value="{{ b.text }}"></label>{% endfor %}
+<p class="muted" style="font-size:12px">*word* = highlighted. Keep blocks short (8 words); the fact check is not run again.</p>
+<button>Save text and re-render</button></form>{% endif %}</div>
 <div class="card"><h3>Footage</h3>{% for a in assets %}<p><a href="{{ a.source_url }}" target="_blank" rel="noopener">{{ a.title }}</a> <span class="muted">· {{ a.license }} · {{ a.credit }}</span>{% if a.needs_check %} <span class="bad">rights check needed</span>{% endif %}</p>{% endfor %}</div>
 <form method="post" class="card" action="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">
 <label>Title<input type="text" name="title" value="{{ s.title }}" maxlength="100"></label>

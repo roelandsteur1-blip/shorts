@@ -118,6 +118,29 @@ def next_slots(conn: sqlite3.Connection, channel: Channel, n: int,
     return slots
 
 
+def pacific_midnight(now: datetime | None = None) -> datetime:
+    """Start of today in US Pacific time, as UTC: the YouTube API quota resets then. DST rule
+    inline (second Sunday of March to first Sunday of November), so no tz database is needed."""
+    now = now or datetime.now(timezone.utc)
+
+    def nth_sunday(year: int, month: int, n: int) -> datetime:
+        d = datetime(year, month, 1, tzinfo=timezone.utc)
+        d += timedelta(days=(6 - d.weekday()) % 7 + 7 * (n - 1))
+        return d
+
+    y = now.year
+    dst = nth_sunday(y, 3, 2) + timedelta(hours=10) <= now < nth_sunday(y, 11, 1) + timedelta(hours=9)
+    offset = timedelta(hours=-7 if dst else -8)
+    local = now + offset
+    return datetime(local.year, local.month, local.day, tzinfo=timezone.utc) - offset
+
+
+def uploads_today(conn: sqlite3.Connection, now: datetime | None = None) -> int:
+    """Uploads since the quota reset, all channels together (they share one Google Cloud project)."""
+    return conn.execute("SELECT COUNT(*) FROM shorts WHERE uploaded_at >= ?",
+                        (iso(pacific_midnight(now)),)).fetchone()[0]
+
+
 def iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -151,6 +174,11 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
                         (channel.id,)).fetchall()
     if limit is not None:
         rows = rows[:limit]
+    left = settings.upload_quota - uploads_today(conn)
+    if len(rows) > left:
+        log.warning("daily upload quota: %d of %d used today (all channels); uploading %d of %d now, "
+                    "the rest tomorrow", settings.upload_quota - left, settings.upload_quota, max(left, 0), len(rows))
+        rows = rows[:max(left, 0)]
     if not rows:
         return []
     yt = youtube(settings, channel)
@@ -168,7 +196,7 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
             _, response = request.next_chunk()
         vid = response["id"]
         db.set_short(conn, s["id"], status="scheduled" if slot else "uploaded", youtube_id=vid,
-                     publish_at=iso(slot) if slot else None)
+                     publish_at=iso(slot) if slot else None, uploaded_at=iso(datetime.now(timezone.utc)))
         log.info("uploaded short %s as https://youtu.be/%s (publish %s)", s["id"], vid, iso(slot) if slot else "private")
         done.append(vid)
     return done

@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% block title %}Schedule{% endblock %}{% block body %}
+<h1>Schedule</h1>{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+<form method="get" style="max-width:300px"><select name="channel" onchange="this.form.submit()"><option value="">All channels</option>
+{% for ch in channels %}<option value="{{ ch.id }}" {{ 'selected' if ch.id == selected }}>{{ ch.name }}</option>{% endfor %}</select></form>
+<p>Uploads today: <b class="{{ 'warn' if used >= quota * 0.8 }}">{{ used }} of {{ quota }}</b>
+<span class="muted">(all channels share one Google Cloud project; resets at midnight US Pacific time)</span></p>
+{% for r in rows %}<div class="card">
+<h2 style="margin-top:0">{{ r.ch.name }} <span class="muted" style="font-size:14px">{{ r.ch.uploads_per_day }} a day at {{ r.ch.publish_times_utc|join(', ') }} UTC</span></h2>
+<h3>Approved, not scheduled yet ({{ r.approved|length }})</h3>
+{% if r.approved %}<table><tr><th>#</th><th>Title</th><th>Would publish at (UTC)</th></tr>
+{% for s, slot in r.approved %}<tr><td><a href="/short/{{ s.id }}">{{ s.id }}</a></td><td>{{ s.title }}</td><td>{{ slot.replace('T', ' ')[:16] }}</td></tr>{% endfor %}</table>
+<form method="post" action="/jobs/start" style="margin-top:8px"><input type="hidden" name="command" value="upload"><input type="hidden" name="channel" value="{{ r.ch.id }}">
+<button class="primary">Schedule approved now</button> <span class="muted">uploads them as private with these publish times; YouTube publishes them, the laptop can be off</span></form>
+{% else %}<p class="muted">Nothing approved. <a href="/review?channel={{ r.ch.id }}">Review</a></p>{% endif %}
+<h3>Scheduled</h3>
+{% for day, shorts in r.days %}<p style="margin-bottom:2px"><b>{{ day }}</b></p>
+{% for s in shorts %}<p style="margin:0 0 0 14px">{{ s.publish_at[11:16] }} UTC · <a href="/short/{{ s.id }}">{{ s.title }}</a> · <a href="https://youtu.be/{{ s.youtube_id }}" target="_blank" rel="noopener">youtu.be/{{ s.youtube_id }}</a></p>{% endfor %}
+{% else %}<p class="muted">Nothing scheduled.</p>{% endfor %}
+{% if r.published %}<h3>Published / uploaded</h3>
+{% for s in r.published %}<p style="margin:0">{{ (s.publish_at or s.uploaded_at or '')[:16].replace('T', ' ') }} · <a href="https://youtu.be/{{ s.youtube_id }}" target="_blank" rel="noopener">{{ s.title }}</a>{% if s.status == 'uploaded' %} <span class="muted">(private, no publish time)</span>{% endif %}</p>{% endfor %}{% endif %}
+</div>{% endfor %}
+<div class="card"><h3 style="margin-top:0">Daily auto-run</h3>
+<p class="muted">Every day: make Shorts for each channel with auto-run on and schedule the ones you approved.
+Nothing is published without your approval. Channels with auto-run on: {{ daily.channels|join(', ') or 'none' }}.</p>
+<p>Windows task: {% if daily.task is none %}<span class="muted">can't check here ({{ daily.note }})</span>{% elif daily.task %}<span class="ok">on</span> ({{ daily.time }}){% else %}<span class="muted">off</span>{% endif %}</p>
+<form method="post" action="/schedule/daily" class="inline"><label style="display:inline">Time <input type="text" name="time" value="{{ daily.time or '09:00' }}" style="width:80px"></label>
+<button name="on" value="1" class="primary">{{ 'Update' if daily.task else 'Turn on' }}</button>{% if daily.task %} <button name="on" value="0">Turn off</button>{% endif %}</form>
+</div>
+{% endblock %}

@@ -77,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     pcn.add_argument("--fresh", action="store_true", help="forget the saved login first (other account)")
 
     sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
+    sub.add_parser("daily", help="make + schedule for every channel with auto_run = true (run by the daily task)")
     sub.add_parser("status", help="show counts per step")
 
     args = p.parse_args(argv)
@@ -177,6 +178,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"logged in: YouTube channel '{found['title']}' ({found['id']})")
         if channel.youtube_channel_id and channel.youtube_channel_id != found["id"]:
             print(f"!! this is not the channel confirmed for '{channel.id}' ({channel.youtube_channel_id})")
+    elif args.cmd == "daily":
+        logs = settings.data_dir / "logs"  # the daily task has no terminal: keep a log
+        logs.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(logs / "daily.log", encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logging.getLogger().addHandler(handler)
+        from .daily import run
+        for cid, what in run(conn, settings).items():
+            print(f"{cid}: {what}")
     elif args.cmd == "stats":
         from .upload import fetch_stats
         print(f"stats for {fetch_stats(conn, settings, channel)} Shorts")

@@ -191,3 +191,28 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
             except (ValueError, TypeError, AttributeError) as e:
                 log.warning("skipping a script: %s", e)
     return created
+
+
+def edit_blocks(conn: sqlite3.Connection, channel: Channel, short_id: int, texts: dict[int, str]) -> bool:
+    """Change on-screen text by hand (review page). Reading time follows the new text, the Short
+    keeps its minimum length, and the footage stays. Returns True when something changed; the
+    caller re-renders."""
+    blocks = [dict(r) for r in conn.execute("SELECT * FROM blocks WHERE short_id=? ORDER BY idx", (short_id,))]
+    changed = False
+    for b in blocks:
+        new = " ".join((texts.get(b["idx"]) or "").split())
+        if new and new != b["text"]:
+            b["text"], changed = new, True
+            b["seconds"] = block_seconds(new) + (0.6 if b is blocks[-1] else 0)
+    if not changed:
+        return False
+    total = sum(b["seconds"] for b in blocks)
+    if total < channel.min_seconds:
+        for b in blocks:
+            b["seconds"] = round(b["seconds"] * channel.min_seconds / total, 2)
+    conn.executemany("UPDATE blocks SET text=?, seconds=? WHERE id=?",
+                     [(b["text"], round(b["seconds"], 2), b["id"]) for b in blocks])
+    conn.execute("""UPDATE shorts SET hook=?, duration=?, edited=1, updated_at=datetime('now') WHERE id=?""",
+                 (blocks[0]["text"], sum(b["seconds"] for b in blocks), short_id))
+    conn.commit()
+    return True

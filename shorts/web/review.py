@@ -5,8 +5,9 @@ import json
 
 from flask import Blueprint, abort, redirect, render_template, request, send_file, url_for
 
-from .. import db
-from .common import channels, conn
+from .. import db, script
+from .common import channel_or_404, channels, conn
+from .jobs import start_job
 
 bp = Blueprint("review", __name__)
 
@@ -87,3 +88,17 @@ def decide(sid: int):
     nxt = _next_id("rendered", sid, channel)
     return redirect(url_for("review.short", sid=nxt, channel=channel) if nxt
                     else url_for("review.index", channel=channel))
+
+
+@bp.post("/short/<int:sid>/blocks")
+def edit_blocks(sid: int):
+    """Fix a text block and re-render, instead of rejecting the Short for one wrong word."""
+    s = conn().execute("SELECT * FROM shorts WHERE id=?", (sid,)).fetchone()
+    if not s:
+        abort(404)
+    if s["youtube_id"]:
+        abort(400, "already uploaded: change it in YouTube Studio")
+    texts = {int(k.removeprefix("block_")): v for k, v in request.form.items() if k.startswith("block_")}
+    if not script.edit_blocks(conn(), channel_or_404(s["channel"]), sid, texts):
+        return redirect(url_for("review.short", sid=sid))
+    return start_job(s["channel"], ["rerender", str(sid)], f"Re-render #{sid} after text edit")

@@ -164,6 +164,8 @@ def connect(path: Path | str) -> sqlite3.Connection:
 ADDED_COLUMNS = [
     ("assets", "fingerprint", "BLOB"),
     ("scenes", "sorted", "INTEGER NOT NULL DEFAULT 0"),  # 1 = categorize has looked at it
+    ("shorts", "uploaded_at", "TEXT"),                     # for the shared daily upload quota
+    ("shorts", "edited", "INTEGER NOT NULL DEFAULT 0"),    # text changed by hand in review
 ]
 
 

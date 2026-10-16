@@ -27,3 +27,6 @@ clip_pretrained = "laion2b_s34b_b79k"
 
 # Default channel used when --channel is not given.
 default_channel = "space"
+
+# YouTube uploads per day for the Google Cloud project; all channels share it.
+upload_quota = 100

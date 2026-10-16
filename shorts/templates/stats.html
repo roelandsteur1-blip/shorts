@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% block title %}Stats{% endblock %}{% block body %}
+<h1>Stats</h1>
+<form method="get" style="max-width:300px"><input type="hidden" name="sort" value="{{ sort }}"><select name="channel" onchange="this.form.submit()"><option value="">All channels</option>
+{% for ch in channels %}<option value="{{ ch.id }}" {{ 'selected' if ch.id == selected }}>{{ ch.name }}</option>{% endfor %}</select></form>
+<p>{% for ch in channels %}<form method="post" action="/jobs/start" class="inline"><input type="hidden" name="command" value="stats"><input type="hidden" name="channel" value="{{ ch.id }}"><button>Fetch stats: {{ ch.name }}</button></form> {% endfor %}</p>
+{% if not rows %}<p class="muted">No stats yet: they come in after Shorts are published (press Fetch stats, or run <code>python -m shorts stats</code>).</p>{% endif %}
+{% if totals %}<div class="cards">{% for t in totals %}<div class="card"><h3 style="margin-top:0">{{ t.channel }}</h3>
+<span class="stat"><b>{{ t.shorts }}</b>Shorts</span><span class="stat"><b>{{ '{:,}'.format(t.views or 0) }}</b>views</span>
+<span class="stat"><b>{{ '%.0f'|format((t.engaged or 0) * 100) }}%</b>engaged</span><span class="stat"><b>{{ '%.0f'|format(t.pct or 0) }}%</b>avg viewed</span>
+<span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span></div>{% endfor %}</div>
+<h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>
+{% for f in by_format %}<tr><td>{{ f.channel }}</td><td>{{ f.format_id }}</td><td>{{ f.shorts }}</td><td>{{ '%.0f'|format(f.views or 0) }}</td><td>{{ '%.0f'|format(f.pct or 0) }}%</td></tr>{% endfor %}</table>{% endif %}
+{% if rows %}<h3>Per Short</h3>
+<p class="muted">Sort: {% for k in ['views', 'retention', 'engaged', 'newest'] %}<a href="?sort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == sort }}">{{ k }}</a> {% endfor %}
+· engaged = engaged views / views, the closest public signal to "viewed vs swiped away"</p>
+<table><tr><th>#</th><th>Title</th><th>Published</th><th>Views</th><th>Engaged</th><th>Avg viewed</th><th>Likes</th><th>Subs</th></tr>
+{% for r in rows %}<tr><td><a href="/short/{{ r.id }}">{{ r.id }}</a></td><td><a href="https://youtu.be/{{ r.youtube_id }}" target="_blank" rel="noopener">{{ r.title }}</a></td>
+<td class="muted">{{ (r.publish_at or '')[:10] }}</td><td>{{ '{:,}'.format(r.views or 0) }}</td>
+<td>{{ '%.0f'|format(100 * (r.engaged_views or 0) / r.views) if r.views else '–' }}%</td><td>{{ '%.0f'|format(r.avg_view_pct or 0) }}%</td>
+<td>{{ r.likes or 0 }}</td><td>{{ r.subs_gained or 0 }}</td></tr>{% endfor %}</table>{% endif %}
+{% endblock %}

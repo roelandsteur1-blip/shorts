@@ -28,6 +28,7 @@ class Settings:
     min_free_gb: float = 20.0         # downloads stop when the footage drive has less free space than this
     restock_below: int = 15           # 'make' downloads more footage when fewer unused hero videos are left
     restock_per_term: int = 2         # videos per search term in one automatic restock
+    upload_quota: int = 100           # uploads per day for the Google Cloud project (all channels)
     config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR
 
     @property
