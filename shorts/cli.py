@@ -220,10 +220,18 @@ def _sources(conn, settings, try_source) -> int:
         mod = sources.get(name)
         s = requests.Session()
         key = sources.api_key(settings, name)
-        items = mod.search(query, page=1, session=s, key=key)
+        try:
+            items = mod.search(query, page=1, session=s, key=key)
+        except (requests.RequestException, ValueError) as e:
+            print(f"search on {mod.LABEL} failed: {e}")
+            return 1
         print(f"{len(items)} results for '{query}' on {mod.LABEL} (nothing is downloaded)")
         for item in items[:15]:
-            item, r = check(item, s, key)
+            try:
+                item, r = check(item, s, key)
+            except (requests.RequestException, ValueError) as e:
+                print(f"- {item.title[:70]!r} [{item.source_id}]\n    details failed: {e}")
+                continue
             verdict = f"REJECT {r.reject}" if r.reject else f"OK {r.license}" + (" (rights check)" if r.needs_check else "")
             print(f"- {item.title[:70]!r} [{item.source_id}]\n    {verdict}"
                   + (f"\n    credit: {r.attribution}" if r.attribution else "")

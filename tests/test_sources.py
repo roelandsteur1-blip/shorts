@@ -347,3 +347,54 @@ def test_import_page(settings, conn):
     assert json.loads(job["command"]) == ["import", "--source", "vidsplay", "--license", "Vidsplay License",
                                           "--credit", "Vidsplay.com"]
     assert client.post("/sources/nasa/import").status_code == 404
+
+
+def test_internet_archive_skips_files_listed_too_long_or_large():
+    ok = {"name": "launch.mp4", "size": "50000000", "length": "02:10", "height": "720"}
+    long_ = {"name": "news.mp4", "size": "900000000", "length": "6329.2", "height": "1080"}
+    huge = {"name": "raw.mov", "size": str(common.MAX_BYTES + 1)}
+    assert internet_archive.seconds("1:02:03") == 3723
+    assert internet_archive.pick_file([ok, long_, huge]) == "launch.mp4"
+    with pytest.raises(ValueError, match="out of range"):
+        internet_archive.pick_file([long_])
+    with pytest.raises(ValueError, match="too large"):
+        internet_archive.pick_file([huge])
+    assert internet_archive.pick_file([{"name": "notes.txt"}]) is None
+
+
+def test_try_reports_failed_search(settings, monkeypatch, capsys):
+    import requests
+
+    from shorts import cli
+
+    def refuse(*a, **k):
+        raise requests.HTTPError("403 Client Error: Forbidden")
+    monkeypatch.setattr(loc, "search", refuse)
+    assert cli._sources(None, settings, ("loc", "rocket")) == 1
+    assert "search on Library of Congress failed: 403" in capsys.readouterr().out
+
+
+def test_commons_takes_1080p_transcode_of_4k_and_checks_duration():
+    url = "https://upload.wikimedia.org/wikipedia/commons/3/37/NASA%E2%80%99s_Launch.webm"
+    assert commons.pick_url({"url": url, "height": 2160, "size": 3_177_877_106}) == (
+        "https://upload.wikimedia.org/wikipedia/commons/transcoded/3/37/NASA%E2%80%99s_Launch.webm/"
+        "NASA%E2%80%99s_Launch.webm.1080p.vp9.webm")
+    assert commons.pick_url({"url": url, "height": 1080, "size": 90_000_000}) == url
+    item = sources.Item(source="commons", source_id="1", license_hint="Public domain",
+                        extra={"duration": 6329.4})
+    assert "out of range" in commons.rights(item).reject
+    item.extra["duration"] = 95.0
+    assert commons.rights(item).license == "public-domain"
+
+
+def test_loc_cloudflare_block_is_explained():
+    class Blocked:
+        status_code = 403
+        headers = {"server": "cloudflare"}
+
+    class S:
+        def get(self, *a, **k):
+            return Blocked()
+    with pytest.raises(ValueError, match="Cloudflare"):
+        loc.search("rocket", session=S())
+    assert "loc" in sources.OFF_BY_DEFAULT

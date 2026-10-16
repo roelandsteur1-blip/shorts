@@ -12,7 +12,7 @@ from urllib.parse import quote
 import requests
 
 from . import Item, Rights, as_list, cc_by_attribution, license_from_url, strip_html
-from .common import MAX_BYTES, UA
+from .common import MAX_BYTES, MAX_SECONDS, MIN_SECONDS, UA
 
 NAME = "internet_archive"
 LABEL = "Internet Archive"
@@ -60,18 +60,39 @@ def rights(item: Item) -> Rights:
     return cc_by_attribution(r, item.creator, "Internet Archive")
 
 
+def seconds(length) -> float | None:
+    """A file's 'length' as the archive gives it: seconds ("6329.2") or "h:mm:ss" / "mm:ss"."""
+    try:
+        parts = [float(x) for x in str(length).split(":")]
+    except ValueError:
+        return None
+    total = 0.0
+    for x in parts:
+        total = total * 60 + x
+    return total if parts else None
+
+
 def pick_file(files: list[dict]) -> str | None:
-    """Best video file of an item: mp4 first (no re-encode), then the largest that fits."""
-    videos = []
+    """Best video file of an item: mp4 first (no re-encode), then the largest that fits.
+    Files the archive lists as too long, too short or too large are skipped, so they are never
+    downloaded only to be thrown away. Raises ValueError when that leaves nothing."""
+    videos, why = [], None
     for f in files:
         name = f.get("name") or ""
         if PurePosixPath(name.lower()).suffix not in VIDEO_EXT:
             continue
         size = int(f.get("size") or 0)
         if size > MAX_BYTES:
+            why = f"file too large ({size / 1e9:.1f} GB)"
+            continue
+        length = seconds(f.get("length")) if f.get("length") else None
+        if length is not None and not MIN_SECONDS <= length <= MAX_SECONDS:
+            why = f"duration {length:.0f}s out of range"
             continue
         videos.append((name.lower().endswith(".mp4"), int(f.get("height") or 0), size, name))
     if not videos:
+        if why:
+            raise ValueError(why)
         return None
     return max(videos)[3]
 

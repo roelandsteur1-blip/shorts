@@ -1,6 +1,9 @@
 """Library of Congress film and video (Free to Use and Reuse sets, Paper Print films 1894-1915,
 National Film Registry public-domain titles). JSON API, no key: add ?fo=json to any loc.gov page.
 
+Off by default: in October 2026 loc.gov answered every scripted request with a Cloudflare
+challenge (403 "Just a moment..."), whatever the User-Agent. Turn it on to see if that has changed.
+
 Only items the Library marks as free to use / no known restrictions / public domain are used.
 """
 from __future__ import annotations
@@ -14,7 +17,7 @@ from .common import UA
 
 NAME = "loc"
 LABEL = "Library of Congress"
-LICENSE = "public domain / no known restrictions only"
+LICENSE = "public domain / no known restrictions only (off: loc.gov blocks scripted requests)"
 NEEDS_KEY = False
 HERO_OK = True
 MIN_HEIGHT = 360  # lots of silent, low-resolution film
@@ -25,10 +28,16 @@ RESTRICTED = re.compile(r"rights? (are )?restricted|copyright(ed)? (by|holder)|p
                         r"in copyright|may be protected", re.I)
 
 
+def _blocked(r: requests.Response) -> None:
+    if r.status_code == 403 and "cloudflare" in r.headers.get("server", "").lower():
+        raise ValueError("loc.gov blocks scripted requests (Cloudflare check); nothing to do from here")
+
+
 def search(query: str, page: int = 1, session: requests.Session | None = None, key: str | None = None) -> list[Item]:
     s = session or requests.Session()
     r = s.get(SEARCH, params={"q": query, "fo": "json", "c": 50, "sp": page,
                               "fa": "online-format:video"}, headers=UA, timeout=60)
+    _blocked(r)
     r.raise_for_status()
     items = []
     for d in r.json().get("results", []):
@@ -51,6 +60,7 @@ def enrich(item: Item, session: requests.Session | None = None, key: str | None 
     """The item page has the rights statement and the video files."""
     s = session or requests.Session()
     r = s.get(f"https://www.loc.gov/item/{item.source_id}/", params={"fo": "json"}, headers=UA, timeout=60)
+    _blocked(r)
     r.raise_for_status()
     data = r.json()
     it = data.get("item") or {}

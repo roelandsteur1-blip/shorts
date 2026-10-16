@@ -84,7 +84,7 @@ def search(query: str, page: int = 1, session: requests.Session | None = None, k
             params = {"verb": "ListRecords", "resumptionToken": tokens[feed_page]}
         else:
             break
-        r = s.get(OAI, params=params, headers=UA, timeout=60)
+        r = s.get(OAI, params=params, headers=UA, timeout=180)  # ~12 s per feed page, sometimes far more
         r.raise_for_status()
         records, token = parse(r.content)
         if token:

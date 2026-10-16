@@ -26,7 +26,7 @@ from ..config import Settings
 ORDER = ["nasa", "internet_archive", "prelinger", "loc", "commons", "europeana", "openbeelden",
          "pexels", "pixabay", "coverr", "mixkit", "dareful", "vidsplay"]
 FOLDER_SOURCES = {"mixkit", "dareful", "vidsplay"}
-OFF_BY_DEFAULT = {"coverr"}  # its terms ban AI use of the videos; skip until CLIP search is cleared
+OFF_BY_DEFAULT = {"coverr", "loc"}  # coverr: its terms ban AI use; loc: Cloudflare blocks scripted requests
 
 
 @dataclass
