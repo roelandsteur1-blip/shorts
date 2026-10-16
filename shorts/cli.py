@@ -33,6 +33,9 @@ def main(argv: list[str] | None = None) -> int:
     pm.add_argument("-n", "--count", type=int, default=5)
     pm.add_argument("--format", dest="format_id")
 
+    prr = sub.add_parser("rerender", help="render Shorts again (e.g. after adding music); keeps script and footage")
+    prr.add_argument("ids", nargs="*", type=int, help="short ids; default: all waiting for review")
+
     sub.add_parser("finish", help="4-5. resume fact check/render for Shorts that stopped halfway")
 
     pr = sub.add_parser("review", help="6. open the review page")
@@ -79,6 +82,12 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "finish":
         from .pipeline import finish
         finish(conn, settings, channel)
+    elif args.cmd == "rerender":
+        from .render import render_short
+        ids = args.ids or [r[0] for r in conn.execute(
+            "SELECT id FROM shorts WHERE channel=? AND status='rendered' ORDER BY id", (channel.id,))]
+        for sid in ids:
+            print(f"short {sid}: {render_short(conn, settings, channel, sid)}")
     elif args.cmd == "review":
         from .review import serve
         serve(settings, args.port)
