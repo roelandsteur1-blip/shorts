@@ -5,6 +5,7 @@ One heavy job at a time (GPU, CPU encoding and the Claude limit are shared); the
 Light jobs (logging in to YouTube) start right away."""
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
@@ -89,10 +90,34 @@ class Runner:
         if self._thread is None:
             self._thread = threading.Thread(target=self._loop, name="jobs", daemon=True)
             self._thread.start()
+            atexit.register(self.shutdown)
+
+    def shutdown(self) -> None:
+        """Dashboard closing: end running jobs too, so none keeps going unseen (it shows as
+        'interrupted' with a Finish / Run again button next time)."""
+        with self.lock:
+            procs = list(self.procs.items())
+            self.procs.clear()
+        if not procs:
+            return
+        for _, (proc, _) in procs:
+            kill_tree(proc)
+        conn = db.connect(self.settings.db_path)
+        conn.executemany("UPDATE jobs SET status='interrupted', finished_at=datetime('now') WHERE id=?",
+                         [(job_id,) for job_id, _ in procs])
+        conn.commit()
+        conn.close()
 
     def _loop(self) -> None:
         conn = db.connect(self.settings.db_path)
         recover(conn)
+        # Footage from one-subject sources (NASA) gets its category right away, so the home page
+        # counts are right before the first 'make' with this version.
+        from .categorize import sort_pending
+        try:
+            sort_pending(conn, self.settings, fixed_only=True)
+        except Exception:  # noqa: BLE001
+            log.exception("sorting footage")
         while True:
             try:
                 self.tick(conn)

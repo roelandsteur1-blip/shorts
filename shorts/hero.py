@@ -24,7 +24,8 @@ def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: in
     cond, args = scene_filter(categories)
     stock = sources.stock_sources()
     rows = conn.execute(
-        f"""SELECT sc.id, sc.asset_id, sc.motion, sc.contrast, sc.start, sc.end, sc.embedding
+        f"""SELECT sc.id, sc.asset_id, sc.motion, sc.contrast, sc.start, sc.end,
+                   {"sc.embedding" if use_clip else "NULL AS embedding"}
               FROM scenes sc JOIN assets a ON a.id = sc.asset_id
              WHERE sc.rejected = 0 AND a.needs_check = 0 AND (sc.end - sc.start) >= ?
                AND a.source NOT IN ({",".join("?" * len(stock))}) AND {cond}""",

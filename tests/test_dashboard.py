@@ -101,3 +101,13 @@ def test_dashboard_listens_on_localhost_only(settings, monkeypatch):
     monkeypatch.setattr(jobs.Runner, "start", lambda self: None)
     web.serve(settings, 5001)
     assert seen["host"] == "127.0.0.1"
+
+
+def test_shutdown_interrupts_running_jobs(conn, settings):
+    runner = jobs.Runner(settings, command=fake_command("import time; time.sleep(30)"))
+    a = jobs.submit(conn, "space", ["make", "-n", "1"])
+    runner.tick(conn)
+    proc = runner.procs[a][0]
+    runner.shutdown()
+    assert proc.wait(timeout=10) is not None
+    assert conn.execute("SELECT status FROM jobs WHERE id=?", (a,)).fetchone()[0] == "interrupted"

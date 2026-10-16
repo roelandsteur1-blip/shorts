@@ -148,7 +148,7 @@ def ingest(conn: sqlite3.Connection, settings: Settings, source: str, queries: l
                 return total
             try:
                 items = mod.search(term, page=page, session=s, key=key)
-            except requests.RequestException as e:
+            except (requests.RequestException, ValueError) as e:  # ValueError: missing key, bad reply
                 log.warning("[%s] search '%s' failed: %s", source, term, e)
                 break
             if not items:

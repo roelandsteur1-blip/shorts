@@ -202,8 +202,10 @@ def _store(conn: sqlite3.Connection, scene_id: int, found: dict) -> None:
     conn.execute("UPDATE scenes SET sorted = 1 WHERE id = ?", (scene_id,))
 
 
-def sort_pending(conn: sqlite3.Connection, settings: Settings, use_claude: bool = True) -> dict:
-    """Sort every usable scene that hasn't been sorted yet. Returns counts per method."""
+def sort_pending(conn: sqlite3.Connection, settings: Settings, use_claude: bool = True,
+                 fixed_only: bool = False) -> dict:
+    """Sort every usable scene that hasn't been sorted yet. Returns counts per method.
+    fixed_only: only sources that are one subject (NASA); instant, no CLIP or Claude."""
     cats = load_categories(settings)
     counts: dict[str, int] = {}
     if not cats:
@@ -223,7 +225,7 @@ def sort_pending(conn: sqlite3.Connection, settings: Settings, use_claude: bool 
         elif r["embedding"] is not None:
             rest.append(r)
     conn.commit()
-    if not rest:
+    if not rest or fixed_only:
         _rollup(conn)
         return counts
 
