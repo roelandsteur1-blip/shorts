@@ -26,6 +26,11 @@ def main(argv: list[str] | None = None) -> int:
     pi.add_argument("--term", action="append", help="search term (repeatable); default: channel terms")
     pi.add_argument("--source", help="footage source (default: nasa); see 'python -m shorts sources'")
 
+    pim = sub.add_parser("import", help="1. import videos you downloaded into <data_dir>/import/<source>/")
+    pim.add_argument("--source", required=True, choices=["mixkit", "dareful", "vidsplay"])
+    pim.add_argument("--license", help="license of this batch (default: the source's own)")
+    pim.add_argument("--credit", help="credit line for the description (default: the source's own)")
+
     prs = sub.add_parser("restock", help="1. download footage for the channel's categories that run low")
     prs.add_argument("--force", action="store_true", help="also when nothing is running low")
 
@@ -93,6 +98,17 @@ def main(argv: list[str] | None = None) -> int:
         from .sources.common import ingest
         n = ingest(conn, settings, args.source or "nasa", args.term or channel.search_terms, per_term=args.per_term)
         print(f"downloaded {n} new videos")
+    elif args.cmd == "import":
+        from .categorize import sort_pending
+        from .embed import embed_pending
+        from .scenes import process_all
+        from .sources.folder import import_folder
+        n = import_folder(conn, settings, args.source, args.license, args.credit)
+        print(f"imported {n} videos from {settings.data_dir / 'import' / args.source}")
+        if n:
+            process_all(conn, settings)
+            embed_pending(conn, settings)
+            sort_pending(conn, settings)
     elif args.cmd == "restock":
         from .library import restock
         need = 10 ** 6 if args.force else 0

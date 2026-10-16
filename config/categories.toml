@@ -22,6 +22,8 @@ internet_archive = "subject:(space OR rocket OR astronaut OR nasa)"
 prelinger = "subject:(space OR rocket OR missile OR satellite)"
 loc = "space flight"
 commons = "rocket launch"
+openbeelden = "raket ruimtevaart maan"
+europeana = "space rocket"
 
 [[category]]
 id = "war"
@@ -36,6 +38,8 @@ internet_archive = "subject:(war OR military OR army OR navy)"
 prelinger = "subject:(war OR military OR army OR navy OR defense)"
 loc = "world war, 1939-1945"
 commons = "World War II film"
+openbeelden = "oorlog militairen"
+europeana = "war"
 
 [[category]]
 id = "history"
@@ -50,6 +54,8 @@ internet_archive = "subject:(history OR newsreel)"
 prelinger = "subject:(history OR newsreel OR americana)"
 loc = "newsreels"
 commons = "newsreel"
+openbeelden = "polygoon"
+europeana = "newsreel"
 
 [[category]]
 id = "aviation"
@@ -63,6 +69,8 @@ internet_archive = "subject:(aviation OR airplane OR aircraft)"
 prelinger = "subject:(aviation OR airplanes OR aircraft)"
 loc = "aeronautics"
 commons = "aircraft flight"
+openbeelden = "vliegtuig luchtvaart"
+europeana = "aviation"
 
 [[category]]
 id = "nature"
@@ -76,6 +84,8 @@ internet_archive = "subject:(nature OR wildlife OR animals)"
 prelinger = "subject:(nature OR animals OR wildlife)"
 loc = "animals"
 commons = "wildlife video"
+openbeelden = "natuur dieren"
+europeana = "nature animals"
 
 [[category]]
 id = "ocean"
@@ -89,6 +99,8 @@ internet_archive = "subject:(ocean OR underwater OR marine)"
 prelinger = "subject:(ocean OR sea OR navy OR ships)"
 loc = "ocean"
 commons = "underwater video"
+openbeelden = "zee schip"
+europeana = "sea"
 
 [[category]]
 id = "science"
@@ -103,6 +115,8 @@ internet_archive = "subject:(science OR technology OR educational)"
 prelinger = "subject:(science OR technology OR atomic OR industry)"
 loc = "science"
 commons = "science experiment"
+openbeelden = "wetenschap techniek"
+europeana = "science"
 
 [[category]]
 id = "cities"
@@ -115,6 +129,8 @@ internet_archive = "subject:(city OR cities OR architecture)"
 prelinger = "subject:(cities OR urban OR architecture)"
 loc = "city and town life"
 commons = "city timelapse"
+openbeelden = "stad Amsterdam Rotterdam"
+europeana = "city"
 
 [[category]]
 id = "transport"
@@ -127,6 +143,8 @@ internet_archive = "subject:(railroad OR trains OR automobiles OR transportation
 prelinger = "subject:(transportation OR automobiles OR railroads OR highways)"
 loc = "railroads"
 commons = "train video"
+openbeelden = "trein auto verkeer"
+europeana = "railway"
 
 [[category]]
 id = "sport"
@@ -139,6 +157,8 @@ internet_archive = "subject:(sports OR olympics)"
 prelinger = "subject:(sports OR recreation)"
 loc = "sports"
 commons = "sports video"
+openbeelden = "sport wedstrijd"
+europeana = "sport"
 
 [[category]]
 id = "everyday"
@@ -153,6 +173,8 @@ internet_archive = "subject:(americana OR family OR advertising)"
 prelinger = "subject:(americana OR family OR social guidance OR advertising)"
 loc = "everyday life"
 commons = "home movie"
+openbeelden = "gezin huishouden"
+europeana = "everyday life"
 
 [[category]]
 id = "disasters"
@@ -166,3 +188,5 @@ internet_archive = "subject:(disaster OR flood OR hurricane OR fire)"
 prelinger = "subject:(disasters OR floods OR fires OR weather)"
 loc = "natural disasters"
 commons = "storm video"
+openbeelden = "watersnood ramp brand"
+europeana = "flood"

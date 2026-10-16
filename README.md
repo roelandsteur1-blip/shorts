@@ -60,6 +60,10 @@ Naast NASA kan de pipeline beeld halen uit **Internet Archive**, **Prelinger Arc
 
 Gemengde archieven worden per **scène** in categorieën gesorteerd (`config/categories.toml`: ruimte, oorlog, geschiedenis, luchtvaart, natuur, oceaan, wetenschap, steden, vervoer, sport, dagelijks leven, rampen): eerst op de eigen metadata van het archief, dan met CLIP op de GPU, en alleen als die het oneens zijn of allebei twijfelen met één Claude-aanroep per 50 video's. Wat daarna nog twijfelt staat bij *Uncategorised* op de Library-pagina, om met één klik te sorteren.
 
+Met een gratis API-sleutel (in te vullen op de Sources-pagina) komen daar **Europeana**, **Pexels** en **Pixabay** bij, en zonder sleutel **Open Beelden** (Beeld en Geluid, alleen het publiek-domeindeel). Pexels, Pixabay en de importmappen zijn stock-beeld: wel tussen de tekstblokken, nooit als hero shot. **Coverr** staat uit (de licentie verbiedt AI-gebruik en onze zoeker gebruikt CLIP).
+
+Voor sites zonder API (**Mixkit**, **Dareful**, **Vidsplay**) download je de video's zelf naar `C:\shorts-data\import\<bron>\` en klik je op de Sources-pagina op *Import*: je geeft één keer de licentie en naamsvermelding voor de hele batch (voor Dareful staat "Joel Holland / Dareful (CC BY 4.0)" al ingevuld). Of: `python -m shorts import --source dareful`.
+
 Per kanaal in de TOML: `categories = ["space"]` en `sources = ["nasa"]`. Hero shots en beeld per tekstblok komen alleen uit scènes in de categorieën van het kanaal; `make` vult de categorieën bij die bijna op zijn, met de zoekhints van elke categorie per bron.
 
 | Commando | Wat het doet |
@@ -91,7 +95,7 @@ Instellingen wijzigen kan op dezelfde pagina; de oude TOML blijft bewaard als `.
 
 | Bestand | Stap |
 | :-- | :-- |
-| `shorts/sources/` | Beeldbronnen (NASA, Internet Archive, Prelinger, Library of Congress, Commons); `common.py` doet opslaan, rechtencheck, downloaden, geluid eraf, dubbele overslaan |
+| `shorts/sources/` | Beeldbronnen (NASA, Internet Archive, Prelinger, Library of Congress, Commons, Europeana, Open Beelden, Pexels, Pixabay, importmappen); `common.py` doet opslaan, rechtencheck, downloaden, geluid eraf, dubbele overslaan |
 | `shorts/categorize.py`, `config/categories.toml` | Scènes in categorieën sorteren (metadata, CLIP, Claude) |
 | `shorts/scenes.py` | Scènedetectie, scores (beweging, contrast, titelkaart), uitsnede |
 | `shorts/embed.py` | CLIP-embeddings en zoeken |

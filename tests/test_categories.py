@@ -217,3 +217,12 @@ def test_library_and_sources_pages(client, conn, settings, cfg, monkeypatch, tmp
 def test_space_channel_config():
     ch = load_channel("space")
     assert ch.categories == ["space"] and ch.sources == ["nasa"]
+
+
+def test_stock_footage_is_never_a_hero(conn, settings):
+    _, ids = add_video(conn, "pexels", "waves", [vec("ocean waves crashing")])
+    conn.execute("UPDATE scenes SET end = start + 6")
+    conn.commit()
+    assert ids[0] not in hero.candidates(conn, settings, "space", 10, use_clip=False)
+    _, own = add_video(conn, "prelinger", "waves film", [vec("ocean waves crashing")])
+    assert own[0] in hero.candidates(conn, settings, "space", 10, use_clip=False)

@@ -23,8 +23,9 @@ from types import ModuleType
 from ..config import Settings
 
 # Display order on the Sources page. Import-folder sources have no API (sources/folder.py).
-ORDER = ["nasa", "internet_archive", "prelinger", "loc", "commons"]
-FOLDER_SOURCES: set[str] = set()
+ORDER = ["nasa", "internet_archive", "prelinger", "loc", "commons", "europeana", "openbeelden",
+         "pexels", "pixabay", "coverr", "mixkit", "dareful", "vidsplay"]
+FOLDER_SOURCES = {"mixkit", "dareful", "vidsplay"}
 OFF_BY_DEFAULT = {"coverr"}  # its terms ban AI use of the videos; skip until CLIP search is cleared
 
 

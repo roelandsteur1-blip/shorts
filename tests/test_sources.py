@@ -220,3 +220,130 @@ def test_source_settings(settings):
     sources.set_api_key(settings, "pexels", "abc ")
     assert sources.api_key(settings, "pexels") == "abc"
     assert (settings.secrets_dir / "api_keys.json").exists()
+
+
+# ---------- phase 4: key-based sources and import folders ----------
+
+from shorts.sources import europeana, folder, openbeelden, pexels, pixabay  # noqa: E402
+
+EUROPEANA = {"items": [
+    {"id": "/2051906/data_film_1", "title": ["Zeppelin over Berlin"], "dcDescription": ["An airship."],
+     "rights": ["http://creativecommons.org/publicdomain/mark/1.0/"], "dataProvider": ["Filmarchiv"],
+     "edmIsShownBy": ["https://media.example.org/zeppelin.mp4"], "guid": "https://www.europeana.eu/item/2051906/data_film_1",
+     "edmConceptLabel": [{"def": "airship"}], "year": ["1931"]},
+    {"id": "/1/linkout", "title": ["Harbour"], "rights": ["http://creativecommons.org/publicdomain/zero/1.0/"],
+     "edmIsShownBy": ["https://archive.example.org/player?id=5"]},
+    {"id": "/1/sa", "title": ["Parade"], "rights": ["http://creativecommons.org/licenses/by-sa/4.0/"],
+     "edmIsShownBy": ["https://media.example.org/parade.mp4"]},
+]}
+
+OAI_PAGE1 = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords>
+<record><header><identifier>oai:openimages.eu:100</identifier></header><metadata>
+<oi:oi xmlns:oi="http://www.openbeelden.nl/oai/">
+<oi:title>Watersnood in Zeeland</oi:title><oi:subject>rampen</oi:subject><oi:description>Polygoon journaal over de ramp.</oi:description>
+<oi:date>1953-02-05</oi:date><oi:license>http://creativecommons.org/publicdomain/mark/1.0/</oi:license>
+<oi:attributionName>Polygoon</oi:attributionName><oi:attributionURL>https://www.openbeelden.nl/media/100</oi:attributionURL>
+<oi:medium format="ogv">https://www.openbeelden.nl/files/100.ogv</oi:medium>
+<oi:medium format="mp4">https://www.openbeelden.nl/files/100.mp4</oi:medium>
+</oi:oi></metadata></record>
+<record><header><identifier>oai:openimages.eu:101</identifier></header><metadata>
+<oi:oi xmlns:oi="http://www.openbeelden.nl/oai/"><oi:title>Kermis</oi:title>
+<oi:license>http://creativecommons.org/licenses/by-sa/3.0/nl/</oi:license>
+<oi:medium format="mp4">https://www.openbeelden.nl/files/101.mp4</oi:medium></oi:oi></metadata></record>
+<resumptionToken>tok2</resumptionToken>
+</ListRecords></OAI-PMH>"""
+
+OAI_PAGE2 = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords>
+<record><header><identifier>oai:openimages.eu:102</identifier></header><metadata>
+<oi:oi xmlns:oi="http://www.openbeelden.nl/oai/"><oi:title>Ramp in Limburg</oi:title>
+<oi:license>https://creativecommons.org/licenses/by/3.0/nl/</oi:license><oi:attributionName>Beeld en Geluid</oi:attributionName>
+<oi:medium format="mp4">https://www.openbeelden.nl/files/102.mp4</oi:medium></oi:oi></metadata></record>
+<resumptionToken></resumptionToken>
+</ListRecords></OAI-PMH>"""
+
+
+class XmlResponse(FakeResponse):
+    def __init__(self, xml):
+        super().__init__(content=xml)
+
+
+def test_europeana():
+    s = FakeSession({"api.europeana.eu": FakeResponse(EUROPEANA)})
+    with pytest.raises(ValueError):
+        europeana.search("zeppelin", session=s, key=None)
+    items = europeana.search("zeppelin", session=s, key="KEY")
+    params = s.calls[0][1]
+    assert params["reusability"] == "open" and params["qf"] == "TYPE:VIDEO" and params["wskey"] == "KEY"
+    r = {i.source_id: europeana.rights(i) for i in items}
+    assert r["2051906/data_film_1"].license == "public-domain"
+    assert items[0].keywords == ["airship"] and items[0].date_created == "1931"
+    assert "holding archive" in r["1/linkout"].reject
+    assert "share-alike" in r["1/sa"].reject
+
+
+def test_openbeelden_feed_pages_and_filter():
+    pages = iter([XmlResponse(OAI_PAGE1), XmlResponse(OAI_PAGE2)])
+    s = FakeSession({"openbeelden.nl/feeds/oai": lambda url, params: next(pages)})
+    items = openbeelden.search("ramp watersnood", session=s)
+    assert [i.source_id for i in items] == ["100", "102"]  # 'Kermis' doesn't match the words
+    assert s.calls[1][1] == {"verb": "ListRecords", "resumptionToken": "tok2"}
+    assert items[0].file_url.endswith("100.mp4") and items[0].source_url.endswith("/media/100")
+    assert openbeelden.rights(items[0]).license == "public-domain"
+    assert openbeelden.rights(items[1]).attribution == "Beeld en Geluid / Open Beelden (CC BY 3.0)"
+    rec, _ = openbeelden.parse(OAI_PAGE1)
+    assert "share-alike" in openbeelden.rights(openbeelden.to_item(rec[1])).reject
+
+
+def test_stock_sources():
+    s = FakeSession({"api.pexels.com": FakeResponse({"videos": [{
+        "id": 857195, "url": "https://www.pexels.com/video/waves-crashing-on-rocks-857195/", "user": {"name": "Ana"},
+        "video_files": [{"file_type": "video/mp4", "width": 1280, "height": 720, "link": "https://v.pexels.com/720.mp4"},
+                        {"file_type": "video/mp4", "width": 3840, "height": 2160, "link": "https://v.pexels.com/2160.mp4"},
+                        {"file_type": "video/mp4", "width": 7680, "height": 4320, "link": "https://v.pexels.com/8k.mp4"}]}]}),
+        "pixabay.com": FakeResponse({"hits": [{"id": 5, "pageURL": "https://pixabay.com/videos/id-5/", "tags": "ocean, waves, sea",
+                                               "user": "bob", "videos": {"large": {"url": ""}, "medium": {"url": "https://p/m.mp4"}}}]})})
+    p = pexels.search("waves", session=s, key="K")[0]
+    assert (p.title, p.file_url, pexels.rights(p).license) == ("Waves crashing on rocks", "https://v.pexels.com/2160.mp4", "Pexels License")
+    assert s.calls[0][0] == pexels.API
+    x = pixabay.search("waves", session=s, key="K")[0]
+    assert (x.title, x.file_url, x.keywords) == ("ocean, waves, sea", "https://p/m.mp4", ["ocean", "waves", "sea"])
+    assert set(sources.stock_sources()) == {"pexels", "pixabay", "coverr", "mixkit", "dareful", "vidsplay"}
+
+
+def test_coverr_off_by_default(settings):
+    ok, why = sources.usable(settings, "coverr")
+    assert not ok and "switched off" in why
+    assert sources.usable(settings, "pexels") == (False, "needs an API key (Sources page)")
+    assert sources.usable(settings, "mixkit")[1] == "no API: use the import folder"
+
+
+def test_import_folder(conn, settings, clip_bytes):
+    d = folder.folder(settings, "dareful")
+    d.mkdir(parents=True)
+    (d / "city_night_4k.mp4").write_bytes(clip_bytes)
+    (d / "notes.txt").write_text("not a video")
+    assert len(folder.waiting(settings, "dareful")) == 1
+    assert folder.import_folder(conn, settings, "dareful") == 1
+    a = conn.execute("SELECT * FROM assets").fetchone()
+    assert (a["source"], a["title"], a["license"], a["status"]) == ("dareful", "city night 4k", "CC BY 4.0", "downloaded")
+    assert a["attribution"] == "Joel Holland / Dareful (CC BY 4.0)"
+    assert not media.probe(a["path"])["has_audio"]
+    assert (d / "imported" / "city_night_4k.mp4").exists() and folder.waiting(settings, "dareful") == []
+    # The same file again is recognised (and the duplicate check would catch a re-encode).
+    (d / "again.mp4").write_bytes(clip_bytes)
+    assert folder.import_folder(conn, settings, "dareful", license="CC BY 4.0", credit="") == 0
+
+
+def test_import_page(settings, conn):
+    from shorts.web import create_app
+    client = create_app(settings, start_runner=False).test_client()
+    page = client.get("/sources").data
+    assert b"Import folders" in page and b"Joel Holland / Dareful" in page and b"Europeana" in page
+    client.post("/sources/vidsplay/import", data={"license": "Vidsplay License", "credit": "Vidsplay.com"})
+    import json
+    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
+    assert json.loads(job["command"]) == ["import", "--source", "vidsplay", "--license", "Vidsplay License",
+                                          "--credit", "Vidsplay.com"]
+    assert client.post("/sources/nasa/import").status_code == 404

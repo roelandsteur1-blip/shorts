@@ -26,7 +26,10 @@ def index():
                      "downloaded": sum(v for k, v in counts.items() if k in ("downloaded", "scened", "cleaned")),
                      "rejected": counts.get("rejected", 0), "failed": counts.get("failed", 0),
                      "reasons": reasons})
-    return render_template("sources.html", rows=rows)
+    from ..sources import folder
+    imports = [{"mod": sources.get(n), "dir": folder.folder(settings(), n),
+                "waiting": len(folder.waiting(settings(), n))} for n in sorted(sources.FOLDER_SOURCES)]
+    return render_template("sources.html", rows=rows, imports=imports)
 
 
 @bp.post("/sources/<name>")
@@ -48,3 +51,14 @@ def try_search(name: str):
     if not query:
         abort(400)
     return start_job(None, ["sources", "--try", name, query], f"Try {name}: {query}")
+
+
+@bp.post("/sources/<name>/import")
+def import_folder(name: str):
+    if name not in sources.FOLDER_SOURCES:
+        abort(404)
+    from ..sources import folder
+    folder.folder(settings(), name).mkdir(parents=True, exist_ok=True)
+    args = ["import", "--source", name, "--license", (request.form.get("license") or "").strip()
+            or sources.get(name).default_license, "--credit", (request.form.get("credit") or "").strip()]
+    return start_job(None, args, f"Import {sources.get(name).LABEL} folder")

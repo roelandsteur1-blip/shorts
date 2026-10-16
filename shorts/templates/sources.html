@@ -16,10 +16,18 @@ CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p
 {% if r.mod.NEEDS_KEY %}<form method="post" action="/sources/{{ r.mod.NAME }}" style="margin-top:6px">
 <input type="password" name="api_key" placeholder="{{ 'key saved: paste to replace' if r.has_key else 'API key (free)' }}" autocomplete="off">
 <button style="margin-top:4px">Save key</button>{% if r.mod.KEY_URL is defined %} <a href="{{ r.mod.KEY_URL }}" target="_blank" rel="noopener">get a key</a>{% endif %}</form>{% endif %}
-{% if r.mod.IMPORT_ONLY is defined and r.mod.IMPORT_ONLY %}<p class="muted" style="font-size:12px">Import folder: {{ r.mod.folder_hint }}</p>
+{% if r.mod.IMPORT_ONLY is defined and r.mod.IMPORT_ONLY %}<p class="muted" style="font-size:12px">no API: use the import folder below</p>
 {% elif r.usable %}<form method="post" action="/sources/{{ r.mod.NAME }}/try" style="margin-top:6px">
 <input type="text" name="query" placeholder="try a search (no download)"></form>{% endif %}
 </td></tr>{% endfor %}
 </table>
-{% block imports %}{% endblock %}
+<h2>Import folders</h2>
+<p class="muted">For sites without an API: download the videos yourself into the folder, then import them here.
+The license you give applies to the whole batch; imported files move to an <code>imported</code> subfolder.</p>
+{% for i in imports %}<form method="post" action="/sources/{{ i.mod.NAME }}/import" class="card">
+<h3 style="margin-top:0">{{ i.mod.LABEL }} <span class="muted" style="font-size:14px">{{ i.waiting }} files waiting in <code>{{ i.dir }}</code></span></h3>
+<p class="muted">{{ i.mod.NOTE }}</p>
+<span style="display:flex;gap:8px"><label style="flex:1">License<input type="text" name="license" value="{{ i.mod.default_license }}"></label>
+<label style="flex:2">Credit in the description (empty = none)<input type="text" name="credit" value="{{ i.mod.default_credit }}"></label></span>
+<button class="primary" {{ 'disabled' if not i.waiting }}>Import {{ i.waiting }} files</button></form>{% endfor %}
 {% endblock %}
