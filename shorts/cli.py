@@ -122,7 +122,8 @@ def _check(settings) -> int:
              "re-run setup.ps1 (installs the CUDA build of PyTorch)")
     except ImportError:
         line(False, "PyTorch", "run setup.ps1")
-    claude = shutil.which(settings.claude_cmd)
+    from .llm import find_claude
+    claude = find_claude(settings.claude_cmd)
     line(claude is not None, "Claude Code CLI", "irm https://claude.ai/install.ps1 | iex, then run 'claude' once to log in")
     if claude:
         v = subprocess.run([claude, "--version"], capture_output=True, text=True)

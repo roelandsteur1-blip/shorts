@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -18,8 +20,23 @@ class LLMError(RuntimeError):
     pass
 
 
+def find_claude(claude_cmd: str = "claude") -> str | None:
+    """The configured command, else the newest Claude Code bundled with the Claude desktop app.
+    That bundled path contains a version number, so it changes whenever the app updates."""
+    found = shutil.which(claude_cmd)
+    if found:
+        return found
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        bundled = sorted(Path(appdata, "Claude", "claude-code").glob("*/*/claude.exe"),
+                         key=lambda p: p.stat().st_mtime, reverse=True)
+        if bundled:
+            return str(bundled[0])
+    return None
+
+
 def ask(prompt: str, claude_cmd: str = "claude", timeout: int = 600) -> str:
-    exe = shutil.which(claude_cmd) or claude_cmd
+    exe = find_claude(claude_cmd) or claude_cmd
     # Run in an empty folder so Claude Code doesn't pick up this repo's files as context.
     with tempfile.TemporaryDirectory() as cwd:
         proc = subprocess.run(
