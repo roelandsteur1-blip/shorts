@@ -44,8 +44,9 @@ def test_make_renders_reviewable_short(library, settings, channel, monkeypatch):
 
 def test_music_is_mixed(library, settings, channel, monkeypatch):
     import subprocess
+    (settings.music_dir / "space").mkdir()
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=f=220:d=5",
-                    str(settings.music_dir / "track.mp3")], check=True)
+                    str(settings.music_dir / "space" / "track.mp3")], check=True)
     fake_claude(monkeypatch)
     done = pipeline.make(library, settings, channel, count=1)
     s = library.execute("SELECT music FROM shorts WHERE id=?", (done[0],)).fetchone()

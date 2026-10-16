@@ -55,6 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings(data_dir=args.data_dir)
     settings.ensure_dirs()
     channel = load_channel(args.channel or settings.default_channel)
+    settings.ensure_channel_dirs([channel.music_folder or channel.id])
     conn = db.connect(settings.db_path)
 
     if args.cmd == "check":
@@ -140,8 +141,10 @@ def _check(settings) -> int:
     line(True, f"data folder {settings.data_dir}")
     if "onedrive" in str(settings.data_dir).lower():
         line(False, "data folder outside OneDrive", "set data_dir in config/local.toml")
-    music = list(settings.music_dir.glob("*.mp3")) + list(settings.music_dir.glob("*.wav"))
-    print(f"[--] music tracks: {len(music)} in {settings.music_dir} (optional)")
+    from .render import MUSIC_EXT
+    for folder in sorted(p for p in settings.music_dir.iterdir() if p.is_dir()):
+        n = sum(1 for p in folder.glob("*") if p.suffix.lower() in MUSIC_EXT)
+        print(f"[--] music tracks: {n} in {folder} (optional)")
     return 0 if ok else 1
 
 

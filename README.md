@@ -38,7 +38,7 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 | – | `python -m shorts status` | Telling per stap. |
 | – | `python -m shorts finish` | Maakt Shorts af die halverwege stopten (bijv. Claude-limiet bereikt). |
 
-**Muziek (optioneel):** zet rechtenvrije tracks (bijv. uit de YouTube Audio Library) als mp3 in `C:\shorts-data\music`. Zonder tracks is de Short stil.
+**Muziek (optioneel):** elk kanaal heeft een eigen map: `C:\shorts-data\music\<kanaal>`, voor het ruimtekanaal dus `music\space`. Zet daar mp3's uit de YouTube Audio Library in (filter "Attribution not required"). Zonder tracks is de Short stil. Daarna `python -m shorts rerender` om wachtende Shorts opnieuw te renderen.
 
 ## Uploaden instellen (fase 2)
 

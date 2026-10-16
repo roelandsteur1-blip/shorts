@@ -47,6 +47,10 @@ class Settings:
     def secrets_dir(self) -> Path:
         return self.data_dir / "secrets"
 
+    def ensure_channel_dirs(self, channel_ids: list[str]) -> None:
+        for cid in channel_ids:
+            (self.music_dir / cid).mkdir(parents=True, exist_ok=True)
+
     def ensure_dirs(self) -> None:
         for d in (self.data_dir, self.footage_dir, self.keyframe_dir,
                   self.render_dir, self.music_dir, self.secrets_dir):
@@ -67,6 +71,7 @@ class Channel:
     uploads_per_day: int = 2
     publish_times_utc: list[str] = field(default_factory=lambda: ["15:00"])
     hashtags: list[str] = field(default_factory=list)
+    music_folder: str | None = None  # subfolder of data_dir/music; default: channel id
 
     @property
     def enabled_formats(self) -> list[dict]:

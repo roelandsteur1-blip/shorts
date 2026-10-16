@@ -100,8 +100,17 @@ def choose_mode(width: int, height: int, crop_x: float) -> str:
     return "crop"
 
 
-def pick_music(settings: Settings, short_id: int) -> Path | None:
-    tracks = sorted(p for p in settings.music_dir.glob("*") if p.suffix.lower() in (".mp3", ".wav", ".m4a", ".ogg", ".flac"))
+MUSIC_EXT = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
+
+
+def pick_music(settings: Settings, short_id: int, channel: Channel | None = None) -> Path | None:
+    """Each channel has its own folder (music/<music_folder>, default music/<channel id>),
+    so a history or war channel never gets space music."""
+    def tracks_in(folder: Path) -> list[Path]:
+        return sorted(p for p in folder.glob("*") if p.suffix.lower() in MUSIC_EXT)
+
+    tracks = tracks_in(settings.music_dir / (channel.music_folder or channel.id)) if channel else []
+    tracks = tracks or tracks_in(settings.music_dir)  # loose tracks: fallback for every channel
     if not tracks:
         return None
     return random.Random(short_id).choice(tracks)
@@ -141,7 +150,7 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     subs = "ass=subs.ass" + (f":fontsdir='{fontsdir}'" if fontsdir else "")
     filters += [concat, f"[vcat]{subs}[vout]"]
 
-    music = pick_music(settings, short_id)
+    music = pick_music(settings, short_id, channel)
     if music:
         inputs += ["-stream_loop", "-1", "-i", str(music)]
         filters.append(
