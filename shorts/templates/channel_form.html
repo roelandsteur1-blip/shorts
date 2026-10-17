@@ -20,6 +20,7 @@
 <p class="muted">Sources to download from when those run low:</p>
 <p>{% for m in sources %}<label style="display:inline-block;margin:2px 14px 2px 0"><input type="checkbox" name="sources" value="{{ m.NAME }}" {{ 'checked' if m.NAME in (d.sources or []) }}> {{ m.LABEL }}</label>{% endfor %}</p>
 <label>Extra search terms (one per line)<textarea name="search_terms" rows="4">{{ (d.search_terms or [])|join('\n') }}</textarea></label>
+<label>Music searches (one per line; CC0 music is fetched with these, empty = ambient, cinematic, calm piano, epic orchestral)<textarea name="music_terms" rows="3">{{ (d.music_terms or [])|join('\n') }}</textarea></label>
 <label>What a scroll-stopping first frame looks like (for picking hero shots)<input type="text" name="hero_query" value="{{ d.hero_query or '' }}" placeholder="default: a stunning dramatic space image"></label>
 </div>
 
@@ -51,8 +52,8 @@
 <div class="card"><h3 style="margin-top:0">1. Footage</h3>
 {% for c in d.categories or [] %}<span class="pill">{{ c }}: {{ counts.get(c, 0) }} scenes</span>{% else %}<p class="warn">Pick at least one category.</p>{% endfor %}</div>
 <div class="card"><h3 style="margin-top:0">2. Music</h3>
-<p class="muted">Put mp3s from the YouTube Audio Library ("Attribution not required") in<br><code>{{ music }}</code></p>
-<p>{% if tracks %}<span class="ok">{{ tracks }} tracks</span>{% else %}<span class="warn">no tracks yet: Shorts will be silent</span>{% endif %}</p></div>
+<p class="muted">Fetched by itself (CC0 / public domain) when you make Shorts; your own mp3s from the YouTube Audio Library ("Attribution not required") can go in<br><code>{{ music }}</code></p>
+<p>{% if tracks %}<span class="ok">{{ tracks }} tracks</span>{% else %}<span class="warn">no tracks yet: fetched on the next Make</span>{% endif %} · <a href="/music?channel={{ d.id }}">Music page</a></p></div>
 <div class="card"><h3 style="margin-top:0">3. YouTube</h3>
 {% if d.youtube_channel_id %}<p class="ok">Connected to {{ found.title if found else d.youtube_channel_id }}</p>
 {% elif found %}<p>The login found this channel:</p>

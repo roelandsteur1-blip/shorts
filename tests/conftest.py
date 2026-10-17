@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from shorts import db, embed, llm
+from shorts import db, embed, llm, music
 from shorts.config import Settings, load_channel
 
 
@@ -29,7 +29,7 @@ class FakeEncoder:
 @pytest.fixture
 def settings(tmp_path):
     # restock_below=0: tests never download footage unless they ask for it.
-    s = Settings(data_dir=tmp_path / "data", encoder="libx264", restock_below=0)
+    s = Settings(data_dir=tmp_path / "data", encoder="libx264", restock_below=0, music_min_tracks=0)
     s.ensure_dirs()
     return s
 
@@ -44,6 +44,14 @@ def conn(settings):
 @pytest.fixture
 def channel():
     return load_channel("space")
+
+
+@pytest.fixture(autouse=True)
+def no_clap():
+    """Music moods from titles and tags; tests that need CLAP put in a fake one."""
+    music.set_tagger(False)
+    yield
+    music.set_tagger(None)
 
 
 @pytest.fixture(autouse=True)

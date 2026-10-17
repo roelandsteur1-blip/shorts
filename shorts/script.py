@@ -9,6 +9,7 @@ import sqlite3
 
 from . import llm, progress
 from .config import Channel, Settings
+from .music import MOODS
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ Rules:
 - Title: max 70 characters, curiosity-driven, no clickbait lies, no hashtags.
 - Description: 1-2 sentences in plain English expanding on the Short.
 - Tags: 5-10 search tags.
+- Mood: the background music that fits this Short, one of: {moods}.
 
 Niche check first: this channel is only about {niche}. If a hero video (title, description, keywords)
 is not clearly about that, do NOT write a Short for it; answer {{"hero": <hero number>, "skip": "<why, a few words>"}}
@@ -47,7 +49,7 @@ for it instead. A loose link ("the steel in this mill is also in your blood") is
 Answer with only a JSON array, one object per hero shot, in the same order:
 [{{"hero": <hero number>, "topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
-  "title": "...", "description": "...", "tags": ["..."]}}]
+  "title": "...", "description": "...", "tags": ["..."], "mood": "..."}}]
 
 Topics we already covered (do not repeat them): {past_topics}
 
@@ -116,7 +118,7 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
         format_title=fmt["title"], format_brief=fmt["brief"].strip(),
         min_blocks=min_blocks, max_blocks=max_blocks, max_words=MAX_WORDS,
         past_topics="; ".join(past_topics[-80:]) or "(none yet)",
-        heroes=hero_text, url_hint=url_hint(channel),
+        heroes=hero_text, url_hint=url_hint(channel), moods=", ".join(MOODS),
         archives=", ".join(dict.fromkeys(h.get("archive", "NASA") for h in heroes)),
     )
 
@@ -162,11 +164,12 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str, hero: d
     tags = [t.strip().lstrip("#") for t in data.get("tags") or [] if t.strip()]
     cur = conn.execute(
         """INSERT INTO shorts (channel, format_id, hero_scene_id, topic, hook, title, description,
-                               tags, status, duration)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?)""",
+                               tags, status, duration, mood)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?, ?)""",
         (channel.id, fmt_id, hero["scene_id"], data.get("topic"), blocks[0]["text"],
          (data.get("title") or "")[:100], data.get("description") or "", json.dumps(tags),
-         sum(b["seconds"] for b in blocks)),
+         sum(b["seconds"] for b in blocks),
+         data.get("mood") if data.get("mood") in MOODS else None),
     )
     short_id = cur.lastrowid
     conn.executemany(

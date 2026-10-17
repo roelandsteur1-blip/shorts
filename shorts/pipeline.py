@@ -44,6 +44,10 @@ def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: 
     else:
         log.info("picked %d hero shots", len(heroes))
 
+    # Music: tag tracks added by hand, fetch more when the channel runs low (before rendering).
+    from . import music
+    music.restock(conn, settings, channel)
+
     # 3-5. Scripts -> fact check -> footage + render, overlapping.
     run_steps(conn, settings, channel, fmt_id, heroes)
 

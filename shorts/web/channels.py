@@ -28,6 +28,8 @@ def form_to_data(form, base: dict) -> dict:
     data["language"] = form.get("language", data.get("language", "en"))
     data["hashtags"] = [h if h.startswith("#") else "#" + h for h in (form.get("hashtags") or "").split() if h.strip("#")]
     data["search_terms"] = _lines(form.get("search_terms"))
+    if "music_terms" in form:
+        data["music_terms"] = [t for t in (x.strip() for x in form["music_terms"].splitlines()) if t]
     data["categories"] = form.getlist("categories")
     data["sources"] = form.getlist("sources")
     data["publish_times_utc"] = sorted(_lines(form.get("publish_times_utc")))

@@ -23,6 +23,9 @@ max_seconds = 30
 uploads_per_day = 2
 publish_times_utc = ["15:00", "21:00"]
 
+# Searches for background music (CC0 / public domain, fetched by itself; see the Music page).
+music_terms = ["space ambient", "cinematic ambient", "synth pad", "epic cinematic", "calm piano"]
+
 hashtags = ["#space", "#nasa", "#astronomy", "#shorts"]
 
 # Fixed formats (the series). Phase 1 uses just one; add more later.

@@ -53,3 +53,8 @@ upload_quota = 100
 # unverified channels); going over it fails with uploadLimitExceeded. The rest stay approved and
 # go up on the next run. Publishing stays at the channel's uploads_per_day / publish_times_utc.
 channel_uploads_per_day = 5
+
+# Background music (Music page). 'make' downloads CC0 / public-domain music from Openverse (and
+# Freesound once its free key is saved) when a channel has fewer usable tracks than this. 0 = never;
+# then only the files you put in data_dir/music/<channel> are used.
+music_min_tracks = 30

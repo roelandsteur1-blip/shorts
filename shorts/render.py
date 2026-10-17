@@ -1,10 +1,9 @@
 """Assemble a 1080x1920 Short with ffmpeg: crop to 9:16, gentle motion, animated text (ASS/libass),
-optional royalty-free music at -14 LUFS. Original footage audio is never used."""
+background music (shorts/music.py) at -14 LUFS. Original footage audio is never used."""
 from __future__ import annotations
 
 import json
 import os
-import random
 import re
 import sqlite3
 from pathlib import Path
@@ -12,6 +11,7 @@ from urllib.parse import urlsplit
 
 from . import db, media
 from .config import Channel, Settings
+from .music import MUSIC_EXT  # noqa: F401 - imported from here by the dashboard and 'check'
 
 W, H, FPS = 1080, 1920, 30
 FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
@@ -115,20 +115,12 @@ def choose_mode(width: int, height: int, crop_x: float) -> str:
     return "crop"
 
 
-MUSIC_EXT = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
-
-
-def pick_music(settings: Settings, short_id: int, channel: Channel | None = None) -> Path | None:
-    """Each channel has its own folder (music/<music_folder>, default music/<channel id>),
-    so a history or war channel never gets space music."""
-    def tracks_in(folder: Path) -> list[Path]:
-        return sorted(p for p in folder.glob("*") if p.suffix.lower() in MUSIC_EXT)
-
-    tracks = tracks_in(settings.music_dir / (channel.music_folder or channel.id)) if channel else []
-    tracks = tracks or tracks_in(settings.music_dir)  # loose tracks: fallback for every channel
-    if not tracks:
-        return None
-    return random.Random(short_id).choice(tracks)
+def pick_music(conn: sqlite3.Connection, settings: Settings, short_id: int,
+               channel: Channel | None = None) -> tuple[Path, float] | None:
+    """(track, where to start in it), chosen by shorts/music.py: mood, least used, not the previous one."""
+    from . import music
+    t = music.pick(conn, settings, short_id, channel)
+    return (Path(t["path"]), t["start"] or 0.0) if t else None
 
 
 def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel, short_id: int) -> Path:
@@ -191,11 +183,13 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     subs = "ass=subs.ass" + (f":fontsdir='{fontsdir}'" if fontsdir else "")
     filters += [concat, f"[vcat]{subs}[vout]"]
 
-    music = pick_music(settings, short_id, channel)
-    if music:
+    picked = pick_music(conn, settings, short_id, channel)
+    music = picked[0] if picked else None
+    if picked:
+        # Looped, so a track shorter than the Short (or a late start) never runs out.
         inputs += ["-stream_loop", "-1", "-i", str(music)]
         filters.append(
-            f"[{n}:a]atrim=0:{total:.3f},asetpts=PTS-STARTPTS,"
+            f"[{n}:a]atrim=start={picked[1]:.2f}:duration={total:.3f},asetpts=PTS-STARTPTS,"
             f"afade=t=in:d=0.3,afade=t=out:st={max(total - 1.2, 0):.3f}:d=1.2,"
             f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]"
         )

@@ -36,6 +36,7 @@ class Settings:
     restock_per_term: int = 2         # videos per search term in one automatic restock
     upload_quota: int = 100           # uploads per day for the Google Cloud project (all channels)
     channel_uploads_per_day: int = 5  # uploads per channel per 24 hours (YouTube's own per-channel limit)
+    music_min_tracks: int = 30        # 'make' fetches CC0 music when a channel has fewer tracks (0 = never)
     config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR
 
     @property
@@ -91,6 +92,7 @@ class Channel:
     publish_times_utc: list[str] = field(default_factory=lambda: ["15:00"])
     hashtags: list[str] = field(default_factory=list)
     music_folder: str | None = None  # subfolder of data_dir/music; default: channel id
+    music_terms: list[str] = field(default_factory=list)  # music searches (shorts/music.py); empty = defaults
     # Footage categories this channel uses (config/categories.toml); empty = every category.
     categories: list[str] = field(default_factory=list)
     # Footage sources restock downloads from (shorts/sources); empty = NASA only.

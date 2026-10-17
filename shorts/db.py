@@ -156,6 +156,28 @@ CREATE TABLE IF NOT EXISTS jobs (
     finished_at    TEXT
 );
 
+-- Background music per channel folder (shorts/music.py).
+CREATE TABLE IF NOT EXISTS tracks (
+    id           INTEGER PRIMARY KEY,
+    folder       TEXT NOT NULL,              -- subfolder of data_dir/music ('' = loose files)
+    path         TEXT UNIQUE,                -- NULL for rejected downloads
+    source       TEXT NOT NULL,              -- openverse, freesound, folder (put there by hand)
+    source_id    TEXT,
+    title        TEXT,
+    creator      TEXT,
+    license      TEXT,                       -- 'CC0', 'public-domain', 'added by hand'
+    source_url   TEXT,
+    duration     REAL,
+    start        REAL NOT NULL DEFAULT 0,    -- seconds: where the music gets going
+    mood         TEXT,                       -- calm, epic, mysterious, upbeat, tense
+    music_score  REAL,                       -- CLAP: how much it sounds like instrumental music
+    analysed     INTEGER NOT NULL DEFAULT 0,
+    status       TEXT NOT NULL DEFAULT 'ok', -- ok, rejected, claimed (by YouTube), missing
+    note         TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (source, source_id)
+);
+
 -- Videos the script writer said don't fit a channel's niche: never picked as a hero there again.
 CREATE TABLE IF NOT EXISTS off_niche (
     channel   TEXT NOT NULL,
@@ -188,6 +210,7 @@ ADDED_COLUMNS = [
     ("scenes", "sorted", "INTEGER NOT NULL DEFAULT 0"),  # 1 = categorize has looked at it
     ("shorts", "uploaded_at", "TEXT"),                     # for the shared daily upload quota
     ("shorts", "edited", "INTEGER NOT NULL DEFAULT 0"),    # text changed by hand in review
+    ("shorts", "mood", "TEXT"),                            # music mood the script asked for
 ]
 
 

@@ -13,7 +13,7 @@ from .config import list_channels, load_channel, load_settings
 
 # Commands that keep the CPU/GPU busy for a while; they run at below-normal priority.
 HEAVY = {"ingest", "import", "restock", "categorize", "dedupe", "scenes", "embed", "make", "finish",
-         "rerender", "daily", "bench"}
+         "rerender", "daily", "bench", "music"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,6 +66,14 @@ def main(argv: list[str] | None = None) -> int:
 
     prr = sub.add_parser("rerender", help="render Shorts again (e.g. after adding music); keeps script and footage")
     prr.add_argument("ids", nargs="*", type=int, help="short ids; default: all waiting for review")
+
+    pmu = sub.add_parser("music", help="background music: fetch CC0 tracks, tag moods, list them")
+    pmu.add_argument("--want", type=int, help="fetch until the channel has this many tracks "
+                     "(default: music_min_tracks in settings)")
+    pmu.add_argument("--retag", action="store_true", help="analyse every track again (mood, start)")
+    pmu.add_argument("--list", action="store_true", help="only list the channel's tracks")
+    pmu.add_argument("--claimed", type=int, metavar="TRACK_ID",
+                     help="YouTube claimed this track: stop using it and re-render Shorts not uploaded yet")
 
     sub.add_parser("finish", help="4-5. resume fact check/render for Shorts that stopped halfway")
 
@@ -167,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         from .library import move_footage
         n, gb = move_footage(conn, settings)
         print(f"moved {n} videos ({gb:.1f} GB) to {settings.footage_dir}")
+    elif args.cmd == "music":
+        return _music(conn, settings, channel, args)
     elif args.cmd == "finish":
         from .pipeline import finish
         finish(conn, settings, channel)
@@ -237,6 +247,32 @@ def main(argv: list[str] | None = None) -> int:
         unsorted = conn.execute("SELECT COUNT(*) FROM scenes WHERE rejected=0 AND sorted=0").fetchone()[0]
         if unsorted:
             print(f"{unsorted} scenes not sorted into categories yet (python -m shorts categorize)")
+    return 0
+
+
+def _music(conn, settings, channel, args) -> int:
+    from . import music
+    fold = music.folder_name(channel)
+    if args.claimed:
+        from .render import render_short
+        ids = music.claim(conn, settings, args.claimed)
+        print(f"track {args.claimed} won't be used again; re-rendering {len(ids)} Shorts")
+        for sid in ids:
+            print(f"short {sid}: {render_short(conn, settings, channel, sid)}")
+        return 0
+    if not args.list:
+        music.sync(conn, settings)
+        if args.retag:
+            conn.execute("UPDATE tracks SET analysed=0 WHERE status='ok'")
+        print(f"tagged {music.tag_pending(conn, settings)} tracks")
+        want = args.want if args.want is not None else settings.music_min_tracks
+        print(f"downloaded {music.fetch(conn, settings, channel, want)} tracks "
+              f"({', '.join(music.music_sources(settings))})")
+    info = music.summary(conn, fold)
+    print(f"{info['tracks']} usable tracks in {music.folder(settings, channel)}: "
+          + ", ".join(f"{k} {v}" for k, v in sorted(info["moods"].items())))
+    for t in music.usable(conn, fold):
+        print(f"  {t['id']:5} {t['mood'] or '-':10} start {t['start']:4.1f}s  {t['license']:14} {t['title'][:60]}")
     return 0
 
 

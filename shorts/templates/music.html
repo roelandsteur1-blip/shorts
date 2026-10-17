@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% block title %}Music{% endblock %}{% block body %}
+<h1>Music</h1>
+<p>{% for c in channels %}<a class="pill" href="/music?channel={{ c.id }}" style="{{ 'border-color:var(--accent)' if c.id == ch.id }}">{{ c.name }}</a>{% endfor %}</p>
+<div class="card">
+<p><span class="stat"><b>{{ summary.tracks }}</b>tracks</span>
+{% for m, n in summary.moods|dictsort %}<span class="stat"><b>{{ n }}</b>{{ m }}</span>{% endfor %}</p>
+<p class="muted">Folder: <code>{{ folder }}</code>. Files you put there yourself (YouTube Audio Library, "Attribution not required") are used too.
+'Make' fetches CC0 / public-domain music by itself from {{ sources|join(' and ') }} when there are fewer than {{ min_tracks }} tracks.
+Each Short gets the least-used track in the mood of its script, starting where the music gets going.</p>
+<form method="post" action="/music/fetch" class="inline"><input type="hidden" name="channel" value="{{ ch.id }}">
+<input type="number" name="want" value="{{ [summary.tracks + 20, min_tracks]|max }}" style="width:90px"> tracks in total
+<button class="primary">Fetch music now</button></form>
+<span class="muted">Searches: {{ (ch.music_terms or ['ambient', 'cinematic', 'calm piano', 'epic orchestral'])|join(', ') }} (change in the channel's music_terms).</span>
+</div>
+<div class="card"><b>Freesound</b> (more CC0 music, free key: <a href="https://freesound.org/apiv2/apply" target="_blank" rel="noopener">get one</a>)
+<form method="post" action="/music/key" style="margin-top:6px"><input type="hidden" name="channel" value="{{ ch.id }}">
+<input type="password" name="api_key" placeholder="{{ 'key saved: paste to replace' if freesound_key else 'Freesound API key' }}" autocomplete="off" style="max-width:380px">
+<button>Save key</button></form></div>
+<p class="muted">YouTube checks for claims right after upload, before a Short goes public (YouTube Studio, Content tab, "Copyright" restriction).
+If a track is claimed, press <b>Claimed</b>: it is never used again and Shorts with it that are not uploaded yet are re-rendered.
+For an uploaded Short, use "Replace song" or "Mute song" in YouTube Studio.</p>
+<table><tr><th></th><th>Track</th><th>Mood</th><th>Used</th><th>Licence</th><th></th></tr>
+{% for t in tracks %}<tr{% if t.status == 'claimed' %} style="opacity:.5"{% endif %}>
+<td style="width:260px">{% if t.status == 'ok' %}<audio controls preload="none" src="/music/file/{{ t.id }}#t={{ t.start }}" style="width:250px;height:32px"></audio>{% endif %}</td>
+<td><b>{{ t.title }}</b>{% if t.creator %} <span class="muted">by {{ t.creator }}</span>{% endif %}<br>
+<span class="muted" style="font-size:12px">{{ t.source }}{% if t.source_url %} · <a href="{{ t.source_url }}" target="_blank" rel="noopener">page</a>{% endif %}
+{% if t.start %} · starts at {{ t.start }}s{% endif %}{% if t.music_score is not none %} · music {{ (t.music_score * 100)|round|int }}%{% endif %}</span></td>
+<td>{% if t.status == 'ok' %}<form method="post" action="/music/{{ t.id }}"><input type="hidden" name="channel" value="{{ ch.id }}"><input type="hidden" name="action" value="mood">
+<select name="mood" onchange="this.form.submit()"><option value="" {{ 'selected' if not t.mood }}>untagged</option>{% for m in moods %}<option {{ 'selected' if t.mood == m }}>{{ m }}</option>{% endfor %}</select></form>
+{% else %}<span class="bad">claimed</span>{% endif %}</td>
+<td>{{ uses.get(t.path, 0) }}</td>
+<td>{{ t.license }}</td>
+<td style="white-space:nowrap">{% if t.status == 'ok' %}<form method="post" action="/music/{{ t.id }}" class="inline"><input type="hidden" name="channel" value="{{ ch.id }}">
+<button name="action" value="claimed" class="danger" title="YouTube claimed this track">Claimed</button>
+<button name="action" value="remove" title="Delete the file; never fetched again">Remove</button></form>{% endif %}</td>
+</tr>{% else %}<tr><td colspan="6" class="muted">No tracks yet: press "Fetch music now", or put files in the folder.</td></tr>{% endfor %}
+</table>
+{% if rejected %}<p class="muted" style="font-size:12px">Skipped downloads: {% for r in rejected %}{{ r.n }}× {{ r.note }}{% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+{% endblock %}
