@@ -7,7 +7,7 @@ from itertools import groupby
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
-from ..upload import iso, slots_for, uploads_today
+from ..upload import blocked_until, channel_uploads_last_day, iso, slots_for, uploads_today
 from .common import channels, conn, settings
 
 bp = Blueprint("schedule", __name__)
@@ -31,9 +31,11 @@ def index():
                                   LIMIT 20""", (ch.id, now)).fetchall()
         slots = [iso(s) for s in slots_for(c, settings(), ch, [r["id"] for r in approved])]
         days = [(day, list(rows)) for day, rows in groupby(upcoming, key=lambda r: r["publish_at"][:10])]
-        out.append({"ch": ch, "approved": list(zip(approved, slots)), "days": days, "published": published})
+        out.append({"ch": ch, "approved": list(zip(approved, slots)), "days": days, "published": published,
+                    "today": channel_uploads_last_day(c, ch), "blocked": blocked_until(settings(), ch)})
     used = uploads_today(c)
     return render_template("schedule.html", rows=out, used=used, quota=settings().upload_quota,
+                           per_channel=settings().channel_uploads_per_day,
                            channels=channels(), selected=selected, daily=daily_status(),
                            msg=request.args.get("msg"))
 
@@ -41,6 +43,12 @@ def index():
 def daily_status() -> dict:
     from .. import daily
     return daily.status(settings())
+
+
+@bp.post("/schedule/upload-all")
+def upload_all():
+    from .jobs import start_job
+    return start_job(None, ["upload-all"], "Daily upload, all channels")
 
 
 @bp.post("/schedule/daily")

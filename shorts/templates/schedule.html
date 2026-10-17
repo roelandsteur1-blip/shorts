@@ -1,5 +1,8 @@
 {% extends "base.html" %}{% block title %}Schedule{% endblock %}{% block body %}
 <h1>Schedule</h1>{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+<div class="card"><form method="post" action="/schedule/upload-all" class="inline"><button class="primary">Daily upload</button>
+<span class="muted">uploads approved Shorts for every channel, up to {{ per_channel }} per channel per 24 hours; they publish on each channel's schedule</span></form>
+<p style="margin-bottom:0">{% for r in rows %}{{ r.ch.name }}: {% if r.blocked %}<span class="warn">YouTube limit reached, again after {{ r.blocked.strftime('%H:%M') }} UTC</span>{% else %}<b>{{ r.today }} of {{ per_channel }}</b> uploaded in the last 24 hours, {{ r.approved|length }} approved{% endif %}{{ ' · ' if not loop.last }}{% endfor %}</p></div>
 <form method="get" style="max-width:300px"><select name="channel" onchange="this.form.submit()"><option value="">All channels</option>
 {% for ch in channels %}<option value="{{ ch.id }}" {{ 'selected' if ch.id == selected }}>{{ ch.name }}</option>{% endfor %}</select></form>
 <p>Uploads today: <b class="{{ 'warn' if used >= quota * 0.8 }}">{{ used }} of {{ quota }}</b>

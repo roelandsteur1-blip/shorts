@@ -287,6 +287,23 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
     return done
 
 
+def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
+    """'Daily upload': every channel uploads its approved Shorts, up to channel_uploads_per_day.
+    One channel's problem (login, YouTube's limit) doesn't stop the others."""
+    from .config import list_channels, load_channel
+
+    out = {}
+    for cid in list_channels(settings.config_dir):
+        ch = load_channel(cid, settings.config_dir)
+        try:
+            out[cid] = f"uploaded {len(upload_approved(conn, settings, ch))}"
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s: upload failed: %s", cid, e)
+            out[cid] = f"failed: {e}"
+        log.info("%s: %s", cid, out[cid])
+    return out
+
+
 def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> int:
     """Step 8: pull per-video analytics. 'Viewed vs swiped' isn't in the API; engagedViews/views
     is the closest signal."""

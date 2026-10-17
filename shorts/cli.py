@@ -78,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
     pu.add_argument("--limit", type=int)
     pu.add_argument("--no-schedule", action="store_true", help="upload as private without a publish time")
 
+    sub.add_parser("upload-all", help="7. daily upload: every channel, up to channel_uploads_per_day each")
+
     pcn = sub.add_parser("connect", help="log in to YouTube for this channel and show which channel it is")
     pcn.add_argument("--fresh", action="store_true", help="forget the saved login first (other account)")
 
@@ -186,6 +188,10 @@ def main(argv: list[str] | None = None) -> int:
         from .upload import upload_approved
         ids = upload_approved(conn, settings, channel, args.limit, schedule=not args.no_schedule)
         print(f"uploaded {len(ids)}: " + " ".join(f"https://youtu.be/{i}" for i in ids))
+    elif args.cmd == "upload-all":
+        from .upload import upload_all
+        for cid, result in upload_all(conn, settings).items():
+            print(f"{cid}: {result}")
     elif args.cmd == "connect":
         from .upload import connect
         found = connect(settings, channel, fresh=args.fresh)

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import pytest
 
 from shorts import daily, script, upload
-from shorts.config import ROOT, load_channel
+from shorts.config import ROOT, list_channels, load_channel
 
 
 @pytest.fixture
@@ -190,3 +190,18 @@ def test_channel_daily_cap(conn, settings, channel, fake_upload):
     assert len(upload.upload_approved(conn, settings, channel)) == 2
     assert conn.execute("SELECT COUNT(*) FROM shorts WHERE status='approved'").fetchone()[0] == 3
     assert upload.upload_approved(conn, settings, channel) == []
+
+
+def test_daily_upload_all_channels(conn, settings, cfg, client, fake_upload):
+    fake_upload(_FakeYouTube(ok=100))
+    settings.channel_uploads_per_day = 2
+    for _ in range(3):
+        add_short(conn, video_path="x.mp4")
+    out = upload.upload_all(conn, settings)
+    assert out["space"] == "uploaded 2" and set(out) == set(list_channels(cfg))
+    page = client.get("/schedule").data.decode()
+    assert "Daily upload" in page and "2 of 2</b> uploaded in the last 24 hours" in page
+    r = client.post("/schedule/upload-all")
+    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
+    assert json.loads(job["command"]) == ["upload-all"] and job["channel"] is None
+    assert r.headers["Location"].endswith(f"/jobs/{job['id']}")
