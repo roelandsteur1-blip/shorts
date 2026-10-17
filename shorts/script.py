@@ -36,18 +36,19 @@ Rules:
   sure exists, and the quote it supports; do not invent URLs. When in doubt, leave the fact out.
 - For blocks after the first, "visual" describes in 3-8 plain words what footage should show
   (e.g. "Saturn rings close up", "astronaut floating inside station"). Block 1 visual is "hero".
-- Do not repeat these topics we already covered: {past_topics}
 - Title: max 70 characters, curiosity-driven, no clickbait lies, no hashtags.
 - Description: 1-2 sentences in plain English expanding on the Short.
 - Tags: 5-10 search tags.
-
-Hero shots:
-{heroes}
 
 Answer with only a JSON array, one object per hero shot, in the same order:
 [{{"hero": <hero number>, "topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", "description": "...", "tags": ["..."]}}]
+
+Topics we already covered (do not repeat them): {past_topics}
+
+Hero shots:
+{heroes}
 """
 
 LANGS = {"en": "English", "nl": "Dutch", "de": "German", "es": "Spanish", "fr": "French"}
@@ -185,14 +186,19 @@ def past_topics(conn: sqlite3.Connection, channel: str) -> list[str]:
 
 
 def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel, fmt_id: str,
-                  hero_scene_ids: list[int], batch_size: int = 5) -> list[int]:
+                  hero_scene_ids: list[int], batch_size: int = 5, on_batch=None) -> list[int]:
+    """on_batch(short_ids) is called after each batch is saved."""
     fmt = channel.format(fmt_id)
     created = []
     for i in range(0, len(hero_scene_ids), batch_size):
         progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
         prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id))
-        replies = llm.ask_json(prompt, settings.claude_cmd)
+        try:
+            replies = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude script")
+        except llm.LLMLimitError:
+            break  # the heroes not written stay unused and are picked again next run
+        batch_ids: list[int] = []
         if isinstance(replies, dict):
             replies = [replies]
         done_heroes: set[int] = set()
@@ -203,10 +209,13 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
                 # attach a script to the wrong footage.
                 if not 1 <= n <= len(heroes) or n in done_heroes:
                     raise ValueError(f"unexpected hero number {reply.get('hero')!r}")
-                created.append(save_script(conn, channel, fmt_id, heroes[n - 1], reply))
+                batch_ids.append(save_script(conn, channel, fmt_id, heroes[n - 1], reply))
                 done_heroes.add(n)
             except (ValueError, TypeError, AttributeError) as e:
                 log.warning("skipping a script: %s", e)
+        created += batch_ids
+        if on_batch and batch_ids:
+            on_batch(batch_ids)  # pipelined make: fact check this batch while the next is written
     return created
 
 

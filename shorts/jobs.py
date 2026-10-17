@@ -146,7 +146,10 @@ class Runner:
         env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
         kw: dict = {}
         if os.name == "nt":
-            kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            # Below-normal priority: whatever you do on the laptop comes first; ffmpeg, Claude and the
+            # worker processes a job starts inherit it.
+            kw["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+                                   | subprocess.BELOW_NORMAL_PRIORITY_CLASS)
         else:
             kw["start_new_session"] = True  # own process group, so Stop also ends ffmpeg/claude
         with open(log_path, "wb") as out:

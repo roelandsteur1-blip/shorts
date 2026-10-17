@@ -21,6 +21,9 @@ class Settings:
     data_dir: Path
     claude_cmd: str = "claude"
     encoder: str = "auto"
+    x264_preset: str = "veryfast"     # CPU encoding speed when NVENC is unavailable (medium = old, slower)
+    scene_detector: str = "fast"      # "fast" = one ffmpeg pass per video; "pyscenedetect" = the old way
+    scene_fps: float = 10.0           # frames per second the fast scene detector looks at
     clip_model: str = "ViT-B-32"
     clip_pretrained: str = "laion2b_s34b_b79k"
     default_channel: str = "space"

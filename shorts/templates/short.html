@@ -29,6 +29,23 @@
 <input type="text" name="note" placeholder="note (optional)" style="width:200px">
 <button class="reject" name="action" value="reject">Reject</button>
 &nbsp; <button name="action" value="save">Save title</button></p>
-{% if next_id %}<p><a href="/short/{{ next_id }}{% if channel %}?channel={{ channel }}{% endif %}">Skip to next →</a></p>{% endif %}
+{% if next_id %}<p><a id="next" href="/short/{{ next_id }}{% if channel %}?channel={{ channel }}{% endif %}">Skip to next →</a></p>{% endif %}
+<p class="muted" style="font-size:12px">Keys: <kbd>A</kbd> approve · <kbd>R</kbd> reject with the reason above · <kbd>N</kbd> next · <kbd>E</kbd> edit text · <kbd>Space</kbd> pause</p>
 </form></div></div>
+{% if next_id %}<video src="/video/{{ next_id }}" preload="auto" muted style="display:none" aria-hidden="true"></video>{% endif %}
+<script>
+// Review without the mouse; the next Short is already loading in the background (hidden video above).
+document.addEventListener("keydown", e => {
+  const t = e.target.tagName;
+  if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+  const form = document.querySelector("form.card");
+  const press = action => { const b = form && form.querySelector(`button[value="${action}"]`); if (b) b.click(); };
+  const k = e.key.toLowerCase();
+  if (k === "a") press("approve");
+  else if (k === "r") press("reject");
+  else if (k === "n") { const n = document.getElementById("next"); if (n) location.href = n.href; }
+  else if (k === "e") { const i = document.querySelector('input[name^="block_"]'); if (i) { i.focus(); e.preventDefault(); } }
+  else if (k === " ") { const v = document.querySelector("video[controls]"); if (v) { v.paused ? v.play() : v.pause(); e.preventDefault(); } }
+});
+</script>
 {% endblock %}

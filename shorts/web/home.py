@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, render_template
+from flask import Blueprint, redirect, render_template, request
 
 from ..hero import shorts_left
 from .common import channels, conn, settings
@@ -40,3 +40,14 @@ def channel_card(ch) -> dict:
 def index():
     running = conn().execute("SELECT * FROM jobs WHERE status IN ('running','queued') ORDER BY id").fetchall()
     return render_template("home.html", cards=[channel_card(ch) for ch in channels()], running=running)
+
+
+@bp.post("/speed")
+def set_speed():
+    """Quiet / Fast switch (nav bar). Running jobs pick it up before their next video or render."""
+    from ..speed import set_mode
+    mode = request.form.get("mode")
+    if mode in ("quiet", "fast"):
+        set_mode(settings().data_dir, mode)
+    target = request.referrer or "/"
+    return redirect(target if target.startswith(request.host_url) or target.startswith("/") else "/")

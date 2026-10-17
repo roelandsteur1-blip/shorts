@@ -68,7 +68,9 @@ def check(conn: sqlite3.Connection, settings: Settings, short_ids: list[int], ba
         ids = short_ids[i:i + batch_size]
         prompt = PROMPT.format(items="\n\n".join(_item(conn, sid) for sid in ids))
         try:
-            results = llm.ask_json(prompt, settings.claude_cmd)
+            results = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude factcheck")
+        except llm.LLMLimitError:
+            return  # unchecked Shorts stay 'scripted' and are checked on the next run
         except llm.LLMError as e:
             log.warning("fact check failed for %s: %s", ids, e)
             continue

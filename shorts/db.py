@@ -125,6 +125,17 @@ CREATE TABLE IF NOT EXISTS asset_categories (
     PRIMARY KEY (asset_id, category)
 );
 
+-- How long each step took (shorts/timing.py), for the Stats page and 'python -m shorts bench'.
+CREATE TABLE IF NOT EXISTS timings (
+    id        INTEGER PRIMARY KEY,
+    at        TEXT NOT NULL DEFAULT (datetime('now')),
+    stage     TEXT NOT NULL,                   -- download, fingerprint, scenes, embed, script, factcheck, render, ...
+    seconds   REAL NOT NULL,
+    items     INTEGER NOT NULL DEFAULT 1,
+    info      TEXT                             -- JSON: video length, encoder, Claude tokens, ...
+);
+CREATE INDEX IF NOT EXISTS timings_stage ON timings(stage, at);
+
 -- Background jobs started from the dashboard: each runs `python -m shorts --channel <id> <command>`.
 CREATE TABLE IF NOT EXISTS jobs (
     id             INTEGER PRIMARY KEY,
@@ -155,6 +166,8 @@ def connect(path: Path | str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")  # safe with WAL; far fewer disk flushes
+    conn.execute("PRAGMA busy_timeout = 30000")  # dashboard, renders and Claude threads write at once
     conn.executescript(SCHEMA)
     _migrate(conn)
     return conn

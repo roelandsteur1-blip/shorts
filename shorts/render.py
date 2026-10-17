@@ -86,10 +86,12 @@ def _segment_filter(idx: int, seconds: float, crop_x: float, width: int, height:
     frames = max(1, round(seconds * FPS))
     src = f"[{idx}:v]fps={FPS}" + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0 else "")
     if mode == "blur":
+        # Scale the source once to the output width; the blurred background is made from a
+        # quarter-size copy of that (blur hides the detail anyway) and scaled up: far cheaper.
         return (
-            f"{src},split=2[bg{idx}][fg{idx}];"
-            f"[bg{idx}]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=24:2,eq=brightness=-0.08[bgb{idx}];"
-            f"[fg{idx}]scale={W}:-2[fgs{idx}];"
+            f"{src},scale={W}:-2:flags=bicubic,split=2[bg{idx}][fgs{idx}];"
+            f"[bg{idx}]scale={W // 4}:{H // 4}:force_original_aspect_ratio=increase,crop={W // 4}:{H // 4},"
+            f"boxblur=6:2,eq=brightness=-0.08,scale={W}:{H}[bgb{idx}];"
             f"[bgb{idx}][fgs{idx}]overlay=(W-w)/2:(H-h)/2,trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
         )
     # Cover 1080x1920 with 8% headroom, then pan slowly around crop_x.
@@ -98,7 +100,7 @@ def _segment_filter(idx: int, seconds: float, crop_x: float, width: int, height:
     x = f"max(0,min(iw-ow,{crop_x:.3f}*iw-ow/2+({pan:.1f})*t/{dur:.3f}))"
     return (
         f"{src},scale={int(W * 1.08)}:{int(H * 1.08)}:force_original_aspect_ratio=increase:"
-        f"force_divisible_by=2:flags=lanczos,crop={W}:{H}:x='{x}':y='(ih-oh)/2',"
+        f"force_divisible_by=2:flags=bicubic,crop={W}:{H}:x='{x}':y='(ih-oh)/2',"
         f"trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
     )
 
@@ -130,6 +132,29 @@ def pick_music(settings: Settings, short_id: int, channel: Channel | None = None
 
 
 def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel, short_id: int) -> Path:
+    from . import speed, timing
+    lim = speed.limits(settings.data_dir)
+    enc = media.video_encoder_args(settings.encoder, settings.x264_preset, lim.x264_threads)
+    work, args, total, music = build_render(conn, settings, channel, short_id, enc)
+    out = work / "short.mp4"
+    with timing.timed(conn, "render", short=short_id, seconds_of_video=round(total, 1), encoder=enc[1]):
+        media.run(args, cwd=work)
+    os.replace(work / "out.mp4", out)
+
+    meta = metadata(conn, channel, short_id)
+    (work / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+    # A re-render of an approved Short stays approved; everything else goes (back) to review.
+    current = conn.execute("SELECT status FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
+    db.set_short(conn, short_id, status="approved" if current == "approved" else "rendered", video_path=str(out), duration=total,
+                 music=str(music) if music else None, description=meta["description"])
+    return out
+
+
+def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel, short_id: int,
+                 encoder_args: list[str], out_name: str = "out.mp4") -> tuple[Path, list[str], float, Path | None]:
+    """The ffmpeg arguments for one Short (run them inside the returned work folder: ffmpeg's ass
+    filter and Windows drive letters don't mix). Writes subs.ass; touches nothing else, so
+    'bench' can render with other settings. Returns (work folder, args, seconds, music)."""
     media.require_ffmpeg()
     blocks = [dict(r) for r in conn.execute(
         """SELECT b.idx, b.text, b.seconds, b.scene_id, sc.start, sc.end, sc.crop_x, a.path, a.width, a.height
@@ -178,34 +203,14 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         inputs += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
         filters.append(f"[{n}:a]anull[aout]")
 
-    out = work / "short.mp4"
     args = inputs + [
         "-filter_complex", ";".join(filters),
         "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}",
-        *media.video_encoder_args(settings.encoder),
+        *encoder_args,
         "-r", str(FPS), "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-        "-movflags", "+faststart", "out.mp4",
+        "-movflags", "+faststart", out_name,
     ]
-    _run_in(work, args)
-    os.replace(work / "out.mp4", out)
-
-    meta = metadata(conn, channel, short_id)
-    (work / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
-    # A re-render of an approved Short stays approved; everything else goes (back) to review.
-    current = conn.execute("SELECT status FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
-    db.set_short(conn, short_id, status="approved" if current == "approved" else "rendered", video_path=str(out), duration=total,
-                 music=str(music) if music else None, description=meta["description"])
-    return out
-
-
-def _run_in(cwd: Path, args: list[str]) -> None:
-    """ffmpeg's ass filter and Windows drive letters don't mix; run inside the work folder."""
-    old = os.getcwd()
-    os.chdir(cwd)
-    try:
-        media.run(args)
-    finally:
-        os.chdir(old)
+    return work, args, total, music
 
 
 # Links in a Shorts description are not clickable, so sources are named, not linked.

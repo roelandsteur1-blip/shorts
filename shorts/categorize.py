@@ -153,7 +153,7 @@ def ask_claude(settings: Settings, assets: list[sqlite3.Row], cats: list[Categor
             f"{n + 1}. {a['title'] or ''} | subjects: {(a['keywords'] or '')[:200]} | "
             f"{(a['description'] or '')[:300]}" for n, a in enumerate(batch))
         prompt = PROMPT.format(categories="\n".join(f"{c.id}: {c.label}" for c in cats), items=items)
-        reply = llm.ask_json(prompt, settings.claude_cmd)
+        reply = llm.ask_json(prompt, settings.claude_cmd, stage="claude categorize")
         for r in reply if isinstance(reply, list) else []:
             try:
                 n = int(r.get("n"))

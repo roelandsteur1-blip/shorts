@@ -28,5 +28,7 @@ def index():
                              FROM ({LATEST}) GROUP BY channel""").fetchall()
     by_format = c.execute(f"""SELECT channel, format_id, COUNT(*) AS shorts, AVG(views) AS views, AVG(avg_view_pct) AS pct
                                 FROM ({LATEST}) GROUP BY channel, format_id ORDER BY channel, views DESC""").fetchall()
+    from ..timing import claude_usage, summary
     return render_template("stats.html", rows=rows, totals=totals, by_format=by_format, sort=sort,
-                           channels=channels(), selected=selected)
+                           channels=channels(), selected=selected, timings=summary(c),
+                           claude=claude_usage(c))

@@ -83,11 +83,15 @@ def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     return [(src, qs) for src, qs in plan.items() if qs]
 
 
-def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need: int = 0) -> int:
+def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need: int = 0,
+            only_if_short: bool = False) -> int:
     """Download, cut, embed and sort new footage when the channel's categories have fewer than
     settings.restock_below (or, in total, `need`) Shorts left in the library. One download serves
-    every channel whose categories it lands in. Returns the number of new videos."""
+    every channel whose categories it lands in. only_if_short: only when fewer than `need` are left
+    (make uses this before picking, and tops up after rendering). Returns the number of new videos."""
     left = shorts_left(conn, settings, channel)
+    if only_if_short and left >= need:
+        return 0
     if left >= max(settings.restock_below, need) and all(
             shorts_left(conn, settings, channel, c) >= settings.restock_below
             for c in channel.categories):
@@ -100,15 +104,33 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need
     plan = restock_plan(conn, settings, channel, need)
     log.info("footage for only %d more Shorts left: downloading more from %s", left,
              ", ".join(src for src, _ in plan) or "nowhere (no usable source)")
-    new = 0
-    for src, queries in plan:
-        new += common.ingest(conn, settings, src, queries, per_term=settings.restock_per_term)
+    # Downloads run in a thread with their own connection; scene cutting starts on the first
+    # finished file instead of after the last one.
+    import threading
+    from . import db
+    counts: list[int] = []
+
+    def download() -> None:
+        c = db.connect(settings.db_path)
+        try:
+            for src, queries in plan:
+                counts.append(common.ingest(c, settings, src, queries, per_term=settings.restock_per_term))
+        except Exception:  # noqa: BLE001
+            log.exception("restock download failed")
+        finally:
+            c.close()
+
+    t = threading.Thread(target=download, name="restock-download", daemon=True)
+    t.start()
+    process_all(conn, settings, more_coming=t.is_alive)
+    t.join()
+    new = sum(counts)
     if new == 0:
         log.warning("no new footage found for '%s': add search hints to its categories, more "
                     "search_terms or sources to config/channels/%s.toml (or free disk space)",
                     channel.id, channel.id)
         return 0
-    process_all(conn, settings)
+    process_all(conn, settings)  # anything that finished after the cutter's last look
     embed_pending(conn, settings)
     sort_pending(conn, settings)
     log.info("added %d videos; footage for %d Shorts now", new, shorts_left(conn, settings, channel))

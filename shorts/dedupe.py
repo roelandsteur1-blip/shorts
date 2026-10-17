@@ -36,15 +36,17 @@ def normalise_title(title: str | None) -> str:
 
 
 def same_title(conn: sqlite3.Connection, title: str | None, exclude_id: int | None = None,
-               date: str | None = None) -> int | None:
+               date: str | None = None, ignore_new_after: int | None = None) -> int | None:
     """Id of a usable asset with the same normalised title and the same date, if any. NASA reuses
     titles for different events (e.g. each "SLS Full-Scale Booster Test"), so the date must match."""
     key = normalise_title(title)
     if len(key) < 12:  # very short titles ("Launch") say too little to call a duplicate
         return None
     day = (date or "")[:10]
-    for r in conn.execute("""SELECT id, title, date_created FROM assets
+    for r in conn.execute("""SELECT id, title, date_created, status FROM assets
                               WHERE status NOT IN ('failed', 'duplicate', 'rejected')"""):
+        if ignore_new_after is not None and r["status"] == "new" and r["id"] > ignore_new_after:
+            continue  # a later copy that is not downloaded yet: it will be the duplicate, not this one
         if (r["id"] != exclude_id and normalise_title(r["title"]) == key
                 and (r["date_created"] or "")[:10] == day):
             return r["id"]
@@ -59,31 +61,60 @@ def _dhash(frame: np.ndarray) -> int:
 
 
 def fingerprint(path: str) -> bytes | None:
-    """One frame hash every 2 seconds (8 bytes each). Near-black or flat frames are skipped:
-    they look alike in every video and would cause false matches."""
-    cap = cv2.VideoCapture(path)
+    """One frame hash about every FP_STEP seconds (8 bytes each), at most FP_MAX_FRAMES. Near-black
+    or flat frames are skipped: they look alike in every video and would cause false matches.
+
+    One ffmpeg pass that decodes only keyframes (no seeking, tiny frames): many times faster than
+    seeking through the file. Footage with few keyframes gets a full (still small) decode instead,
+    so a fingerprint always has enough distinct frames."""
+    duration = _duration(path)
+    if not duration:
+        return None
+    n = int(min(FP_MAX_FRAMES, max(4, duration / FP_STEP)))
+    rate = n / duration
+    hashes = _hash_frames(path, rate, keyframes_only=True)
+    if hashes is not None and len(set(hashes)) < max(3, len(hashes) // 3):
+        hashes = _hash_frames(path, rate, keyframes_only=False)
+    if not hashes or len(hashes) < 3:
+        return None
+    return b"".join(h.to_bytes(8, "big") for h in hashes)
+
+
+def _duration(path: str) -> float:
     try:
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30
-        frames = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
-        if frames <= 0:
-            return None
-        n = int(min(FP_MAX_FRAMES, max(4, frames / fps / FP_STEP)))
-        hashes = []
-        for pos in np.linspace(0.02, 0.98, n):
-            cap.set(cv2.CAP_PROP_POS_FRAMES, int(frames * pos))
-            ok, frame = cap.read()
-            if not ok:
-                continue
-            gray = cv2.cvtColor(cv2.resize(frame, (64, 36)), cv2.COLOR_BGR2GRAY)
-            # Dark night shots and starfields hash alike across unrelated videos: skip them.
-            if gray.mean() < 25 or gray.std() < 20:
-                continue
-            hashes.append(_dhash(frame))
-        if len(hashes) < 3:
-            return None
-        return b"".join(h.to_bytes(8, "big") for h in hashes)
-    finally:
-        cap.release()
+        from .media import probe
+        return probe(path)["duration"]
+    except Exception:  # noqa: BLE001 - unreadable file: no fingerprint
+        return 0.0
+
+
+def _hash_frames(path: str, rate: float, keyframes_only: bool) -> list[int] | None:
+    import subprocess
+    w, h = 64, 36  # point-sampled (neighbor): averaging would turn fine detail into a flat grey
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "2"]
+    if keyframes_only:
+        cmd += ["-skip_frame", "nokey"]
+    cmd += ["-i", path, "-an", "-sn", "-vf", f"fps={rate:.6f},scale={w}:{h}:flags=neighbor,format=gray",
+            "-f", "rawvideo", "-pix_fmt", "gray", "-"]
+    proc = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL)
+    if proc.returncode != 0:
+        log.debug("fingerprint failed for %s: %s", path, proc.stderr[-300:])
+        return None
+    frames = np.frombuffer(proc.stdout, dtype=np.uint8)
+    frames = frames[: len(frames) // (w * h) * (w * h)].reshape(-1, h, w)
+    out = []
+    for gray in frames:
+        # Dark night shots and starfields hash alike across unrelated videos: skip them.
+        if gray.mean() < 25 or gray.std() < 20:
+            continue
+        out.append(_dhash_gray(gray))
+    return out
+
+
+def _dhash_gray(gray: np.ndarray) -> int:
+    g = cv2.resize(gray, (9, 8), interpolation=cv2.INTER_AREA)
+    bits = (g[:, 1:] > g[:, :-1]).flatten()
+    return int("".join("1" if b else "0" for b in bits), 2)
 
 
 def _hashes(fp: bytes) -> np.ndarray:

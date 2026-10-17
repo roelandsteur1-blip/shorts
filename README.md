@@ -31,13 +31,17 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 | 1 | `python -m shorts scenes` | Knipt in scènes, gooit zwart/titelkaarten weg, bepaalt waar de 9:16-uitsnede moet. |
 | 1 | `python -m shorts embed` | Maakt scènes doorzoekbaar met CLIP op je GPU (geen Claude-gebruik). |
 | – | `python -m shorts search "saturn rings"` | Test de beeldzoeker. |
-| 2–5 | `python -m shorts make -n 5` | Kiest 5 hero shots, laat Claude er scripts bij schrijven (1 aanroep per 5), controleert de feiten in een aparte aanroep, zoekt beeld per tekstblok en rendert. Is er nog beeld voor minder dan 15 Shorts, dan haalt `make` eerst zelf nieuw beeld op (ingest, scenes, embed; 2 per zoekterm). Uitzetten: `--no-restock`. |
+| 2–5 | `python -m shorts make -n 5` | Kiest 5 hero shots, laat Claude er scripts bij schrijven (1 aanroep per 5), controleert de feiten in een aparte aanroep, zoekt beeld per tekstblok en rendert. De stappen lopen door elkaar: terwijl Claude de volgende 5 schrijft, wordt de vorige 5 gecontroleerd en gerenderd. Alleen als er te weinig beeld is voor deze batch haalt `make` eerst nieuw beeld op; het bijvullen tot 15 gebeurt ná het renderen, als de Shorts al klaarstaan voor review. Uitzetten: `--no-restock`. |
 | 6 | `python -m shorts dashboard` | Open http://127.0.0.1:5000 (alleen op deze laptop). Zie [Dashboard](#dashboard). `review` doet hetzelfde. |
 | 7 | `python -m shorts upload` | Uploadt goedgekeurde Shorts als privé met een publicatietijd (standaard 15:00 en 21:00 UTC, max 2 per dag). |
 | 8 | `python -m shorts stats` | Haalt views, engaged views en kijkpercentage op; na ~10 Shorts met cijfers stuurt dit de hero-shotkeuze bij. |
 | – | `python -m shorts status` | Telling per stap. |
 | – | `python -m shorts cleanup` | Verwijdert video's die op zijn: alle bruikbare scènes gebruikt of het maximum aantal Shorts eruit gehaald, en die Shorts geüpload of afgewezen (plus dubbele video's). Eerst kijken: `--dry-run`. Een verwijderde video wordt nooit opnieuw gedownload. |
 | – | `python -m shorts finish` | Maakt Shorts af die halverwege stopten (bijv. Claude-limiet bereikt). |
+| – | `python -m shorts bench` | Meet render- en scènesnelheid per instelling op je eigen beeld (GPU/CPU, oude en nieuwe scènedetectie) en verandert niets. |
+| – | `python -m shorts check` | Controleert ffmpeg, GPU-encoding (NVENC) en -decoding (NVDEC), PyTorch en Claude Code. |
+
+**Snelheid en achtergrond:** alle zware taken draaien op lage prioriteit, dus wat jij op de laptop doet gaat altijd voor. Rechtsboven in het dashboard staat **Quiet / Fast**: Quiet (standaard) gebruikt ongeveer de helft van de CPU en rendert één Short tegelijk (en vraagt Windows 11 om de zuinige stand: koeler en stiller); Fast gebruikt alles. Omschakelen werkt ook tijdens een taak (bij de volgende video of render). Op de accu is het altijd Quiet. Hoe lang elke stap duurt en hoeveel Claude je de laatste 5 uur gebruikte staat onderaan **Stats**. Haalt Claude de limiet van je abonnement, dan stopt alleen het schrijven: wat al geschreven is wordt nog gecontroleerd en gerenderd, de rest gaat verder bij de volgende run.
 
 **Muziek (optioneel):** elk kanaal heeft een eigen map: `C:\shorts-data\music\<kanaal>`, voor het ruimtekanaal dus `music\space`. Zet daar mp3's uit de YouTube Audio Library in (filter "Attribution not required"). Zonder tracks is de Short stil. Daarna `python -m shorts rerender` om wachtende Shorts opnieuw te renderen.
 
@@ -47,7 +51,7 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 
 - **Home**: per kanaal een kaart met Shorts om te reviewen, goedgekeurd, ingepland voor de komende 7 dagen, aantal ongebruikte video's en de laatste taak. Knoppen *Make Shorts*, *Review*, *Schedule*.
 - **Make**: kies kanaal, aantal en format en start. Het werk draait op de achtergrond als `python -m shorts --channel <id> make -n N`, met de huidige stap (download / script / feitencheck / render), "3 van 10", de laatste logregels en een Stop-knop. Er draait één zware taak tegelijk; de rest wacht in de rij. Reviewen kan intussen gewoon.
-- **Review**: dezelfde reviewpagina als eerst, met een kanaalfilter. Een fout woord? Pas de tekst van een blok aan en klik *Save text and re-render*: de Short wordt opnieuw gerenderd met hetzelfde beeld (de feitencheck draait niet opnieuw).
+- **Review**: dezelfde reviewpagina als eerst, met een kanaalfilter. Toetsen: <kbd>A</kbd> goedkeuren, <kbd>R</kbd> afwijzen (met de gekozen reden), <kbd>N</kbd> volgende, <kbd>E</kbd> tekst bewerken, spatie pauze; de volgende Short laadt al op de achtergrond. Een fout woord? Pas de tekst van een blok aan en klik *Save text and re-render*: de Short wordt opnieuw gerenderd met hetzelfde beeld (de feitencheck draait niet opnieuw).
 - **Schedule**: per kanaal de goedgekeurde Shorts met de tijd waarop ze zouden verschijnen, de knop *Schedule approved now* (uploadt ze privé met een publicatietijd), wat er per dag ingepland staat en wat al online is. Bovenaan het aantal uploads vandaag van de gedeelde limiet (`upload_quota` in `config/settings.toml`, standaard 100; reset om middernacht Californische tijd). `upload` stopt vanzelf bij die limiet.
 - **Stats**: views, engaged views (het dichtst bij "bekeken vs weggeswipet") en kijkpercentage per Short, per kanaal en per format. *Fetch stats* haalt nieuwe cijfers op.
 - **Daily auto-run** (onderaan Schedule): zet per kanaal *auto-run* aan in de instellingen en de dagelijkse Windows-taak aan; dan maakt `python -m shorts daily` elke dag de Shorts voor die dag en plant de goedgekeurde in. Er gaat niets online zonder jouw goedkeuring, en er worden geen nieuwe Shorts gemaakt zolang er meer dan 3 dagen werk op review wacht. Log: `C:\shorts-data\logs\daily.log`.
@@ -103,7 +107,8 @@ Instellingen wijzigen kan op dezelfde pagina; de oude TOML blijft bewaard als `.
 | :-- | :-- |
 | `shorts/sources/` | Beeldbronnen (NASA, Internet Archive, Prelinger, Library of Congress, Commons, Europeana, Open Beelden, Pexels, Pixabay, importmappen); `common.py` doet opslaan, rechtencheck, downloaden, geluid eraf, dubbele overslaan |
 | `shorts/categorize.py`, `config/categories.toml` | Scènes in categorieën sorteren (metadata, CLIP, Claude) |
-| `shorts/scenes.py` | Scènedetectie, scores (beweging, contrast, titelkaart), uitsnede |
+| `shorts/scenes.py` | Scènedetectie in één ffmpeg-pass (GPU als het kan, lange video's verdeeld over meerdere workers), scores (beweging, contrast, titelkaart), uitsnede |
+| `shorts/speed.py`, `shorts/timing.py`, `shorts/bench.py` | Quiet/Fast, lage prioriteit, tijden per stap, `bench` |
 | `shorts/embed.py` | CLIP-embeddings en zoeken |
 | `shorts/hero.py` | Hero shot kiezen (+ terugkoppeling uit statistieken) |
 | `shorts/script.py`, `shorts/llm.py` | Scripts via `claude -p` |

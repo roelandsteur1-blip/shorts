@@ -11,6 +11,11 @@ from . import db
 from .config import list_channels, load_channel, load_settings
 
 
+# Commands that keep the CPU/GPU busy for a while; they run at below-normal priority.
+HEAVY = {"ingest", "import", "restock", "categorize", "dedupe", "scenes", "embed", "make", "finish",
+         "rerender", "daily", "bench"}
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="shorts", description="YouTube Shorts pipeline")
     p.add_argument("--channel", help="channel id (config/channels/<id>.toml)")
@@ -77,6 +82,10 @@ def main(argv: list[str] | None = None) -> int:
     pcn.add_argument("--fresh", action="store_true", help="forget the saved login first (other account)")
 
     sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
+    pb = sub.add_parser("bench", help="time rendering and scene cutting with each setting (changes nothing)")
+    pb.add_argument("--renders", type=int, default=2, help="Shorts to render per setting")
+    pb.add_argument("--scenes", type=int, default=2, help="videos to cut with each scene detector")
+
     sub.add_parser("daily", help="make + schedule for every channel with auto_run = true (run by the daily task)")
     pst = sub.add_parser("status", help="show counts per step")
     pst.add_argument("--per-video", action="store_true",
@@ -86,6 +95,9 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
 
+    if args.cmd in HEAVY:
+        from .speed import lower_priority
+        lower_priority()  # also when started from a terminal: the laptop stays usable
     if args.config_dir:
         from . import config
         config.CONFIG_DIR = Path(args.config_dir).resolve()
@@ -180,6 +192,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"logged in: YouTube channel '{found['title']}' ({found['id']})")
         if channel.youtube_channel_id and channel.youtube_channel_id != found["id"]:
             print(f"!! this is not the channel confirmed for '{channel.id}' ({channel.youtube_channel_id})")
+    elif args.cmd == "bench":
+        from .bench import run as bench
+        bench(conn, settings, channel, args.renders, args.scenes)
     elif args.cmd == "daily":
         logs = settings.data_dir / "logs"  # the daily task has no terminal: keep a log
         logs.mkdir(parents=True, exist_ok=True)
@@ -272,6 +287,8 @@ def _check(settings) -> int:
     if shutil.which("ffmpeg"):
         from .media import _nvenc_works
         line(_nvenc_works(), "NVENC (GPU video encoding)", "update the NVIDIA driver; falls back to CPU encoding")
+        from .media import nvdec_works
+        line(nvdec_works(), "NVDEC (GPU video decoding)", "update the NVIDIA driver; falls back to CPU decoding")
     try:
         import torch
         line(torch.cuda.is_available(), f"PyTorch CUDA ({torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no GPU'})",
