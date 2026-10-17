@@ -70,7 +70,7 @@ def test_upload_body():
 
 
 def test_find_claude_in_store_app_folder(tmp_path, monkeypatch):
-    """The Store (MSIX) desktop app keeps Claude Code under %LOCALAPPDATA%\Claude-Data."""
+    """The Store (MSIX) desktop app keeps Claude Code under %LOCALAPPDATA%/Claude-Data."""
     from shorts import llm
     exe = tmp_path / "local" / "Claude-Data" / "claude_abc" / "claude-code" / "2.1.299" / "f0584be0fbaf" / "claude.exe"
     exe.parent.mkdir(parents=True)
