@@ -1,9 +1,11 @@
 """Background music: fetched by itself, sorted by mood, one track per Short.
 
-Every channel has a folder <data_dir>/music/<music_folder or channel id>. Two ways in:
+All channels share one library: <data_dir>/music. The mood of each track (not a folder per channel)
+decides which Shorts it fits. Two ways in:
 - fetch(): downloads CC0 / public-domain music from Openverse (no key) and Freesound (free key),
-  searching the channel's music_terms. Anything with another licence is never downloaded.
-- files put in the folder by hand (YouTube Audio Library, "Attribution not required").
+  searching every channel's music_terms. Anything with another licence is never downloaded.
+- files put in the folder by hand (YouTube Audio Library, "Attribution not required"). Files in a
+  subfolder (the old per-channel folders) are moved into the library by sync().
 
 Each track gets a row in `tracks`: licence and source, its mood and how much it sounds like
 instrumental music (CLAP, an audio-text model; the same idea as CLIP for scenes), and where the music
@@ -61,12 +63,8 @@ UA = {"User-Agent": "shorts-pipeline/0.2 (https://github.com/roelandsteur1-blip/
                     "personal project; CC0 background music for YouTube Shorts)"}
 
 
-def folder_name(channel: Channel | None) -> str:
-    return (channel.music_folder or channel.id) if channel else ""
-
-
-def folder(settings: Settings, channel: Channel | None) -> Path:
-    return settings.music_dir / folder_name(channel)
+def folder(settings: Settings) -> Path:
+    return settings.music_dir
 
 
 # ---------- tagging: CLAP, or words when transformers isn't installed ----------
@@ -195,16 +193,33 @@ def tag_pending(conn: sqlite3.Connection, settings: Settings) -> int:
 
 # ---------- the folders ----------
 
+def _merge(conn: sqlite3.Connection, root: Path, p: Path) -> Path:
+    """Move a file from a subfolder (old per-channel folder) into the library; Shorts that used it
+    keep counting as uses."""
+    dst = root / p.name
+    if dst.exists():
+        dst = root / f"{p.parent.name}-{p.name}"
+    shutil.move(str(p), dst)
+    conn.execute("UPDATE tracks SET path=?, folder='' WHERE path=?", (str(dst), str(p)))
+    conn.execute("UPDATE shorts SET music=? WHERE music=?", (str(dst), str(p)))
+    try:
+        p.parent.rmdir()  # only when it's empty now
+    except OSError:
+        pass
+    return dst
+
+
 def sync(conn: sqlite3.Connection, settings: Settings) -> int:
-    """Rows for files put in a music folder by hand; files that are gone are marked 'missing'."""
+    """Rows for files put in the music folder by hand; files that are gone are marked 'missing'."""
     added = 0
     root = settings.music_dir
-    for p in [*root.glob("*"), *root.glob("*/*")]:
+    for p in sorted([*root.glob("*/*"), *root.glob("*")]):
         if p.suffix.lower() not in MUSIC_EXT or not p.is_file() or CLAIMED in p.parts:
             continue
-        fold = "" if p.parent == root else p.parent.name
+        if p.parent != root:
+            p = _merge(conn, root, p)
         cur = conn.execute("""INSERT OR IGNORE INTO tracks (folder, path, source, title, license)
-                              VALUES (?,?,?,?,?)""", (fold, str(p), "folder", p.stem, "added by hand"))
+                              VALUES ('',?,?,?,?)""", (str(p), "folder", p.stem, "added by hand"))
         added += cur.rowcount
     for r in conn.execute("SELECT id, path FROM tracks WHERE status='ok'").fetchall():
         if not Path(r["path"]).exists():
@@ -213,8 +228,20 @@ def sync(conn: sqlite3.Connection, settings: Settings) -> int:
     return added
 
 
-def usable(conn: sqlite3.Connection, fold: str) -> list[sqlite3.Row]:
-    return conn.execute("SELECT * FROM tracks WHERE folder=? AND status='ok' ORDER BY id", (fold,)).fetchall()
+def usable(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM tracks WHERE status='ok' ORDER BY id").fetchall()
+
+
+def all_terms(settings: Settings, channel: Channel | None = None) -> list[str]:
+    """Music searches: this channel's first, then every other channel's, then the defaults."""
+    from .config import list_channels, load_channel
+    terms = list(channel.music_terms) if channel else []
+    for cid in list_channels(settings.config_dir):
+        try:
+            terms += load_channel(cid, settings.config_dir).music_terms
+        except Exception:  # noqa: BLE001 - a broken channel file must not stop music
+            pass
+    return list(dict.fromkeys(terms + DEFAULT_TERMS))
 
 
 # ---------- fetching ----------
@@ -292,10 +319,10 @@ def pre_check(hit: dict) -> str | None:
     return None
 
 
-def check_hit(settings: Settings, fold: str, hit: dict, session: requests.Session) -> dict:
+def check_hit(settings: Settings, hit: dict, session: requests.Session) -> dict:
     """Download one hit and judge it. No database access: runs in parallel.
     Returns {'status': 'ok'|'rejected', 'path', 'note', 'duration', 'start', 'mood', 'music_score'}."""
-    dst_dir = settings.music_dir / fold
+    dst_dir = settings.music_dir
     dst_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(hit["url"].split("?")[0]).suffix.lower()
     dst = dst_dir / f"{hit['source']}-{_slug(hit['source_id'])}-{_slug(hit['title'])[:40]}{ext if ext in MUSIC_EXT else '.mp3'}"
@@ -325,26 +352,25 @@ def check_hit(settings: Settings, fold: str, hit: dict, session: requests.Sessio
     return {"status": "ok", "path": str(dst)} | keep
 
 
-def store_hit(conn: sqlite3.Connection, fold: str, hit: dict, res: dict) -> None:
+def store_hit(conn: sqlite3.Connection, hit: dict, res: dict) -> None:
     conn.execute("""INSERT OR IGNORE INTO tracks (folder, path, source, source_id, title, creator, license,
                         source_url, duration, start, mood, music_score, status, note, analysed)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                 (fold, res.get("path"), hit["source"], hit["source_id"], hit["title"], hit["creator"],
+                 ("", res.get("path"), hit["source"], hit["source_id"], hit["title"], hit["creator"],
                   hit["license"], hit["source_url"], res.get("duration"), res.get("start") or 0, res.get("mood"),
                   res.get("music_score"), res["status"], res.get("note"), int("start" in res)))
     conn.commit()
 
 
-def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel, want: int,
+def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel | None, want: int,
           session: requests.Session | None = None, max_pages: int = 5) -> int:
-    """Download tracks until the channel has `want` usable ones (or the searches run dry)."""
+    """Download tracks until the library has `want` usable ones (or the searches run dry)."""
     s = session or requests.Session()
-    fold = folder_name(channel)
     sync(conn, settings)
-    need = want - len(usable(conn, fold))
+    need = want - len(usable(conn))
     if need <= 0:
         return 0
-    terms = channel.music_terms or DEFAULT_TERMS
+    terms = all_terms(settings, channel)
     got = 0
     with ThreadPoolExecutor(WORKERS) as pool:
         for page in range(1, max_pages + 1):
@@ -364,7 +390,7 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel, want: 
                                 h["source_id"] == hit["source_id"] for h in todo):
                             continue
                         if why := pre_check(hit):
-                            store_hit(conn, fold, hit, {"status": "rejected", "note": why})
+                            store_hit(conn, hit, {"status": "rejected", "note": why})
                         else:
                             todo.append(hit)
                     log.info("music: %s '%s' page %d: %d CC0/public-domain results, %d worth downloading",
@@ -372,11 +398,11 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel, want: 
                     # Download a few more than still needed at once: most turn out not to be music.
                     while todo and got < need:
                         batch, todo = todo[:WORKERS], todo[WORKERS:]
-                        for hit, res in zip(batch, pool.map(lambda h: check_hit(settings, fold, h, s), batch)):
+                        for hit, res in zip(batch, pool.map(lambda h: check_hit(settings, h, s), batch)):
                             if got >= need and res["status"] == "ok":
                                 Path(res["path"]).unlink(missing_ok=True)
                                 continue  # not stored: may be fetched again another time
-                            store_hit(conn, fold, hit, res)
+                            store_hit(conn, hit, res)
                             if res["status"] == "ok":
                                 got += 1
                                 log.info("music: kept %s (%s, %s, %s)", hit["title"], hit["source"], hit["license"], res["mood"])
@@ -385,14 +411,14 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel, want: 
 
 
 def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> None:
-    """Before 'make': tag new hand-added tracks, and fetch when the channel runs low. Never fails
+    """Before 'make': tag new hand-added tracks, and fetch when the library runs low. Never fails
     the batch: without music a Short is silent, not broken."""
     try:
         sync(conn, settings)
         tag_pending(conn, settings)
-        if settings.music_min_tracks and len(usable(conn, folder_name(channel))) < settings.music_min_tracks:
+        if settings.music_min_tracks and len(usable(conn)) < settings.music_min_tracks:
             n = fetch(conn, settings, channel, settings.music_min_tracks)
-            log.info("music: fetched %d tracks for %s", n, channel.id)
+            log.info("music: fetched %d tracks", n)
     except Exception:  # noqa: BLE001
         log.exception("music restock failed; Shorts use the tracks there are")
 
@@ -400,11 +426,10 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> N
 # ---------- picking ----------
 
 def pick(conn: sqlite3.Connection, settings: Settings, short_id: int, channel: Channel | None) -> sqlite3.Row | None:
-    """The least-used track in the Short's mood (any mood when none fits), never the track the
-    channel's previous Short got. Loose files in music/ are the fallback for every channel."""
+    """The least-used track (over all channels) in the Short's mood (any mood when none fits),
+    never the track the channel's previous Short got."""
     sync(conn, settings)
-    tracks = [t for t in usable(conn, folder_name(channel)) if Path(t["path"]).exists()] if channel else []
-    tracks = tracks or [t for t in usable(conn, "") if Path(t["path"]).exists()]
+    tracks = [t for t in usable(conn) if Path(t["path"]).exists()]
     if not tracks:
         return None
     row = conn.execute("SELECT mood, channel FROM shorts WHERE id=?", (short_id,)).fetchone()
@@ -460,8 +485,8 @@ def remove(conn: sqlite3.Connection, track_id: int) -> None:
     conn.commit()
 
 
-def summary(conn: sqlite3.Connection, fold: str) -> dict:
-    rows = usable(conn, fold)
+def summary(conn: sqlite3.Connection) -> dict:
+    rows = usable(conn)
     moods: dict[str, int] = {}
     for r in rows:
         moods[r["mood"] or "untagged"] = moods.get(r["mood"] or "untagged", 0) + 1

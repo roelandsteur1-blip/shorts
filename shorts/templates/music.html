@@ -1,16 +1,16 @@
 {% extends "base.html" %}{% block title %}Music{% endblock %}{% block body %}
 <h1>Music</h1>
-<p>{% for c in channels %}<a class="pill" href="/music?channel={{ c.id }}" style="{{ 'border-color:var(--accent)' if c.id == ch.id }}">{{ c.name }}</a>{% endfor %}</p>
+<p class="muted">One library for all channels: the mood of a track decides which Shorts it fits.</p>
 <div class="card">
 <p><span class="stat"><b>{{ summary.tracks }}</b>tracks</span>
 {% for m, n in summary.moods|dictsort %}<span class="stat"><b>{{ n }}</b>{{ m }}</span>{% endfor %}</p>
 <p class="muted">Folder: <code>{{ folder }}</code>. Files you put there yourself (YouTube Audio Library, "Attribution not required") are used too.
-'Make' fetches CC0 / public-domain music by itself from {{ sources|join(' and ') }} when there are fewer than {{ min_tracks }} tracks.
-Each Short gets the least-used track in the mood of its script, starting where the music gets going.</p>
+'Make' fetches CC0 / public-domain music by itself from {{ sources|join(' and ') }} when the library has fewer than {{ min_tracks }} tracks.
+Each Short gets the least-used track (over all channels) in the mood of its script, starting where the music gets going.</p>
 <form method="post" action="/music/fetch" class="inline"><input type="hidden" name="channel" value="{{ ch.id }}">
 <input type="number" name="want" value="{{ [summary.tracks + 20, min_tracks]|max }}" style="width:90px"> tracks in total
 <button class="primary">Fetch music now</button></form>
-<span class="muted">Searches: {{ (ch.music_terms or ['ambient', 'cinematic', 'calm piano', 'epic orchestral'])|join(', ') }} (change in the channel's music_terms).</span>
+<span class="muted">Searches: {{ terms|join(', ') }} (every channel's music searches, in its settings).</span>
 </div>
 <div class="card"><b>Freesound</b> (more CC0 music, free key: <a href="https://freesound.org/apiv2/apply" target="_blank" rel="noopener">get one</a>)
 <form method="post" action="/music/key" style="margin-top:6px"><input type="hidden" name="channel" value="{{ ch.id }}">

@@ -1,5 +1,6 @@
 """Background music: fetching CC0 tracks, moods, picking, claims, Music page."""
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -31,7 +32,7 @@ def test_music_start_skips_quiet_intro(tmp_path):
 
 
 def test_pick_mood_least_used_and_not_previous(conn, settings, channel):
-    d = settings.music_dir / "space"
+    d = settings.music_dir
     paths = [str(tone(d / f"{n}.mp3", seconds=3, freq=200 + i * 50)) for i, n in enumerate(["a", "b", "c"])]
     music.sync(conn, settings)
     rows = {r["title"]: r["id"] for r in conn.execute("SELECT id, title FROM tracks")}
@@ -90,9 +91,9 @@ def test_fetch_keeps_only_cc0_music(conn, settings, channel, tmp_path):
         assert music.fetch(conn, settings, channel, want=5, session=Session()) == 1
     finally:
         music.analyse = real
-    ok = music.usable(conn, "space")
+    ok = music.usable(conn)
     assert [(t["title"], t["license"], t["mood"]) for t in ok] == [("Good space ambient", "CC0", "mysterious")]
-    assert any((settings.music_dir / "space").glob("openverse-1-*.mp3"))
+    assert any(settings.music_dir.glob("openverse-1-*.mp3"))
     notes = dict(conn.execute("SELECT title, note FROM tracks WHERE status='rejected'").fetchall())
     assert "length" in notes["Jingle"] and "talking" in notes["Podcast"]
     assert "sound effect" in notes["Cinematic whoosh hit"]
@@ -103,20 +104,20 @@ def test_fetch_keeps_only_cc0_music(conn, settings, channel, tmp_path):
 
 
 def test_claim_moves_track_and_lists_shorts_to_rerender(conn, settings, channel):
-    p = str(tone(settings.music_dir / "space" / "x.mp3", seconds=3))
+    p = str(tone(settings.music_dir / "x.mp3", seconds=3))
     music.sync(conn, settings)
     tid = conn.execute("SELECT id FROM tracks").fetchone()[0]
-    waiting = short(conn, music_path=p, status="approved")
+    waiting = short(conn, channel="history", music_path=p, status="approved")  # shared: any channel
     short(conn, music_path=p, status="scheduled", youtube_id="abc")
     assert music.claim(conn, settings, tid) == [waiting]
-    assert not music.usable(conn, "space")
+    assert not music.usable(conn)
     assert (settings.music_dir / music.CLAIMED / "x.mp3").exists()
     music.sync(conn, settings)  # the claimed folder is never scanned back in
-    assert not music.usable(conn, "space")
+    assert not music.usable(conn)
 
 
 def test_music_page(conn, settings, channel):
-    tone(settings.music_dir / "space" / "Calm piano.mp3", seconds=3)
+    tone(settings.music_dir / "Calm piano.mp3", seconds=3)
     app = create_app(settings, start_runner=False)
     client = app.test_client()
     page = client.get("/music?channel=space").data
@@ -133,3 +134,18 @@ def test_music_page(conn, settings, channel):
 def test_mood_from_words():
     assert music.mood_from_words("Epic Cinematic Trailer") == "epic"
     assert music.mood_from_words("untitled 3") is None
+
+
+def test_old_channel_folders_merge_into_one_library(conn, settings, channel):
+    old = str(tone(settings.music_dir / "space" / "a.mp3", seconds=3))
+    tone(settings.music_dir / "body" / "a.mp3", seconds=3, freq=500)  # same name in another folder
+    used = short(conn, music_path=old)
+    music.sync(conn, settings)
+    paths = sorted(Path(t["path"]).name for t in music.usable(conn))
+    assert paths == ["a.mp3", "space-a.mp3"]  # body/ is merged first (sorted); the second gets a prefix
+    assert not (settings.music_dir / "space").exists() and not (settings.music_dir / "body").exists()
+    # The Short that used space/a.mp3 still counts as a use of the same file.
+    assert conn.execute("SELECT music FROM shorts WHERE id=?", (used,)).fetchone()[0] == str(settings.music_dir / "space-a.mp3")
+    # A Short on any channel can now get either track.
+    sid = short(conn, channel="body")
+    assert music.pick(conn, settings, sid, channel) is not None

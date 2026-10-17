@@ -36,7 +36,7 @@ class Settings:
     restock_per_term: int = 2         # videos per search term in one automatic restock
     upload_quota: int = 100           # uploads per day for the Google Cloud project (all channels)
     channel_uploads_per_day: int = 5  # uploads per channel per 24 hours (YouTube's own per-channel limit)
-    music_min_tracks: int = 30        # 'make' fetches CC0 music when a channel has fewer tracks (0 = never)
+    music_min_tracks: int = 30        # 'make' fetches CC0 music when the shared library has fewer tracks (0 = never)
     config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR
 
     @property
@@ -67,10 +67,6 @@ class Settings:
     def secrets_dir(self) -> Path:
         return self.data_dir / "secrets"
 
-    def ensure_channel_dirs(self, channel_ids: list[str]) -> None:
-        for cid in channel_ids:
-            (self.music_dir / cid).mkdir(parents=True, exist_ok=True)
-
     def ensure_dirs(self) -> None:
         for d in (self.data_dir, self.footage_dir, self.keyframe_dir,
                   self.render_dir, self.music_dir, self.secrets_dir):
@@ -91,7 +87,7 @@ class Channel:
     uploads_per_day: int = 2
     publish_times_utc: list[str] = field(default_factory=lambda: ["15:00"])
     hashtags: list[str] = field(default_factory=list)
-    music_folder: str | None = None  # subfolder of data_dir/music; default: channel id
+    music_folder: str | None = None  # no longer used: all channels share data_dir/music (shorts/music.py)
     music_terms: list[str] = field(default_factory=list)  # music searches (shorts/music.py); empty = defaults
     # Footage categories this channel uses (config/categories.toml); empty = every category.
     categories: list[str] = field(default_factory=list)

@@ -68,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     prr.add_argument("ids", nargs="*", type=int, help="short ids; default: all waiting for review")
 
     pmu = sub.add_parser("music", help="background music: fetch CC0 tracks, tag moods, list them")
-    pmu.add_argument("--want", type=int, help="fetch until the channel has this many tracks "
+    pmu.add_argument("--want", type=int, help="fetch until the shared library has this many tracks "
                      "(default: music_min_tracks in settings)")
     pmu.add_argument("--retag", action="store_true", help="analyse every track again (mood, start)")
     pmu.add_argument("--list", action="store_true", help="only list the channel's tracks")
@@ -117,7 +117,6 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings(data_dir=args.data_dir)
     settings.ensure_dirs()
     channel = load_channel(args.channel or settings.default_channel)
-    settings.ensure_channel_dirs([channel.music_folder or channel.id])
     conn = db.connect(settings.db_path)
 
     if args.cmd == "check":
@@ -255,13 +254,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def _music(conn, settings, channel, args) -> int:
     from . import music
-    fold = music.folder_name(channel)
     if args.claimed:
         from .render import render_short
         ids = music.claim(conn, settings, args.claimed)
         print(f"track {args.claimed} won't be used again; re-rendering {len(ids)} Shorts")
-        for sid in ids:
-            print(f"short {sid}: {render_short(conn, settings, channel, sid)}")
+        for sid in ids:  # any channel: the library is shared
+            cid = conn.execute("SELECT channel FROM shorts WHERE id=?", (sid,)).fetchone()[0]
+            print(f"short {sid}: {render_short(conn, settings, load_channel(cid), sid)}")
         return 0
     if not args.list:
         music.sync(conn, settings)
@@ -271,10 +270,10 @@ def _music(conn, settings, channel, args) -> int:
         want = args.want if args.want is not None else settings.music_min_tracks
         print(f"downloaded {music.fetch(conn, settings, channel, want)} tracks "
               f"({', '.join(music.music_sources(settings))})")
-    info = music.summary(conn, fold)
-    print(f"{info['tracks']} usable tracks in {music.folder(settings, channel)}: "
+    info = music.summary(conn)
+    print(f"{info['tracks']} usable tracks in {music.folder(settings)} (shared by all channels): "
           + ", ".join(f"{k} {v}" for k, v in sorted(info["moods"].items())))
-    for t in music.usable(conn, fold):
+    for t in music.usable(conn):
         print(f"  {t['id']:5} {t['mood'] or '-':10} start {t['start']:4.1f}s  {t['license']:14} {t['title'][:60]}")
     return 0
 

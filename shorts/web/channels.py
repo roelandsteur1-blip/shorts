@@ -20,7 +20,7 @@ def _lines(text: str | None) -> list[str]:
 
 def form_to_data(form, base: dict) -> dict:
     data = dict(base)
-    for key in ("name", "niche", "hero_query", "music_folder"):
+    for key in ("name", "niche", "hero_query"):
         if key in form:
             data[key] = form.get(key, "").strip() or None
     if "id" in form:
@@ -96,7 +96,7 @@ def draft():
 def page(cid: str):
     ch = channel_or_404(cid)
     data = chans.raw(settings(), cid)
-    music = settings().music_dir / (ch.music_folder or ch.id)
+    music = settings().music_dir
     tracks = sum(1 for p in music.glob("*") if p.suffix.lower() in MUSIC_EXT) if music.exists() else 0
     fp = found_path(settings(), cid)
     found = json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else None

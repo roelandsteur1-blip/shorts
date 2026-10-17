@@ -21,19 +21,18 @@ def index():
     ch = channel_or_404(request.args.get("channel") or chans[0].id)
     c = conn()
     music.sync(c, settings())
-    fold = music.folder_name(ch)
     uses = dict(c.execute("""SELECT music, COUNT(*) FROM shorts WHERE music IS NOT NULL
                               AND status != 'rejected' GROUP BY music""").fetchall())
-    tracks = c.execute("""SELECT * FROM tracks WHERE folder=? AND status IN ('ok', 'claimed')
-                           ORDER BY status DESC, mood, id""", (fold,)).fetchall()
-    rejected = c.execute("""SELECT note, COUNT(*) AS n FROM tracks WHERE folder=? AND status='rejected'
-                             GROUP BY note ORDER BY n DESC LIMIT 5""", (fold,)).fetchall()
+    tracks = c.execute("""SELECT * FROM tracks WHERE status IN ('ok', 'claimed')
+                           ORDER BY status DESC, mood, id""").fetchall()
+    rejected = c.execute("""SELECT note, COUNT(*) AS n FROM tracks WHERE status='rejected'
+                             GROUP BY note ORDER BY n DESC LIMIT 5""").fetchall()
     return render_template("music.html", channels=chans, ch=ch, tracks=tracks, uses=uses,
-                           summary=music.summary(c, fold), folder=music.folder(settings(), ch),
+                           summary=music.summary(c), folder=music.folder(settings()),
                            moods=list(music.MOODS), rejected=rejected,
                            sources=music.music_sources(settings()),
                            freesound_key=bool(sources.api_key(settings(), "freesound")),
-                           min_tracks=settings().music_min_tracks)
+                           min_tracks=settings().music_min_tracks, terms=music.all_terms(settings()))
 
 
 @bp.get("/music/file/<int:track_id>")
