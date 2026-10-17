@@ -226,3 +226,14 @@ def test_stock_footage_is_never_a_hero(conn, settings):
     assert ids[0] not in hero.candidates(conn, settings, "space", 10, use_clip=False)
     _, own = add_video(conn, "prelinger", "waves film", [vec("ocean waves crashing")])
     assert own[0] in hero.candidates(conn, settings, "space", 10, use_clip=False)
+
+
+def test_categorize_embeds_scenes_left_without_embedding(conn, settings, capsys):
+    """A run stopped after cutting scenes leaves them without CLIP; 'Sort new footage' fills that in."""
+    from shorts import cli
+    _, ids = add_video(conn, "internet_archive", "Old harbour film", [vec("ship"), vec("dock")])
+    conn.execute("UPDATE scenes SET embedding = NULL")
+    conn.commit()
+    cli.main(["--data-dir", str(settings.data_dir), "categorize"])
+    assert "embedded 2 scenes" in capsys.readouterr().out
+    assert conn.execute("SELECT COUNT(*) FROM scenes WHERE embedding IS NULL").fetchone()[0] == 0

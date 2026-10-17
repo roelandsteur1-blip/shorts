@@ -151,8 +151,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"downloaded {restock(conn, settings, channel, need=need)} new videos")
     elif args.cmd == "categorize":
         from .categorize import resort, sort_pending
+        from .embed import embed_pending
         if args.all:
             resort(conn)
+        # Scenes cut by a run that was stopped before embedding can't be sorted (or used) without it.
+        if n := embed_pending(conn, settings):
+            print(f"embedded {n} scenes")
         counts = sort_pending(conn, settings)
         print("sorted scenes: " + (", ".join(f"{k} {v}" for k, v in counts.items()) or "nothing new"))
     elif args.cmd == "sources":

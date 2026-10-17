@@ -67,8 +67,11 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     from .sources.common import recheck_rights
     if flagged := recheck_rights(conn):
         log.info("%d videos newly flagged for a rights check; they won't be used", flagged)
-    # Scenes cut since the last run get their categories (cheap: metadata + CLIP).
+    # Scenes cut since the last run (also by a run stopped before embedding) get their CLIP
+    # embedding and categories.
     from .categorize import sort_pending
+    from .embed import embed_pending
+    embed_pending(conn, settings)
     sort_pending(conn, settings)
 
     from . import library
