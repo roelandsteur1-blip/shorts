@@ -98,7 +98,7 @@ def test_daily_run(conn, settings, cfg, monkeypatch):
     path.write_text(path.read_text().replace('id = "space"', 'id = "space"\nauto_run = true'))
     made, uploaded = [], []
     monkeypatch.setattr(shorts.pipeline, "make", lambda c, s, ch, n: made.append((ch.id, n)) or [1, 2])
-    monkeypatch.setattr(up, "upload_approved", lambda c, s, ch: uploaded.append(ch.id) or ["yt"])
+    monkeypatch.setattr(up, "upload_approved", lambda c, s, ch, **k: uploaded.append(ch.id) or ["yt"])
     assert daily.run(conn, settings) == {"space": "made 2, scheduled 1"}
     assert made == [("space", 2)]
     # A big review backlog: no new Shorts, approved ones are still scheduled.
@@ -162,7 +162,7 @@ def fake_upload(monkeypatch):
     monkeypatch.setattr(upload, "check_channel", lambda yt, ch: None)
 
     def use(yt):
-        monkeypatch.setattr(upload, "youtube", lambda s, ch: yt)
+        monkeypatch.setattr(upload, "youtube", lambda s, ch, interactive=True: yt)
         return yt
     return use
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 from . import db
@@ -28,13 +28,24 @@ def _client_secret(settings: Settings) -> Path:
     return path
 
 
-def credentials(settings: Settings, channel: Channel):
+class LoginExpired(RuntimeError):
+    """The saved YouTube login no longer works and nobody is there to log in again."""
+
+
+def login_expired_path(settings: Settings, channel_id: str) -> Path:
+    return settings.data_dir / f"login-expired-{channel_id}.txt"
+
+
+def credentials(settings: Settings, channel: Channel, interactive: bool = True):
+    """interactive=False (daily upload, stats for all channels): never open a browser to log in,
+    raise LoginExpired instead so a job nobody watches doesn't wait forever."""
     from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
 
     token = settings.secrets_dir / f"token-{channel.id}.json"
+    expired = login_expired_path(settings, channel.id)
     creds = None
     if token.exists():
         creds = Credentials.from_authorized_user_file(str(token), SCOPES)
@@ -44,18 +55,23 @@ def credentials(settings: Settings, channel: Channel):
         except RefreshError as e:
             # Expired or revoked (in Testing mode Google drops refresh tokens after 7 days): log in again.
             log.warning("saved login for '%s' no longer works (%s); logging in again", channel.name, e)
+            expired.write_text(iso(datetime.now(timezone.utc)), encoding="utf-8")  # warning on Home
             creds = None
     if not creds or not creds.valid:
+        if not interactive:
+            raise LoginExpired(f"the YouTube login for '{channel.name}' has expired: use Connect YouTube "
+                               "on its Settings page")
         flow = InstalledAppFlow.from_client_secrets_file(str(_client_secret(settings)), SCOPES)
         print(f"Log in with the Google account that owns the '{channel.name}' channel.")
         creds = flow.run_local_server(port=0)
     token.write_text(creds.to_json(), encoding="utf-8")
+    expired.unlink(missing_ok=True)
     return creds
 
 
-def youtube(settings: Settings, channel: Channel):
+def youtube(settings: Settings, channel: Channel, interactive: bool = True):
     from googleapiclient.discovery import build
-    return build("youtube", "v3", credentials=credentials(settings, channel), cache_discovery=False)
+    return build("youtube", "v3", credentials=credentials(settings, channel, interactive), cache_discovery=False)
 
 
 def my_channel(yt) -> dict:
@@ -228,7 +244,7 @@ def body_for(meta: dict, publish_at: datetime | None) -> dict:
 
 
 def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Channel,
-                    limit: int | None = None, schedule: bool = True) -> list[str]:
+                    limit: int | None = None, schedule: bool = True, interactive: bool = True) -> list[str]:
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
@@ -255,7 +271,7 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
         rows = rows[:max(left, 0)]
     if not rows:
         return []
-    yt = youtube(settings, channel)
+    yt = youtube(settings, channel, interactive)
     check_channel(yt, channel)
     slots = slots_for(conn, settings, channel, [r["id"] for r in rows]) if schedule else [None] * len(rows)
     done = []
@@ -291,50 +307,86 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
 
 
 def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
-    """'Daily upload': every channel uploads its approved Shorts, up to channel_uploads_per_day.
-    One channel's problem (login, YouTube's limit) doesn't stop the others."""
+    """'Daily upload': every channel uploads its approved Shorts, up to channel_uploads_per_day,
+    then fetches stats. One channel's problem (login, YouTube's limit) doesn't stop the others."""
     from .config import list_channels, load_channel
 
     out = {}
     for cid in list_channels(settings.config_dir):
         ch = load_channel(cid, settings.config_dir)
         try:
-            out[cid] = f"uploaded {len(upload_approved(conn, settings, ch))}"
+            out[cid] = f"uploaded {len(upload_approved(conn, settings, ch, interactive=False))}"
         except Exception as e:  # noqa: BLE001
             log.warning("%s: upload failed: %s", cid, e)
             out[cid] = f"failed: {e}"
         log.info("%s: %s", cid, out[cid])
+    for cid, result in fetch_stats_all(conn, settings).items():
+        out[cid] = f"{out.get(cid, '')}, {result}".lstrip(", ")
     return out
 
 
-def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> int:
+AGES = (1, 3, 7)  # stats_age: views etc. in a Short's first 1, 3 and 7 days
+LAG_DAYS = 3      # YouTube Analytics numbers for a day are final about this many days later
+METRICS = "views,engagedViews,averageViewPercentage,averageViewDuration,likes,shares,subscribersGained"
+
+
+def _video_report(yta, youtube_id: str, start: str, end: str) -> list:
+    res = yta.reports().query(ids="channel==MINE", startDate=start, endDate=end, metrics=METRICS,
+                              filters=f"video=={youtube_id}").execute()
+    return (res.get("rows") or [[0, 0, 0, 0, 0, 0, 0]])[0]
+
+
+def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel, interactive: bool = True,
+                today: date | None = None) -> int:
     """Step 8: pull per-video analytics. 'Viewed vs swiped' isn't in the API; engagedViews/views
-    is the closest signal."""
+    is the closest signal. Also stores each Short's first 1, 3 and 7 days once they are final
+    (stats_age), so Shorts and channels can be compared at the same age."""
     from googleapiclient.discovery import build
 
-    creds = credentials(settings, channel)
+    creds = credentials(settings, channel, interactive)
     yta = build("youtubeAnalytics", "v2", credentials=creds, cache_discovery=False)
     rows = conn.execute(
         "SELECT id, youtube_id, publish_at, created_at FROM shorts WHERE channel=? AND youtube_id IS NOT NULL",
         (channel.id,)).fetchall()
-    today = datetime.now(timezone.utc).date().isoformat()
+    today = today or datetime.now(timezone.utc).date()
     n = 0
     for r in rows:
-        start = (r["publish_at"] or r["created_at"])[:10]
+        start = date.fromisoformat((r["publish_at"] or r["created_at"])[:10])
         if start > today:
             continue
-        res = yta.reports().query(
-            ids="channel==MINE", startDate=start, endDate=today,
-            metrics="views,engagedViews,averageViewPercentage,averageViewDuration,likes,shares,subscribersGained",
-            filters=f"video=={r['youtube_id']}",
-        ).execute()
-        vals = (res.get("rows") or [[0, 0, 0, 0, 0, 0, 0]])[0]
+        vals = _video_report(yta, r["youtube_id"], start.isoformat(), today.isoformat())
         conn.execute(
             """INSERT INTO stats (short_id, views, engaged_views, avg_view_pct, avg_view_dur, likes, shares, subs_gained)
                VALUES (?,?,?,?,?,?,?,?)""", (r["id"], *vals))
+        have = {x[0] for x in conn.execute("SELECT days FROM stats_age WHERE short_id=?", (r["id"],))}
+        for days in AGES:
+            end = start + timedelta(days=days - 1)
+            if days in have or end + timedelta(days=LAG_DAYS) > today:
+                continue
+            vals = _video_report(yta, r["youtube_id"], start.isoformat(), end.isoformat())
+            conn.execute(
+                """INSERT INTO stats_age (short_id, days, views, engaged_views, avg_view_pct, avg_view_dur, likes,
+                                          shares, subs_gained) VALUES (?,?,?,?,?,?,?,?,?)""", (r["id"], days, *vals))
         n += 1
     conn.commit()
     return n
+
+
+def fetch_stats_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
+    """Stats for every channel that has a YouTube login; never opens a browser."""
+    from .config import list_channels, load_channel
+
+    out = {}
+    for cid in list_channels(settings.config_dir):
+        if not (settings.secrets_dir / f"token-{cid}.json").exists():
+            continue
+        try:
+            out[cid] = f"stats for {fetch_stats(conn, settings, load_channel(cid, settings.config_dir), interactive=False)}"
+        except Exception as e:  # noqa: BLE001 - one channel's login problem must not stop the others
+            log.warning("%s: stats failed: %s", cid, e)
+            out[cid] = f"stats failed: {e}"
+        log.info("%s: %s", cid, out[cid])
+    return out
 
 
 def save_body_preview(path: Path, meta: dict, publish_at: datetime | None) -> None:

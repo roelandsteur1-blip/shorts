@@ -95,7 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     pcn = sub.add_parser("connect", help="log in to YouTube for this channel and show which channel it is")
     pcn.add_argument("--fresh", action="store_true", help="forget the saved login first (other account)")
 
-    sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
+    pstat = sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
+    pstat.add_argument("--all", action="store_true", help="every channel with a YouTube login")
     pb = sub.add_parser("bench", help="time rendering and scene cutting with each setting (changes nothing)")
     pb.add_argument("--renders", type=int, default=2, help="Shorts to render per setting")
     pb.add_argument("--scenes", type=int, default=2, help="videos to cut with each scene detector")
@@ -231,8 +232,13 @@ def main(argv: list[str] | None = None) -> int:
         for cid, what in run(conn, settings).items():
             print(f"{cid}: {what}")
     elif args.cmd == "stats":
-        from .upload import fetch_stats
-        print(f"stats for {fetch_stats(conn, settings, channel)} Shorts")
+        if args.all:
+            from .upload import fetch_stats_all
+            for cid, result in fetch_stats_all(conn, settings).items():
+                print(f"{cid}: {result}")
+        else:
+            from .upload import fetch_stats
+            print(f"stats for {fetch_stats(conn, settings, channel)} Shorts")
     elif args.cmd == "status":
         print(f"channels: {', '.join(list_channels())}")
         for label, sql in [

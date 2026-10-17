@@ -106,6 +106,22 @@ CREATE TABLE IF NOT EXISTS stats (
     subs_gained    INTEGER
 );
 
+-- Each Short's first 1, 3 and 7 days (YouTube Analytics, fetched once the days are final), so
+-- channels and Shorts are compared at the same age instead of by lifetime totals.
+CREATE TABLE IF NOT EXISTS stats_age (
+    short_id       INTEGER NOT NULL REFERENCES shorts(id),
+    days           INTEGER NOT NULL,
+    views          INTEGER,
+    engaged_views  INTEGER,
+    avg_view_pct   REAL,
+    avg_view_dur   REAL,
+    likes          INTEGER,
+    shares         INTEGER,
+    subs_gained    INTEGER,
+    fetched_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (short_id, days)
+);
+
 -- Footage categories per scene (shorts/categorize.py). confidence 0 + method 'manual' means
 -- "not this category" (a correction by hand that a re-sort keeps).
 CREATE TABLE IF NOT EXISTS scene_categories (

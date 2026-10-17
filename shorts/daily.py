@@ -1,5 +1,5 @@
 """Daily auto-run: for every channel with auto_run = true, make that day's Shorts and schedule the
-approved ones. Nothing goes public without approval in review. Windows Task Scheduler runs
+approved ones, then fetch stats for every channel. Nothing goes public without approval in review. Windows Task Scheduler runs
 `python -m shorts daily` once a day; the dashboard's Schedule page turns that task on and off."""
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ BACKLOG_DAYS = 3  # don't make more while this many days of Shorts still wait fo
 
 def run(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
     from .pipeline import make
-    from .upload import upload_approved
+    from .upload import fetch_stats_all, upload_approved
 
     done = {}
     for cid in list_channels(settings.config_dir):
@@ -37,12 +37,13 @@ def run(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
         else:
             log.info("%s: %d Shorts still wait for review; not making more today", cid, waiting)
         try:
-            uploaded = len(upload_approved(conn, settings, ch))
+            uploaded = len(upload_approved(conn, settings, ch, interactive=False))
         except Exception as e:  # noqa: BLE001 - one channel's login problem must not stop the others
             log.warning("%s: scheduling failed: %s", cid, e)
             uploaded = 0
         done[cid] = f"made {max(made, 0)}, scheduled {uploaded}"
         log.info("%s: %s", cid, done[cid])
+    fetch_stats_all(conn, settings)
     return done
 
 

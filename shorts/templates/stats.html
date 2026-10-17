@@ -2,9 +2,22 @@
 <h1>Stats</h1>
 <form method="get" style="max-width:300px"><input type="hidden" name="sort" value="{{ sort }}"><select name="channel" onchange="this.form.submit()"><option value="">All channels</option>
 {% for ch in channels %}<option value="{{ ch.id }}" {{ 'selected' if ch.id == selected }}>{{ ch.name }}</option>{% endfor %}</select></form>
-<p>{% for ch in channels %}<form method="post" action="/jobs/start" class="inline"><input type="hidden" name="command" value="stats"><input type="hidden" name="channel" value="{{ ch.id }}"><button>Fetch stats: {{ ch.name }}</button></form> {% endfor %}</p>
+<p><form method="post" action="/stats/fetch-all" class="inline"><button class="primary">Fetch stats for all channels</button></form>
+<span class="muted">Also runs after every Daily upload.</span></p>
+<h3>Channels compared at the same age</h3>
+<p class="muted">Every Short counted over its first {% for a in ages %}<a href="?days={{ a }}&csort={{ csort }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if a == days }}">{{ a }} day{{ 's' if a > 1 }}</a>{{ ' / ' if not loop.last }}{% endfor %},
+so a channel that started earlier doesn't look better. Small numbers: change from last week (Shorts that reached {{ days }} day{{ 's' if days > 1 }} in the last 7 days against the week before; YouTube's numbers lag about 3 days).</p>
+{% macro delta(r, k, fmt, scale=1) %}{% if k in r.change %}<br><small class="{{ 'ok' if r.change[k] > 0 else ('bad' if r.change[k] < 0 else 'muted') }}">{{ '+' if r.change[k] > 0 }}{{ fmt|format(r.change[k] * scale) }}</small>{% endif %}{% endmacro %}
+{% if compare %}<table><tr><th>Channel</th><th>Shorts</th>
+{% for k, label in compare_sorts.items() %}<th><a href="?days={{ days }}&csort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == csort }}">{{ label }}</a></th>{% endfor %}</tr>
+{% for r in compare %}<tr><td>{{ r.channel }}</td><td>{{ r.shorts }}</td>
+<td>{{ '{:,.0f}'.format(r.views) }}{{ delta(r, 'views', '%.0f') }}</td>
+<td>{{ '%.0f'|format(100 * r.engaged) }}%{{ delta(r, 'engaged', '%.0f', 100) }}</td>
+<td>{{ '%.0f'|format(r.viewed) }}%{{ delta(r, 'viewed', '%.0f') }}</td>
+<td>{{ '%.1f'|format(r.subs) }}{{ delta(r, 'subs', '%.1f') }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">Nothing yet: a Short's first {{ days }} day{{ 's' if days > 1 }} count once they are about {{ days + 3 }} days old (Fetch stats picks them up, also for older Shorts).</p>{% endif %}
 {% if not rows %}<p class="muted">No stats yet: they come in after Shorts are published (press Fetch stats, or run <code>python -m shorts stats</code>).</p>{% endif %}
-{% if totals %}<div class="cards">{% for t in totals %}<div class="card"><h3 style="margin-top:0">{{ t.channel }}</h3>
+{% if totals %}<h3>Lifetime totals</h3><div class="cards">{% for t in totals %}<div class="card"><h3 style="margin-top:0">{{ t.channel }}</h3>
 <span class="stat"><b>{{ t.shorts }}</b>Shorts</span><span class="stat"><b>{{ '{:,}'.format(t.views or 0) }}</b>views</span>
 <span class="stat"><b>{{ '%.0f'|format((t.engaged or 0) * 100) }}%</b>engaged</span><span class="stat"><b>{{ '%.0f'|format(t.pct or 0) }}%</b>avg viewed</span>
 <span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span></div>{% endfor %}</div>
