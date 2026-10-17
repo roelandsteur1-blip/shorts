@@ -60,7 +60,23 @@ def hero_context(conn: sqlite3.Connection, scene_id: int) -> dict:
              FROM scenes sc JOIN assets a ON a.id = sc.asset_id WHERE sc.id = ?""",
         (scene_id,),
     ).fetchone()
-    return dict(r) | {"archive": archive_name(r["source"])}
+    return dict(r) | {"archive": archive_name(r["source"]), "siblings": siblings(conn, r["asset_id"])}
+
+
+def siblings(conn: sqlite3.Connection, asset_id: int, exclude: int | None = None) -> list[sqlite3.Row]:
+    """Earlier non-rejected Shorts (any channel) whose hero shot comes from this video."""
+    return conn.execute(
+        """SELECT s.id, s.topic, s.hook, sc.start FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id
+            WHERE sc.asset_id = ? AND s.status != 'rejected' AND s.id != ? ORDER BY s.id""",
+        (asset_id, exclude or -1)).fetchall()
+
+
+def sibling_note(h: dict) -> str:
+    if not h.get("siblings"):
+        return ""
+    done = "; ".join(f"\"{s['topic']}\" (hook: {s['hook']})" for s in h["siblings"])
+    return (f"\n  This video already gave other Shorts: {done}. Pick a different fact and angle, "
+            "about what THIS part of the video shows; do not repeat their facts or hook.")
 
 
 def archive_name(source: str) -> str:
@@ -86,6 +102,7 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
         f"  Keywords: {h.get('keywords') or ''}\n"
         f"  Description: {(h.get('description') or '').strip()[:2500]}\n"
         f"  The hero shot is {h['end'] - h['start']:.1f}s taken from {h['start']:.0f}s into this video."
+        + sibling_note(h)
         for i, h in enumerate(heroes)
     )
     return PROMPT.format(

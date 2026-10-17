@@ -7,6 +7,9 @@ import sqlite3
 
 from . import db, llm, progress
 from .config import Settings
+from .script import siblings
+
+LONG_VIDEO_SECONDS = 600  # beyond this the archive description rarely describes one fragment
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +25,10 @@ For every fact decide:
 Also list any factual claim in the on-screen text that is NOT in the facts list as an extra fact
 with verdict "unclear" or "unsupported", and check that the on-screen text does not misdescribe
 what the footage shows according to the archive description.
+When a Short lists "Other Shorts from the same video", add an extra fact with verdict "unclear"
+if this Short repeats the main fact or hook of one of them. When the footage is long, the archive
+description covers the whole video and not necessarily this fragment: be strict that the text
+does not claim the shot shows something the description only mentions elsewhere.
 
 Shorts:
 {items}
@@ -34,15 +41,25 @@ Answer with only JSON:
 
 def _item(conn: sqlite3.Connection, short_id: int) -> str:
     s = conn.execute(
-        """SELECT s.id, a.title, a.description FROM shorts s
+        """SELECT s.id, a.id AS asset_id, a.title, a.description, a.duration, sc.start FROM shorts s
              JOIN scenes sc ON sc.id = s.hero_scene_id JOIN assets a ON a.id = sc.asset_id
             WHERE s.id = ?""", (short_id,)).fetchone()
     blocks = [r[0] for r in conn.execute("SELECT text FROM blocks WHERE short_id=? ORDER BY idx", (short_id,))]
     facts = [dict(r) for r in conn.execute(
         "SELECT claim, source_url, source_quote FROM facts WHERE short_id=?", (short_id,))]
-    return (f"Short {s['id']}:\n  On-screen text: {' / '.join(blocks)}\n"
+    text = (f"Short {s['id']}:\n  On-screen text: {' / '.join(blocks)}\n"
             f"  Facts: {json.dumps(facts, ensure_ascii=False)}\n"
             f"  Footage title: {s['title']}\n  Archive description: {(s['description'] or '')[:2500]}")
+    if (s["duration"] or 0) > LONG_VIDEO_SECONDS:
+        text += (f"\n  Footage: a {s['duration'] / 60:.0f}-minute video; the hero shot is from "
+                 f"{s['start'] / 60:.1f} min in")
+    others = []
+    for sib in siblings(conn, s["asset_id"], exclude=short_id):
+        texts = [r[0] for r in conn.execute("SELECT text FROM blocks WHERE short_id=? ORDER BY idx", (sib["id"],))]
+        others.append(" / ".join(texts))
+    if others:
+        text += "\n  Other Shorts from the same video: " + " || ".join(others)
+    return text
 
 
 def check(conn: sqlite3.Connection, settings: Settings, short_ids: list[int], batch_size: int = 5) -> None:

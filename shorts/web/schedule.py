@@ -7,7 +7,7 @@ from itertools import groupby
 
 from flask import Blueprint, abort, redirect, render_template, request, url_for
 
-from ..upload import iso, next_slots, uploads_today
+from ..upload import iso, slots_for, uploads_today
 from .common import channels, conn, settings
 
 bp = Blueprint("schedule", __name__)
@@ -29,7 +29,7 @@ def index():
         published = c.execute("""SELECT * FROM shorts WHERE channel=? AND youtube_id IS NOT NULL
                                    AND (publish_at < ? OR status='uploaded') ORDER BY COALESCE(publish_at, uploaded_at) DESC
                                   LIMIT 20""", (ch.id, now)).fetchall()
-        slots = [iso(s) for s in next_slots(c, ch, len(approved))] if approved else []
+        slots = [iso(s) for s in slots_for(c, settings(), ch, [r["id"] for r in approved])]
         days = [(day, list(rows)) for day, rows in groupby(upcoming, key=lambda r: r["publish_at"][:10])]
         out.append({"ch": ch, "approved": list(zip(approved, slots)), "days": days, "published": published})
     used = uploads_today(c)

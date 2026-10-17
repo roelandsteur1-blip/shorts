@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, render_template
 
-from ..library import unused_hero_videos
+from ..hero import shorts_left
 from .common import channels, conn, settings
 
 bp = Blueprint("home", __name__)
@@ -20,6 +20,7 @@ def channel_card(ch) -> dict:
                           AND publish_at >= ? AND publish_at < ?""",
                      (ch.id, now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                       (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"))).fetchone()[0]
+    left, videos = shorts_left(c, settings(), ch.id, ch.categories)
     last_job = c.execute("SELECT * FROM jobs WHERE channel=? ORDER BY id DESC LIMIT 1", (ch.id,)).fetchone()
     return {
         "ch": ch,
@@ -28,8 +29,9 @@ def channel_card(ch) -> dict:
         "approved": counts.get("approved", 0),
         "failed": counts.get("failed", 0),
         "scheduled_week": week,
-        "footage_left": unused_hero_videos(c, settings(), ch),
-        "categories": [(cat, unused_hero_videos(c, settings(), ch, cat)) for cat in ch.categories],
+        "footage_left": left,
+        "footage_videos": videos,
+        "categories": [(cat, shorts_left(c, settings(), ch.id, [cat])[0]) for cat in ch.categories],
         "last_job": last_job,
     }
 

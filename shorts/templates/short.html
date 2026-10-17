@@ -2,7 +2,9 @@
 <h1>#{{ s.id }} · {{ s.topic }} <span class="muted" style="font-size:16px">{{ s.channel }}</span></h1>
 <div class="grid">
 <div>{% if s.video_path %}<video src="/video/{{ s.id }}" controls autoplay loop playsinline></video>{% endif %}
-<p class="muted">{{ s.format_id }} · {{ '%.1f'|format(s.duration or 0) }}s · status {{ s.status }}{% if s.reject_reason %} · {{ s.reject_reason }}{% endif %}</p></div>
+<p class="muted">{{ s.format_id }} · {{ '%.1f'|format(s.duration or 0) }}s · status {{ s.status }}{% if s.reject_reason %} · {{ s.reject_reason }}{% endif %}</p>
+{% if family|length > 1 %}<p class="muted">Short {% for f in family %}{% if f.id == s.id %}{{ loop.index }}{% endif %}{% endfor %} of {{ family|length }} from this video:
+{% for f in family if f.id != s.id %}<a href="/short/{{ f.id }}">#{{ f.id }}</a> <span class="muted">({{ f.status }})</span> {% endfor %}</p>{% endif %}</div>
 <div>
 <div class="card"><h3>Fact check</h3><table>
 {% for f in facts %}<tr><td class="{{ 'ok' if f.verdict=='supported' else ('bad' if f.verdict=='unsupported' else 'warn') }}">{{ f.verdict or 'unchecked' }}</td>

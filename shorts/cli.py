@@ -78,7 +78,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
     sub.add_parser("daily", help="make + schedule for every channel with auto_run = true (run by the daily task)")
-    sub.add_parser("status", help="show counts per step")
+    pst = sub.add_parser("status", help="show counts per step")
+    pst.add_argument("--per-video", action="store_true",
+                     help="also list the videos that can still give Shorts, and how many")
 
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -145,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{len(done)} Shorts ready for review: run 'python -m shorts review'")
     elif args.cmd == "cleanup":
         from .library import cleanup
-        n, gb = cleanup(conn, dry_run=args.dry_run)
+        n, gb = cleanup(conn, settings, dry_run=args.dry_run)
         print(f"{'would free' if args.dry_run else 'freed'} {gb:.1f} GB ({n} videos)")
     elif args.cmd == "move-footage":
         from .library import move_footage
@@ -198,13 +200,19 @@ def main(argv: list[str] | None = None) -> int:
             ("shorts", f"SELECT status, COUNT(*) FROM shorts WHERE channel='{channel.id}' GROUP BY status"),
         ]:
             print(f"{label}: " + ", ".join(f"{k} {v}" for k, v in conn.execute(sql).fetchall()))
-        from .library import unused_hero_videos
+        from .hero import shorts_left
         free = shutil.disk_usage(settings.footage_dir).free / 1e9
-        print(f"unused hero videos: {unused_hero_videos(conn, settings, channel)} "
+        left, videos = shorts_left(conn, settings, channel.id, channel.categories)
+        print(f"Shorts left in the library: {left} from {videos} videos "
               f"(restock below {settings.restock_below}); {free:.0f} GB free on {settings.footage_dir}")
         if channel.categories:
             print("per category: " + ", ".join(
-                f"{c} {unused_hero_videos(conn, settings, channel, c)}" for c in channel.categories))
+                f"{c} {shorts_left(conn, settings, channel.id, [c])[0]}" for c in channel.categories))
+        if args.per_video:
+            from .hero import per_video
+            for r in per_video(conn, settings, channel.id, channel.categories):
+                print(f"  {r['left']} more (made {r['made']}, max {r['budget']}, "
+                      f"{(r['duration'] or 0) / 60:.0f} min)  {r['title']}")
         unsorted = conn.execute("SELECT COUNT(*) FROM scenes WHERE rejected=0 AND sorted=0").fetchone()[0]
         if unsorted:
             print(f"{unsorted} scenes not sorted into categories yet (python -m shorts categorize)")

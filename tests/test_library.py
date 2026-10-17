@@ -47,13 +47,13 @@ def test_cleanup_keeps_footage_until_uploaded(library, settings, channel, monkey
     library.execute("UPDATE scenes SET rejected=1 WHERE id NOT IN (SELECT scene_id FROM blocks) "
                     "AND id NOT IN (SELECT hero_scene_id FROM shorts)")
     library.commit()
-    assert lib.cleanup_candidates(library) == []  # Shorts still waiting for review
+    assert lib.cleanup_candidates(library, settings) == []  # Shorts still waiting for review
 
     library.execute(f"UPDATE shorts SET status='scheduled' WHERE id IN ({','.join(map(str, sids))})")
     library.commit()
     paths = [r[0] for r in library.execute("SELECT path FROM assets")]
-    assert lib.cleanup(library, dry_run=True)[0] == 2 and all(Path(p).exists() for p in paths)
-    n, _ = lib.cleanup(library)
+    assert lib.cleanup(library, settings, dry_run=True)[0] == 2 and all(Path(p).exists() for p in paths)
+    n, _ = lib.cleanup(library, settings)
     assert n == 2 and not any(Path(p).exists() for p in paths)
     assert {r[0] for r in library.execute("SELECT status FROM assets")} == {"cleaned"}
-    assert lib.unused_hero_videos(library, settings, channel) == 0
+    assert lib.shorts_left(library, settings, channel) == 0

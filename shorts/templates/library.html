@@ -9,7 +9,7 @@ Sorted by: {% for m, n in methods.items() %}{{ m }} {{ n }}{% if not loop.last %
 {% for c in cats %}<a class="card" href="/library/{{ c.id }}" style="text-decoration:none;color:inherit">
 <h3 style="margin:0">{{ c.label }}</h3>
 <p><span class="stat"><b>{{ counts.get(c.id, 0) }}</b>usable scenes</span></p>
-{% for ch, n in left[c.id] %}<p class="muted" style="margin:2px 0">{{ ch.name }}: {{ n }} videos left for a hero shot</p>{% endfor %}
+{% for ch, n in left[c.id] %}<p class="muted" style="margin:2px 0">{{ ch.name }}: footage for {{ n }} more Shorts</p>{% endfor %}
 </a>{% endfor %}
 <a class="card" href="/library/uncategorised" style="text-decoration:none;color:inherit">
 <h3 style="margin:0">Uncategorised</h3><p><span class="stat"><b class="{{ 'warn' if uncat }}">{{ uncat }}</b>to sort by hand</span></p></a>

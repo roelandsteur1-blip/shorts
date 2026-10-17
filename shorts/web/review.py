@@ -54,8 +54,13 @@ def short(sid: int):
     assets = c.execute(
         """SELECT DISTINCT a.* FROM blocks b JOIN scenes sc ON sc.id=b.scene_id
              JOIN assets a ON a.id=sc.asset_id WHERE b.short_id=?""", (sid,)).fetchall()
+    # Other Shorts opened by the same video (long videos give several), in order of making.
+    family = c.execute(
+        """SELECT s.id, s.status FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id
+            WHERE (s.status != 'rejected' OR s.id = ?) AND sc.asset_id =
+                  (SELECT asset_id FROM scenes WHERE id = ?) ORDER BY s.id""", (sid, s["hero_scene_id"])).fetchall()
     channel = request.args.get("channel") or None
-    return render_template("short.html", s=s, blocks=blocks, facts=facts, assets=assets,
+    return render_template("short.html", s=s, blocks=blocks, facts=facts, assets=assets, family=family,
                            tags=", ".join(json.loads(s["tags"] or "[]")), reasons=REJECT_REASONS,
                            next_id=_next_id(s["status"], sid, channel), channel=channel)
 

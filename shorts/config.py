@@ -26,7 +26,10 @@ class Settings:
     default_channel: str = "space"
     footage_root: Path | None = None  # 'footage_dir' in settings: downloaded videos (big); default data_dir/footage
     min_free_gb: float = 20.0         # downloads stop when the footage drive has less free space than this
-    restock_below: int = 15           # 'make' downloads more footage when fewer unused hero videos are left
+    restock_below: int = 15           # 'make' downloads more footage when fewer Shorts are left in the library
+    segment_seconds: float = 90.0     # one Short per this much video; heroes from one video lie this far apart
+    max_shorts_per_video: int = 5     # cap on Shorts from one (long) video
+    sibling_gap_days: int = 2         # Shorts from the same video are published at least this many days apart
     restock_per_term: int = 2         # videos per search term in one automatic restock
     upload_quota: int = 100           # uploads per day for the Google Cloud project (all channels)
     config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR

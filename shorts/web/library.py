@@ -6,7 +6,7 @@ import re
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, send_file, url_for
 
 from .. import categorize, llm
-from ..library import unused_hero_videos
+from ..library import shorts_left
 from .common import channels, conn, settings
 from .jobs import start_job
 
@@ -30,7 +30,7 @@ def index():
     c = conn()
     cats = categorize.load_categories(settings())
     counts = _counts()
-    left = {cat.id: [(ch, unused_hero_videos(c, settings(), ch, cat.id))
+    left = {cat.id: [(ch, shorts_left(c, settings(), ch, cat.id))
                      for ch in channels() if cat.id in ch.categories] for cat in cats}
     uncat = c.execute("SELECT COUNT(*) " + UNCAT_SQL).fetchone()[0]
     unsorted = c.execute("SELECT COUNT(*) FROM scenes WHERE rejected = 0 AND sorted = 0").fetchone()[0]

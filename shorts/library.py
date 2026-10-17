@@ -48,12 +48,12 @@ def move_footage(conn: sqlite3.Connection, settings: Settings) -> tuple[int, flo
     return moved, size
 
 
-def unused_hero_videos(conn: sqlite3.Connection, settings: Settings, channel: Channel,
-                       category: str | None = None) -> int:
-    """Videos that can still open a Short on this channel (in one of its categories, or in
-    `category` only)."""
+def shorts_left(conn: sqlite3.Connection, settings: Settings, channel: Channel,
+                category: str | None = None) -> int:
+    """Shorts the library can still open on this channel (in one of its categories, or in
+    `category` only). A long video counts for several, see hero.budget()."""
     cats = [category] if category else channel.categories
-    return len(hero.candidates(conn, settings, channel.id, 10 ** 9, use_clip=False, categories=cats))
+    return hero.shorts_left(conn, settings, channel.id, cats)[0]
 
 
 def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
@@ -66,9 +66,9 @@ def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
 
     cats = {c.id: c for c in load_categories(settings)}
     wanted = [c for c in channel.categories if c in cats] or [None]
-    total = unused_hero_videos(conn, settings, channel)
+    total = shorts_left(conn, settings, channel)
     low = [c for c in wanted if total < need
-           or unused_hero_videos(conn, settings, channel, c) < settings.restock_below]
+           or shorts_left(conn, settings, channel, c) < settings.restock_below]
     plan: dict[str, list[str]] = {}
     for src in channel.sources or ["nasa"]:
         ok, why = sources.usable(settings, src)
@@ -85,11 +85,11 @@ def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
 
 def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need: int = 0) -> int:
     """Download, cut, embed and sort new footage when the channel's categories have fewer than
-    settings.restock_below (or, in total, `need`) unused hero videos left. One download serves
+    settings.restock_below (or, in total, `need`) Shorts left in the library. One download serves
     every channel whose categories it lands in. Returns the number of new videos."""
-    left = unused_hero_videos(conn, settings, channel)
+    left = shorts_left(conn, settings, channel)
     if left >= max(settings.restock_below, need) and all(
-            unused_hero_videos(conn, settings, channel, c) >= settings.restock_below
+            shorts_left(conn, settings, channel, c) >= settings.restock_below
             for c in channel.categories):
         return 0
     from .categorize import sort_pending
@@ -98,7 +98,7 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need
     from .scenes import process_all
 
     plan = restock_plan(conn, settings, channel, need)
-    log.info("only %d unused hero videos left: downloading more footage from %s", left,
+    log.info("footage for only %d more Shorts left: downloading more from %s", left,
              ", ".join(src for src, _ in plan) or "nowhere (no usable source)")
     new = 0
     for src, queries in plan:
@@ -111,15 +111,17 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need
     process_all(conn, settings)
     embed_pending(conn, settings)
     sort_pending(conn, settings)
-    log.info("added %d videos; %d unused hero videos now", new, unused_hero_videos(conn, settings, channel))
+    log.info("added %d videos; footage for %d Shorts now", new, shorts_left(conn, settings, channel))
     return new
 
 
-def cleanup_candidates(conn: sqlite3.Connection) -> list[tuple[sqlite3.Row, str]]:
-    """Downloaded videos whose file can go: duplicates, videos without a single usable scene, and
-    videos whose usable scenes are all used by Shorts that are uploaded or rejected. A video that a
+def cleanup_candidates(conn: sqlite3.Connection, settings: Settings) -> list[tuple[sqlite3.Row, str]]:
+    """Downloaded videos whose file can go: duplicates, videos without a single usable scene,
+    videos whose usable scenes are all used, and videos that opened as many Shorts as they can
+    (hero.budget(), or no hero-length scene left far enough from the earlier heroes). A video that a
     Short still waiting for review, approval or upload uses is always kept (rerender needs it)."""
     out = []
+    heroes = hero.earlier_heroes(conn)  # all channels: the file is shared
     for a in conn.execute("SELECT * FROM assets WHERE path IS NOT NULL AND status != 'cleaned'").fetchall():
         if not Path(a["path"]).exists():
             continue
@@ -150,14 +152,25 @@ def cleanup_candidates(conn: sqlite3.Connection) -> list[tuple[sqlite3.Row, str]
             (a["id"],)).fetchone()[0]
         if unused == 0:
             out.append((a, "all scenes used"))
+            continue
+        starts = [h["start"] for h in heroes.get(a["id"], [])]
+        if not starts:
+            continue  # never opened a Short: keep it for a hero (or as B-roll)
+        if len(starts) >= hero.budget(settings, a["duration"]):
+            out.append((a, f"{len(starts)} Shorts made, the most for its length"))
+            continue
+        spare = conn.execute("SELECT start FROM scenes WHERE asset_id=? AND rejected=0 AND end - start >= ?",
+                             (a["id"], hero.MIN_HERO_SECONDS)).fetchall()
+        if not any(hero.far_enough(settings, r["start"], starts) for r in spare):
+            out.append((a, "no hero shot left far enough from the earlier ones"))
     return out
 
 
-def cleanup(conn: sqlite3.Connection, dry_run: bool = False) -> tuple[int, float]:
+def cleanup(conn: sqlite3.Connection, settings: Settings, dry_run: bool = False) -> tuple[int, float]:
     """Delete the files of cleanup_candidates(). The database row and fingerprint stay, so the same
     NASA video (or a re-published copy of it) is never downloaded again. Returns (files, GB)."""
     n, size = 0, 0.0
-    for a, why in cleanup_candidates(conn):
+    for a, why in cleanup_candidates(conn, settings):
         path = Path(a["path"])
         gb = path.stat().st_size / 1e9
         print(f"{'would delete' if dry_run else 'deleted'} {path.name} ({gb:.2f} GB, {why}): {a['title']}")

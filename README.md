@@ -31,12 +31,12 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 | 1 | `python -m shorts scenes` | Knipt in scènes, gooit zwart/titelkaarten weg, bepaalt waar de 9:16-uitsnede moet. |
 | 1 | `python -m shorts embed` | Maakt scènes doorzoekbaar met CLIP op je GPU (geen Claude-gebruik). |
 | – | `python -m shorts search "saturn rings"` | Test de beeldzoeker. |
-| 2–5 | `python -m shorts make -n 5` | Kiest 5 hero shots, laat Claude er scripts bij schrijven (1 aanroep per 5), controleert de feiten in een aparte aanroep, zoekt beeld per tekstblok en rendert. Zijn er minder dan 15 ongebruikte video's voor een opening, dan haalt `make` eerst zelf nieuw beeld op (ingest, scenes, embed; 2 per zoekterm). Uitzetten: `--no-restock`. |
+| 2–5 | `python -m shorts make -n 5` | Kiest 5 hero shots, laat Claude er scripts bij schrijven (1 aanroep per 5), controleert de feiten in een aparte aanroep, zoekt beeld per tekstblok en rendert. Is er nog beeld voor minder dan 15 Shorts, dan haalt `make` eerst zelf nieuw beeld op (ingest, scenes, embed; 2 per zoekterm). Uitzetten: `--no-restock`. |
 | 6 | `python -m shorts dashboard` | Open http://127.0.0.1:5000 (alleen op deze laptop). Zie [Dashboard](#dashboard). `review` doet hetzelfde. |
 | 7 | `python -m shorts upload` | Uploadt goedgekeurde Shorts als privé met een publicatietijd (standaard 15:00 en 21:00 UTC, max 2 per dag). |
 | 8 | `python -m shorts stats` | Haalt views, engaged views en kijkpercentage op; na ~10 Shorts met cijfers stuurt dit de hero-shotkeuze bij. |
 | – | `python -m shorts status` | Telling per stap. |
-| – | `python -m shorts cleanup` | Verwijdert video's die op zijn: alle bruikbare scènes gebruikt en die Shorts geüpload of afgewezen (plus dubbele video's). Eerst kijken: `--dry-run`. Een verwijderde video wordt nooit opnieuw gedownload. |
+| – | `python -m shorts cleanup` | Verwijdert video's die op zijn: alle bruikbare scènes gebruikt of het maximum aantal Shorts eruit gehaald, en die Shorts geüpload of afgewezen (plus dubbele video's). Eerst kijken: `--dry-run`. Een verwijderde video wordt nooit opnieuw gedownload. |
 | – | `python -m shorts finish` | Maakt Shorts af die halverwege stopten (bijv. Claude-limiet bereikt). |
 
 **Muziek (optioneel):** elk kanaal heeft een eigen map: `C:\shorts-data\music\<kanaal>`, voor het ruimtekanaal dus `music\space`. Zet daar mp3's uit de YouTube Audio Library in (filter "Attribution not required"). Zonder tracks is de Short stil. Daarna `python -m shorts rerender` om wachtende Shorts opnieuw te renderen.
@@ -75,7 +75,10 @@ Per kanaal in de TOML: `categories = ["space"]` en `sources = ["nasa"]`. Hero sh
 | `python -m shorts sources --try loc "rocket"` | Proefzoektocht zonder downloaden: per video de licentiebeslissing. |
 | `python -m shorts ingest --source prelinger --term "subject:(aviation)"` | Downloaden van één bron. |
 | `python -m shorts restock` | Bijvullen van de categorieën van het kanaal die bijna op zijn. |
+| `python -m shorts status --per-video` | Per video hoeveel Shorts er nog uit kunnen. |
 | `python -m shorts categorize` | Nieuwe scènes sorteren (`--all`: alles opnieuw, handmatige keuzes blijven). |
+
+**Lange video's geven meer Shorts.** Elke 90 seconden video is goed voor één Short, met een maximum van 5 per video (`segment_seconds` en `max_shorts_per_video` in `config/settings.toml`). De hero shots uit één video liggen minstens 90 seconden uit elkaar en mogen niet op elkaar lijken. Script en feitencheck krijgen te zien wat eerdere Shorts uit die video al vertelden, en bij inplannen zitten er minstens 2 dagen tussen Shorts uit dezelfde video (`sibling_gap_days`).
 
 ## Uploaden instellen (fase 2)
 

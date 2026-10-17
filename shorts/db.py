@@ -204,12 +204,3 @@ def used_scene_ids(conn: sqlite3.Connection, channel: str) -> set[int]:
         (channel, channel),
     ).fetchall()
     return {r[0] for r in rows}
-
-
-def used_hero_assets(conn: sqlite3.Connection, channel: str) -> set[int]:
-    rows = conn.execute(
-        """SELECT sc.asset_id FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id
-            WHERE s.channel = ? AND s.status != 'rejected'""",
-        (channel,),
-    ).fetchall()
-    return {r[0] for r in rows}

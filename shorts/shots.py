@@ -8,6 +8,7 @@ from .categorize import allowed_scenes
 from .config import Settings
 
 SAME_VIDEO_BONUS = 0.03  # mild preference for staying with the hero's video (visual coherence)
+# ...but only near the hero: a long video gives several Shorts, and the rest of it belongs to them.
 
 
 def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
@@ -31,7 +32,7 @@ def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
             hero_left -= b["seconds"]
             continue
         query = f"{b['visual'] or ''}, {short['topic'] or ''}".strip(", ")
-        best = _best(conn, settings, query, used | in_short, b["seconds"], hero["asset_id"], allowed)
+        best = _best(conn, settings, query, used | in_short, b["seconds"], hero, allowed)
         if best is None:
             best = hero["id"]
         conn.execute("UPDATE blocks SET scene_id=? WHERE id=?", (best, b["id"]))
@@ -39,7 +40,8 @@ def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
     conn.commit()
 
 
-def _best(conn, settings, query, exclude, seconds, hero_asset, allowed=None) -> int | None:
+def _best(conn, settings, query, exclude, seconds, hero, allowed=None) -> int | None:
+    half = settings.segment_seconds / 2
     hits = embed.search(conn, settings, query, k=40, exclude=exclude, allowed=allowed)
     best, best_score = None, -1e9
     for sid, score in hits:
@@ -48,7 +50,7 @@ def _best(conn, settings, query, exclude, seconds, hero_asset, allowed=None) -> 
                  JOIN assets a ON a.id = sc.asset_id WHERE sc.id=?""", (sid,)).fetchone()
         if sc["needs_check"] or sc["end"] - sc["start"] < seconds:
             continue
-        if sc["asset_id"] == hero_asset:
+        if sc["asset_id"] == hero["asset_id"] and abs(sc["start"] - hero["start"]) <= half:
             score += SAME_VIDEO_BONUS
         if score > best_score:
             best, best_score = sid, score
