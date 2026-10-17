@@ -219,7 +219,9 @@ def usable(conn: sqlite3.Connection, fold: str) -> list[sqlite3.Row]:
 # ---------- fetching ----------
 
 def search_openverse(term: str, page: int, session: requests.Session) -> list[dict]:
-    r = session.get(OPENVERSE, params={"q": term, "license": "cc0,pdm", "category": "music",
+    # No category=music: Openverse returns nothing for it with CC0/PD (Oct 2026); the CC0 results are
+    # Freesound uploads without a category. Length and CLAP ("is this music?") do the filtering.
+    r = session.get(OPENVERSE, params={"q": term, "license": "cc0,pdm",
                                        "page_size": 20, "page": page, "mature": "false"},
                     headers=UA, timeout=60)
     if r.status_code in (400, 404):  # past the last page
@@ -336,6 +338,7 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel, want: 
                 except (requests.RequestException, ValueError) as e:
                     log.warning("music search %s '%s' failed: %s", src, term, e)
                     continue
+                log.info("music: %s '%s' page %d: %d CC0/public-domain results", src, term, page, len(hits))
                 for hit in hits:
                     if got >= need:
                         break
