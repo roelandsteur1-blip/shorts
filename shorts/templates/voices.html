@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% block title %}Voices{% endblock %}{% block body %}
+<h1>Voices</h1>
+<p class="muted">Free AI voice (Kokoro), made on this laptop. A channel with a voice gets it on every new Short; Shorts already made keep theirs.
+{{ voiced }} of {{ channels|length }} channels have a voice now. The Stats page compares Shorts with and without a voice.</p>
+{% if not engine_ok %}<div class="card bad">The voice is not installed. Run <code>.venv\Scripts\python -m pip install kokoro</code> and restart the dashboard.</div>{% endif %}
+
+<div class="card"><h3 style="margin-top:0">Channels</h3>
+<p class="muted">The play button reads the channel's newest script with its saved voice and speed (the first play takes a few seconds).</p>
+<table><tr><th>Channel</th><th>Voice</th><th>Speed</th><th></th><th>Listen</th></tr>
+{% for c in channels %}<tr{% if saved == c.id %} style="background:var(--hl, rgba(80,160,80,.12))"{% endif %}>
+<td><form method="post" action="/voices/{{ c.id }}" id="f-{{ c.id }}"></form><b>{{ c.name }}</b> <span class="muted">{{ c.id }}</span></td>
+<td><select name="voice" form="f-{{ c.id }}"><option value="" {{ 'selected' if not c.voice }}>No voice: text + music</option>
+{% for v in voices %}<option value="{{ v }}" {{ 'selected' if v == c.voice }}>{{ label(v) }}</option>{% endfor %}</select></td>
+<td><select name="voice_speed" form="f-{{ c.id }}">{% for x in speeds %}<option value="{{ x }}" {{ 'selected' if x == c.voice_speed }}>{{ x }}×</option>{% endfor %}</select></td>
+<td><button class="primary" form="f-{{ c.id }}">Save</button>{% if saved == c.id %} <span class="muted">saved</span>{% endif %}</td>
+<td>{% if c.voice and engine_ok %}<audio controls preload="none" src="/voices/sample/{{ c.voice }}?speed={{ c.voice_speed }}&channel={{ c.id }}" style="width:250px;height:32px"></audio>{% else %}<span class="muted">text + music</span>{% endif %}</td>
+</tr>{% endfor %}
+</table></div>
+
+<div class="card"><h3 style="margin-top:0">All voices</h3>
+<p class="muted">Each reads: "{{ sample_text }}"</p>
+<table><tr><th>Voice</th><th>Listen</th><th>Shorts made with it</th></tr>
+{% for v in voices %}<tr><td><b>{{ label(v) }}</b> <span class="muted">{{ v }}</span></td>
+<td>{% if engine_ok %}<audio controls preload="none" src="/voices/sample/{{ v }}" style="width:250px;height:32px"></audio>{% endif %}</td>
+<td>{{ uses.get(v, 0) }}</td></tr>{% endfor %}
+</table></div>
+{% endblock %}

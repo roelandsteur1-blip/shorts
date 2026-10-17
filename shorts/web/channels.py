@@ -7,7 +7,7 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 
 from .. import categorize, channels as chans, llm, sources
 from ..render import MUSIC_EXT
-from ..voice import VOICES
+from ..voice import SPEEDS, VOICES, label
 from ..upload import found_path
 from .common import channel_or_404, conn, settings
 from .jobs import start_job
@@ -31,6 +31,11 @@ def form_to_data(form, base: dict) -> dict:
     data["search_terms"] = _lines(form.get("search_terms"))
     if "voice" in form:
         data["voice"] = form["voice"].strip() or None
+    if form.get("voice_speed"):
+        try:
+            data["voice_speed"] = float(form["voice_speed"])
+        except ValueError:
+            data["voice_speed"] = form["voice_speed"]
     if "music_terms" in form:
         data["music_terms"] = [t for t in (x.strip() for x in form["music_terms"].splitlines()) if t]
     data["categories"] = form.getlist("categories")
@@ -60,7 +65,7 @@ def _context(data: dict, errors=None, new=False) -> dict:
         """SELECT c.category, COUNT(*) FROM scene_categories c JOIN scenes sc ON sc.id = c.scene_id
             WHERE c.confidence > 0 AND sc.rejected = 0 GROUP BY c.category""").fetchall())
     return {"d": data, "errors": errors or [], "new": new, "cats": cats, "counts": counts,
-            "sources": sources.all_sources(), "languages": chans.LANGUAGES, "voices": VOICES}
+            "sources": sources.all_sources(), "languages": chans.LANGUAGES, "voices": VOICES, "speeds": SPEEDS, "voice_label": label}
 
 
 @bp.get("/channels/new")

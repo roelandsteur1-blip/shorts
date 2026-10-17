@@ -8,7 +8,8 @@
 <div class="card">
 <label>Name<input type="text" name="name" value="{{ d.name or '' }}" required></label>
 {% if new %}<label>Id (file name, can't change later)<input type="text" name="id" value="{{ d.id or '' }}" required pattern="[a-z][a-z0-9_]{1,30}"></label>{% endif %}
-<label>Voice-over (free AI voice, Kokoro; empty = text + music only)<select name="voice"><option value="" {{ 'selected' if not d.voice }}>No voice: text + music</option>{% for v in voices %}<option {{ 'selected' if v == d.voice }}>{{ v }}</option>{% endfor %}</select></label>
+<label>Voice-over (free AI voice; <a href="/voices">listen to the voices</a>)<select name="voice"><option value="" {{ 'selected' if not d.voice }}>No voice: text + music</option>{% for v in voices %}<option value="{{ v }}" {{ 'selected' if v == d.voice }}>{{ voice_label(v) }}</option>{% endfor %}</select></label>
+<label>Voice speed<select name="voice_speed">{% for x in speeds %}<option value="{{ x }}" {{ 'selected' if x == (d.voice_speed or 1.0) }}>{{ x }}×</option>{% endfor %}</select></label>
 <label>Language<select name="language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == d.language }}>{{ v }}</option>{% endfor %}</select></label>
 <label>Niche, in one line<input type="text" name="niche" value="{{ d.niche or '' }}" placeholder="e.g. Dutch history from old newsreels"></label>
 <p><button type="button" id="draft">Draft with Claude</button> <span class="muted" id="draftmsg">fills hashtags, footage, search terms and formats from the name and niche</span></p>

@@ -20,8 +20,8 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
     if start_runner:
         app.extensions["runner"].start()
 
-    from . import channels, home, jobs, library, music, review, schedule, sources, stats
-    for module in (home, review, jobs, library, sources, music, channels, schedule, stats):
+    from . import channels, home, jobs, library, music, review, schedule, sources, stats, voices
+    for module in (home, review, jobs, library, sources, music, voices, channels, schedule, stats):
         app.register_blueprint(module.bp)
 
     @app.teardown_appcontext

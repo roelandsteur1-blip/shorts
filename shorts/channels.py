@@ -59,6 +59,11 @@ def validate(data: dict, known_categories: set[str]) -> list[str]:
             errors.append("uploads per day: 1 to 20")
     except (TypeError, ValueError):
         errors.append("length and uploads per day must be numbers")
+    try:
+        if not 0.7 <= float(data.get("voice_speed", 1.0)) <= 1.3:
+            errors.append("voice speed: 0.7 to 1.3")
+    except (TypeError, ValueError):
+        errors.append("voice speed must be a number")
     unknown = [c for c in data.get("categories") or [] if c not in known_categories]
     if unknown:
         errors.append(f"unknown categories: {', '.join(unknown)}")

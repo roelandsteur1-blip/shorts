@@ -30,6 +30,16 @@ GAP = 0.25          # seconds of silence after each spoken block
 # English voices (a = American, b = British; f/m = female/male). Kokoro has more; these sound best.
 VOICES = ["am_michael", "am_fenrir", "am_puck", "af_heart", "af_bella", "af_nicole",
           "bm_george", "bm_fable", "bf_emma", "bf_isabella"]
+SPEEDS = [0.9, 0.95, 1.0, 1.05, 1.1, 1.15]
+SAMPLE_TEXT = ("In 1969, two astronauts walked on the Moon. The footprints they left behind "
+               "are still there today, because the Moon has no wind to blow them away.")
+
+
+def label(v: str) -> str:
+    """'am_michael' -> 'Michael, American man'."""
+    accent = {"a": "American", "b": "British"}.get(v[:1], "")
+    who = {"m": "man", "f": "woman"}.get(v[1:2], "")
+    return f"{v.split('_', 1)[-1].capitalize()}, {accent} {who}".strip()
 
 
 class Kokoro:
@@ -66,6 +76,14 @@ def engine():
             log.warning("voice-over not available (%s): run 'python -m pip install kokoro'", e)
             _engine = False
     return _engine
+
+
+def available() -> bool:
+    """Cheap check for the dashboard: doesn't load the model."""
+    if _engine is None:
+        import importlib.util
+        return importlib.util.find_spec("kokoro") is not None
+    return bool(_engine)
 
 
 def channel_voice(channel: Channel) -> str | None:
@@ -166,3 +184,23 @@ def samples(conn: sqlite3.Connection, settings: Settings, voices: list[str], sho
             write_wav(out / f"short{sid}-{v}.wav", eng.speak(text, v))
             log.info("voice-test: short %d, %s", sid, v)
     return out
+
+
+def sample(settings: Settings, v: str, speed: float = 1.0, text: str | None = None) -> Path:
+    """One wav for the Voices page play buttons, made once and kept in <data_dir>/voice-test."""
+    if v not in VOICES:
+        raise ValueError(f"unknown voice {v}")
+    text = _speakable(text or SAMPLE_TEXT)
+    out = settings.data_dir / "voice-test"
+    h = hashlib.sha1(text.encode()).hexdigest()[:8]
+    path = out / f"sample-{v}-{speed:g}-{h}.wav"
+    if path.exists():
+        return path
+    eng = engine()
+    if not eng:
+        raise RuntimeError("Kokoro is not installed: python -m pip install kokoro")
+    out.mkdir(parents=True, exist_ok=True)
+    with _lock:
+        audio = eng.speak(text, v, speed)
+    write_wav(path, audio)
+    return path
