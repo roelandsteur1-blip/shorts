@@ -10,6 +10,7 @@ import sqlite3
 from . import llm, progress
 from .config import Channel, Settings
 from .music import MOODS
+from .voice import channel_voice
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ WORDS_PER_SECOND = 3.0
 MIN_BLOCK_SECONDS = 1.6
 
 PROMPT = """You write on-screen text for YouTube Shorts on the channel "{channel_name}" ({niche}).
-There is NO voice-over: the text on screen is the whole story, read silently over real archive footage ({archives}).
+{voice_line} ({archives}).
 Language: {language_name}.
 
 Format: "{format_title}"
@@ -119,6 +120,10 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
         min_blocks=min_blocks, max_blocks=max_blocks, max_words=MAX_WORDS,
         past_topics="; ".join(past_topics[-80:]) or "(none yet)",
         heroes=hero_text, url_hint=url_hint(channel), moods=", ".join(MOODS),
+        voice_line=("A narrator voice reads every text block out loud, and the same text is on screen: write "
+                    "lines that sound natural spoken and read well, over real archive footage"
+                    if channel_voice(channel) else
+                    "There is NO voice-over: the text on screen is the whole story, read silently over real archive footage"),
         archives=", ".join(dict.fromkeys(h.get("archive", "NASA") for h in heroes)),
     )
 
@@ -184,6 +189,8 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str, hero: d
           f.get("quote")) for f in data.get("facts") or []],
     )
     conn.commit()
+    from . import voice
+    voice.assign(conn, channel, short_id)
     return short_id
 
 

@@ -12,7 +12,7 @@ import sqlite3
 import threading
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from . import db, factcheck, hero, llm, progress, render, script, shots, speed
+from . import db, factcheck, hero, llm, progress, render, script, shots, speed, voice
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
@@ -156,6 +156,8 @@ def _render_lane(conn: sqlite3.Connection, settings: Settings, channel: Channel,
                     open_lane = False
                 elif sid != -1:
                     try:
+                        # Voice first: its length decides how long each block (and its shot) is.
+                        voice.prepare(conn, settings, channel, sid)
                         shots.assign(conn, settings, sid, channel.categories)
                     except Exception as e:  # noqa: BLE001
                         log.exception("short %d: no footage", sid)

@@ -89,6 +89,8 @@ class Channel:
     hashtags: list[str] = field(default_factory=list)
     music_folder: str | None = None  # no longer used: all channels share data_dir/music (shorts/music.py)
     music_terms: list[str] = field(default_factory=list)  # music searches (shorts/music.py); empty = defaults
+    voice: str | None = None               # voice-over (shorts/voice.py): Kokoro voice id; empty = text + music only
+    voice_speed: float = 1.0
     # Footage categories this channel uses (config/categories.toml); empty = every category.
     categories: list[str] = field(default_factory=list)
     # Footage sources restock downloads from (shorts/sources); empty = NASA only.

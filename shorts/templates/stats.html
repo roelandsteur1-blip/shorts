@@ -10,6 +10,10 @@
 <span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span></div>{% endfor %}</div>
 <h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>
 {% for f in by_format %}<tr><td>{{ f.channel }}</td><td>{{ f.format_id }}</td><td>{{ f.shorts }}</td><td>{{ '%.0f'|format(f.views or 0) }}</td><td>{{ '%.0f'|format(f.pct or 0) }}%</td></tr>{% endfor %}</table>{% endif %}
+{% if by_voice %}<h3>Voice-over vs text + music</h3>
+<table><tr><th></th><th>Shorts</th><th>Avg views</th><th>Engaged</th><th>Avg viewed</th><th>Subs per Short</th></tr>
+{% for v in by_voice %}<tr><td>{{ 'With voice' if v.voiced else 'Text + music' }}</td><td>{{ v.shorts }}</td><td>{{ '%.0f'|format(v.views or 0) }}</td>
+<td>{{ '%.0f'|format(100 * (v.engaged or 0)) }}%</td><td>{{ '%.0f'|format(v.pct or 0) }}%</td><td>{{ '%.1f'|format(v.subs or 0) }}</td></tr>{% endfor %}</table>{% endif %}
 {% if rows %}<h3>Per Short</h3>
 <p class="muted">Sort: {% for k in ['views', 'retention', 'engaged', 'newest'] %}<a href="?sort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == sort }}">{{ k }}</a> {% endfor %}
 · engaged = engaged views / views, the closest public signal to "viewed vs swiped away"</p>

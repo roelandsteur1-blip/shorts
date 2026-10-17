@@ -211,6 +211,7 @@ ADDED_COLUMNS = [
     ("shorts", "uploaded_at", "TEXT"),                     # for the shared daily upload quota
     ("shorts", "edited", "INTEGER NOT NULL DEFAULT 0"),    # text changed by hand in review
     ("shorts", "mood", "TEXT"),                            # music mood the script asked for
+    ("shorts", "voice", "TEXT"),                           # Kokoro voice reading it; NULL = text only
 ]
 
 

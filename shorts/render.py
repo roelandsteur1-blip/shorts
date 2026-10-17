@@ -123,8 +123,13 @@ def pick_music(conn: sqlite3.Connection, settings: Settings, short_id: int,
     return (Path(t["path"]), t["start"] or 0.0) if t else None
 
 
+def work_dir(settings: Settings, channel: Channel, short_id: int) -> Path:
+    return settings.render_dir / f"{channel.id}-{short_id:05d}"
+
+
 def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel, short_id: int) -> Path:
-    from . import speed, timing
+    from . import speed, timing, voice
+    voice.prepare(conn, settings, channel, short_id)  # no-op unless voiced and the text changed
     lim = speed.limits(settings.data_dir)
     enc = media.video_encoder_args(settings.encoder, settings.x264_preset, lim.x264_threads)
     work, args, total, music = build_render(conn, settings, channel, short_id, enc)
@@ -155,7 +160,7 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     if not blocks:
         raise ValueError(f"short {short_id} has no blocks with footage")
 
-    work = settings.render_dir / f"{channel.id}-{short_id:05d}"
+    work = work_dir(settings, channel, short_id)
     work.mkdir(parents=True, exist_ok=True)
     (work / "subs.ass").write_text(build_ass(blocks, channel.style), encoding="utf-8")
 
@@ -183,19 +188,37 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     subs = "ass=subs.ass" + (f":fontsdir='{fontsdir}'" if fontsdir else "")
     filters += [concat, f"[vcat]{subs}[vout]"]
 
+    row = conn.execute("SELECT voice FROM shorts WHERE id=?", (short_id,)).fetchone()
+    voice_wav = work / "voice.wav"
+    voiced = bool(row and row["voice"]) and voice_wav.exists()
+    stereo = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
+    idx = n
     picked = pick_music(conn, settings, short_id, channel)
     music = picked[0] if picked else None
     if picked:
-        # Looped, so a track shorter than the Short (or a late start) never runs out.
+        # Looped, so a track shorter than the Short (or a late start) never runs out. Under a
+        # voice it sits well below the speech and is ducked further while someone talks.
         inputs += ["-stream_loop", "-1", "-i", str(music)]
         filters.append(
-            f"[{n}:a]atrim=start={picked[1]:.2f}:duration={total:.3f},asetpts=PTS-STARTPTS,"
+            f"[{idx}:a]atrim=start={picked[1]:.2f}:duration={total:.3f},asetpts=PTS-STARTPTS,"
             f"afade=t=in:d=0.3,afade=t=out:st={max(total - 1.2, 0):.3f}:d=1.2,"
-            f"loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[aout]"
+            f"loudnorm=I={-24 if voiced else -14}:TP=-1.5:LRA=11,{stereo}[mus]"
         )
+        idx += 1
+    if voiced:
+        inputs += ["-i", str(voice_wav)]
+        filters.append(f"[{idx}:a]{stereo},apad,atrim=0:{total:.3f},loudnorm=I=-14:TP=-1.5:LRA=11,{stereo}[voc]")
+        if picked:
+            filters += ["[voc]asplit=2[vkey][vmix]",
+                        "[mus][vkey]sidechaincompress=threshold=0.04:ratio=6:attack=15:release=400[duck]",
+                        "[duck][vmix]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.9[aout]"]
+        else:
+            filters.append("[voc]anull[aout]")
+    elif picked:
+        filters.append("[mus]anull[aout]")
     else:
         inputs += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
-        filters.append(f"[{n}:a]anull[aout]")
+        filters.append(f"[{idx}:a]anull[aout]")
 
     args = inputs + [
         "-filter_complex", ";".join(filters),

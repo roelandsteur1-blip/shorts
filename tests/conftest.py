@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from shorts import db, embed, llm, music
+from shorts import db, embed, llm, music, voice
 from shorts.config import Settings, load_channel
 
 
@@ -44,6 +44,14 @@ def conn(settings):
 @pytest.fixture
 def channel():
     return load_channel("space")
+
+
+@pytest.fixture(autouse=True)
+def no_voice_engine():
+    """Never load Kokoro in tests; voice tests put in a fake one."""
+    voice.set_engine(False)
+    yield
+    voice.set_engine(None)
 
 
 @pytest.fixture(autouse=True)

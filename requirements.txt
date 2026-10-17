@@ -4,6 +4,7 @@ opencv-python-headless>=4.9
 scenedetect>=0.6.4
 open_clip_torch>=2.24
 transformers>=4.40     # CLAP: music moods (shorts/music.py)
+kokoro>=0.9.2          # free local voice-over (shorts/voice.py)
 pillow>=10.0
 flask>=3.0
 google-api-python-client>=2.120

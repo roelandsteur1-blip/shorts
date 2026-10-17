@@ -13,7 +13,7 @@ from .config import list_channels, load_channel, load_settings
 
 # Commands that keep the CPU/GPU busy for a while; they run at below-normal priority.
 HEAVY = {"ingest", "import", "restock", "categorize", "dedupe", "scenes", "embed", "make", "finish",
-         "rerender", "daily", "bench", "music"}
+         "rerender", "daily", "bench", "music", "voice-test"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -74,6 +74,10 @@ def main(argv: list[str] | None = None) -> int:
     pmu.add_argument("--list", action="store_true", help="only list the channel's tracks")
     pmu.add_argument("--claimed", type=int, metavar="TRACK_ID",
                      help="YouTube claimed this track: stop using it and re-render Shorts not uploaded yet")
+
+    pvt = sub.add_parser("voice-test", help="read recent scripts with several voices into <data_dir>/voice-test")
+    pvt.add_argument("--voices", help="comma separated Kokoro voices (default: all in shorts/voice.py)")
+    pvt.add_argument("--shorts", type=int, default=3, help="how many recent scripts")
 
     sub.add_parser("finish", help="4-5. resume fact check/render for Shorts that stopped halfway")
 
@@ -177,6 +181,10 @@ def main(argv: list[str] | None = None) -> int:
         from .library import move_footage
         n, gb = move_footage(conn, settings)
         print(f"moved {n} videos ({gb:.1f} GB) to {settings.footage_dir}")
+    elif args.cmd == "voice-test":
+        from . import voice
+        voices = [v.strip() for v in (args.voices or ",".join(voice.VOICES)).split(",") if v.strip()]
+        print(f"samples in {voice.samples(conn, settings, voices, args.shorts)}")
     elif args.cmd == "music":
         return _music(conn, settings, channel, args)
     elif args.cmd == "finish":

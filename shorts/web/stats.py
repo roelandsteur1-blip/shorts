@@ -7,7 +7,7 @@ from .common import channels, conn
 
 bp = Blueprint("stats", __name__)
 
-LATEST = """SELECT s.id, s.channel, s.title, s.youtube_id, s.publish_at, s.format_id, st.views, st.engaged_views,
+LATEST = """SELECT s.id, s.channel, s.title, s.voice, s.youtube_id, s.publish_at, s.format_id, st.views, st.engaged_views,
                    st.avg_view_pct, st.avg_view_dur, st.likes, st.shares, st.subs_gained, st.fetched_at
               FROM shorts s JOIN stats st ON st.short_id = s.id
              WHERE st.rowid = (SELECT MAX(rowid) FROM stats WHERE short_id = s.id)"""
@@ -28,7 +28,11 @@ def index():
                              FROM ({LATEST}) GROUP BY channel""").fetchall()
     by_format = c.execute(f"""SELECT channel, format_id, COUNT(*) AS shorts, AVG(views) AS views, AVG(avg_view_pct) AS pct
                                 FROM ({LATEST}) GROUP BY channel, format_id ORDER BY channel, views DESC""").fetchall()
+    by_voice = c.execute(f"""SELECT voice IS NOT NULL AS voiced, COUNT(*) AS shorts, AVG(views) AS views,
+                                    AVG(avg_view_pct) AS pct, SUM(engaged_views) * 1.0 / NULLIF(SUM(views), 0) AS engaged,
+                                    AVG(subs_gained) AS subs
+                               FROM ({LATEST}) GROUP BY voiced ORDER BY voiced DESC""").fetchall()
     from ..timing import claude_usage, summary
-    return render_template("stats.html", rows=rows, totals=totals, by_format=by_format, sort=sort,
+    return render_template("stats.html", rows=rows, totals=totals, by_format=by_format, by_voice=by_voice, sort=sort,
                            channels=channels(), selected=selected, timings=summary(c),
                            claude=claude_usage(c))
