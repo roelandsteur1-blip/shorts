@@ -197,15 +197,16 @@ def test_ingest_downloads_usable_and_records_rejections(conn, settings, clip_byt
     monkeypatch.setattr(common.requests, "Session", lambda: s)
     n = common.ingest(conn, settings, "internet_archive", ["rocket"], per_term=5, max_pages=1)
     # PD and CC BY are usable; BY-SA and unlicensed are stored as rejected, never downloaded.
-    # The fake archive serves the same clip twice, so the second one is caught as a duplicate.
+    # The fake archive serves the same clip twice, so one is caught as a duplicate of the other.
+    # Downloads run in parallel: which of the two finishes first (and is kept) varies.
     assert n == 1
     rows = {r["source_id"]: r for r in conn.execute("SELECT * FROM assets")}
-    assert rows["ccby-clip"]["status"] == "duplicate"
+    assert sorted(rows[k]["status"] for k in ("ccby-clip", "Apollo11Launch")) == ["downloaded", "duplicate"]
     assert rows["sharealike"]["status"] == "rejected" and "share-alike" in rows["sharealike"]["error"]
     assert rows["nolicense"]["status"] == "rejected"
     assert rows["ccby-clip"]["attribution"] == "Jan Jansen / Internet Archive (CC BY 4.0)"
-    done = rows["Apollo11Launch"]
-    assert done["status"] == "downloaded" and done["license"] == "public-domain"
+    done = next(r for r in rows.values() if r["status"] == "downloaded")
+    assert rows["Apollo11Launch"]["license"] == "public-domain"
     assert not media.probe(done["path"])["has_audio"]
     # A second run finds nothing new and doesn't re-judge the rejected ones.
     assert common.ingest(conn, settings, "internet_archive", ["rocket"], per_term=5, max_pages=1) == 0

@@ -206,7 +206,7 @@ def test_library_and_sources_pages(client, conn, settings, cfg, monkeypatch, tmp
     page = client.get("/sources").data
     assert b"Library of Congress" in page and b"Switch off" in page
     client.post("/sources/loc", data={"enabled": "0"})
-    assert b"switched off on the Sources page" in client.get("/sources").data
+    assert b"Cloudflare blocks scripted requests" in client.get("/sources").data  # loc: off, with why
     r = client.post("/sources/commons/try", data={"query": "glider"})
     job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
     assert json.loads(job["command"]) == ["sources", "--try", "commons", "glider"] and job["heavy"] == 0
