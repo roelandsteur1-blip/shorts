@@ -63,8 +63,18 @@ def follow_up(job: sqlite3.Row) -> tuple[str, list[str]] | None:
     return "Run again", args
 
 
+def console_python() -> str:
+    """python.exe, also when the dashboard itself runs under pythonw.exe (the desktop shortcut).
+    A pythonw job has no console, so Windows opens a new window for every claude/ffmpeg it starts;
+    python.exe started with CREATE_NO_WINDOW has a hidden console its children share."""
+    exe = Path(sys.executable)
+    if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").exists():
+        return str(exe.parent / "python.exe")
+    return sys.executable
+
+
 def cli_command(settings: Settings, job: sqlite3.Row) -> list[str]:
-    cmd = [sys.executable, "-u", "-m", "shorts", "--data-dir", str(settings.data_dir),
+    cmd = [console_python(), "-u", "-m", "shorts", "--data-dir", str(settings.data_dir),
            "--config-dir", str(settings.config_dir)]
     if job["channel"]:
         cmd += ["--channel", job["channel"]]

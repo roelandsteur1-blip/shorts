@@ -17,6 +17,10 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
+# Never a console window for a Claude call (the dashboard runs without a console).
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
 class LLMError(RuntimeError):
     pass
 
@@ -65,7 +69,7 @@ def lean_flags(exe: str) -> list[str]:
     if exe not in _flag_cache:
         try:
             help_text = subprocess.run([exe, "--help"], capture_output=True, text=True, encoding="utf-8",
-                                       errors="replace", timeout=60).stdout
+                                       errors="replace", timeout=60, creationflags=NO_WINDOW).stdout
         except (OSError, subprocess.TimeoutExpired):
             help_text = ""
         flags: list[str] = []
@@ -93,7 +97,7 @@ def ask(prompt: str, claude_cmd: str = "claude", timeout: int = 600, conn=None, 
             proc = subprocess.run(
                 [exe, "-p", "--output-format", "json", *lean_flags(exe)],
                 input=prompt, capture_output=True, text=True, encoding="utf-8",
-                errors="replace", timeout=timeout, cwd=cwd,
+                errors="replace", timeout=timeout, cwd=cwd, creationflags=NO_WINDOW,
             )
         except subprocess.TimeoutExpired as e:
             raise LLMError(f"claude did not answer within {timeout}s") from e

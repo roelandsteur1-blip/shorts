@@ -78,3 +78,12 @@ def test_find_claude_in_store_app_folder(tmp_path, monkeypatch):
     monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     assert llm.find_claude("C:/gone/claude.exe") == str(exe)
+
+
+def test_jobs_run_under_console_python(tmp_path, monkeypatch):
+    """Dashboard under pythonw.exe: jobs still start python.exe, so claude/ffmpeg open no windows."""
+    from shorts import jobs
+    (tmp_path / "python.exe").write_bytes(b"")
+    (tmp_path / "pythonw.exe").write_bytes(b"")
+    monkeypatch.setattr(jobs.sys, "executable", str(tmp_path / "pythonw.exe"))
+    assert jobs.console_python() == str(tmp_path / "python.exe")
