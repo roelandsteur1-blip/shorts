@@ -94,3 +94,18 @@ def test_stats_all_skips_channels_without_login(conn, settings, cfg, monkeypatch
 def test_expired_login_never_opens_browser(settings, channel):
     with pytest.raises(upload.LoginExpired):
         upload.credentials(settings, channel, interactive=False)
+
+
+def test_voice_test_scores_against_own_channel(conn, client):
+    # A big channel, all voiced (says nothing), and a small one with both kinds: voice does 2x there.
+    for v in (10000, 12000):
+        _age(conn, add_short(conn, channel="big", voice="af_heart", status="scheduled", publish_at="2026-10-01"), 3, v)
+    for v, voice in [(100, None), (100, None), (200, "af_heart"), (200, "af_heart")]:
+        _age(conn, add_short(conn, voice=voice, status="scheduled", publish_at="2026-10-01"), 3, v)
+    res = stats_page.voice_test(conn, 3)
+    assert res["one_kind"] == 1 and [r["channel"] for r in res["channels"]] == ["space"]
+    g = {x["voiced"]: x for x in res["groups"]}
+    assert g[True]["shorts"] == 2 and g[True]["views"] > g[False]["views"]
+    assert round(g[True]["views"] / g[False]["views"], 1) == 2.0
+    page = client.get("/stats?days=3").data.decode()
+    assert "Views vs own channel" in page and "1 channel with only one kind left out" in page

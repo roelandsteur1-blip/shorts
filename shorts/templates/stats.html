@@ -23,10 +23,17 @@ so a channel that started earlier doesn't look better. Small numbers: change fro
 <span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span></div>{% endfor %}</div>
 <h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>
 {% for f in by_format %}<tr><td>{{ f.channel }}</td><td>{{ f.format_id }}</td><td>{{ f.shorts }}</td><td>{{ '%.0f'|format(f.views or 0) }}</td><td>{{ '%.0f'|format(f.pct or 0) }}%</td></tr>{% endfor %}</table>{% endif %}
-{% if by_voice %}<h3>Voice-over vs text + music</h3>
-<table><tr><th></th><th>Shorts</th><th>Avg views</th><th>Engaged</th><th>Avg viewed</th><th>Subs per Short</th></tr>
-{% for v in by_voice %}<tr><td>{{ 'With voice' if v.voiced else 'Text + music' }}</td><td>{{ v.shorts }}</td><td>{{ '%.0f'|format(v.views or 0) }}</td>
-<td>{{ '%.0f'|format(100 * (v.engaged or 0)) }}%</td><td>{{ '%.0f'|format(v.pct or 0) }}%</td><td>{{ '%.1f'|format(v.subs or 0) }}</td></tr>{% endfor %}</table>{% endif %}
+<h3>Voice-over vs text + music <span class="muted" style="font-size:14px">first {{ days }} day{{ 's' if days > 1 }}</span></h3>
+<p class="muted">Fair test: each Short is scored against its own channel's typical Short at the same age (1.0× = typical for that channel), so the topic of a channel doesn't count as voice.
+Only channels with both voiced and text-only Shorts count{% if voice.one_kind %} ({{ voice.one_kind }} channel{{ 's' if voice.one_kind > 1 }} with only one kind left out){% endif %}.
+On a channel the voiced Shorts are usually the newer ones, so a channel that is growing flatters the voice a little.</p>
+{% if voice.groups %}<table><tr><th></th><th>Shorts</th><th>Views vs own channel</th><th>Avg viewed vs own channel</th></tr>
+{% for v in voice.groups %}<tr><td>{{ 'With voice' if v.voiced else 'Text + music' }}</td><td>{{ v.shorts }}</td>
+<td>{{ '%.2f'|format(v.views) }}×</td><td>{{ '%.2f'|format(v.viewed) }}×</td></tr>{% endfor %}</table>
+<table><tr><th>Channel</th><th>Voiced Shorts</th><th>Median views</th><th>Text-only Shorts</th><th>Median views</th></tr>
+{% for r in voice.channels %}<tr><td>{{ r.channel }}</td><td>{{ r.voiced }}</td><td>{{ '{:,.0f}'.format(r.voiced_views) }}</td>
+<td>{{ r.plain }}</td><td>{{ '{:,.0f}'.format(r.plain_views) }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">Not enough yet: this needs channels with both voiced and text-only Shorts that are {{ days + 3 }} days old.</p>{% endif %}
 {% if rows %}<h3>Per Short</h3>
 <p class="muted">Sort: {% for k in ['views', 'retention', 'engaged', 'newest'] %}<a href="?sort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == sort }}">{{ k }}</a> {% endfor %}
 · engaged = engaged views / views, the closest public signal to "viewed vs swiped away"</p>

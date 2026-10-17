@@ -60,6 +60,33 @@ def compare_channels(c: sqlite3.Connection, days: int, sort: str = "views", toda
     return sorted(out, key=lambda r: -r[key])
 
 
+def voice_test(c: sqlite3.Connection, days: int) -> dict:
+    """Voice-over vs text + music, fairly: each Short is scored against its own channel's median at
+    the same age (1.0 = typical for that channel), so the channel's topic drops out. Only channels
+    with both kinds of Shorts count; a channel that is all one kind says nothing about the voice."""
+    by_channel: dict[str, list[dict]] = {}
+    for r in at_age(c, days):
+        by_channel.setdefault(r["channel"], []).append(r)
+    views: dict[bool, list[float]] = {True: [], False: []}
+    viewed: dict[bool, list[float]] = {True: [], False: []}
+    channels_both, one_kind = [], 0
+    for ch, rows in sorted(by_channel.items()):
+        voiced, plain = [r for r in rows if r["voice"]], [r for r in rows if not r["voice"]]
+        if not voiced or not plain:
+            one_kind += 1
+            continue
+        mv, mp = median(r["views"] or 0 for r in rows), median(r["avg_view_pct"] or 0 for r in rows)
+        for r in rows:
+            views[bool(r["voice"])].append((r["views"] or 0) / mv if mv else 1.0)
+            viewed[bool(r["voice"])].append((r["avg_view_pct"] or 0) / mp if mp else 1.0)
+        channels_both.append({"channel": ch, "voiced": len(voiced), "plain": len(plain),
+                              "voiced_views": median(r["views"] or 0 for r in voiced),
+                              "plain_views": median(r["views"] or 0 for r in plain)})
+    groups = [{"voiced": v, "shorts": len(views[v]), "views": median(views[v]), "viewed": median(viewed[v])}
+              for v in (True, False) if views[v]]
+    return {"groups": groups, "channels": channels_both, "one_kind": one_kind}
+
+
 @bp.get("/stats")
 def index():
     c = conn()
@@ -78,13 +105,9 @@ def index():
                              FROM ({LATEST}) GROUP BY channel""").fetchall()
     by_format = c.execute(f"""SELECT channel, format_id, COUNT(*) AS shorts, AVG(views) AS views, AVG(avg_view_pct) AS pct
                                 FROM ({LATEST}) GROUP BY channel, format_id ORDER BY channel, views DESC""").fetchall()
-    by_voice = c.execute(f"""SELECT voice IS NOT NULL AS voiced, COUNT(*) AS shorts, AVG(views) AS views,
-                                    AVG(avg_view_pct) AS pct, SUM(engaged_views) * 1.0 / NULLIF(SUM(views), 0) AS engaged,
-                                    AVG(subs_gained) AS subs
-                               FROM ({LATEST}) GROUP BY voiced ORDER BY voiced DESC""").fetchall()
     from ..timing import claude_usage, summary
     return render_template("stats.html", compare=compare_channels(c, days, csort), days=days, ages=AGES,
-                           csort=csort, compare_sorts=COMPARE_SORTS, rows=rows, totals=totals, by_format=by_format, by_voice=by_voice, sort=sort,
+                           csort=csort, compare_sorts=COMPARE_SORTS, rows=rows, totals=totals, by_format=by_format, voice=voice_test(c, days), sort=sort,
                            channels=channels(), selected=selected, timings=summary(c),
                            claude=claude_usage(c))
 
