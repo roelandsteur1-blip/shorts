@@ -98,33 +98,16 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need
         return 0
     from .categorize import sort_pending
     from .embed import embed_pending
-    from .sources import common
     from .scenes import process_all
 
     plan = restock_plan(conn, settings, channel, need)
     log.info("footage for only %d more Shorts left: downloading more from %s", left,
              ", ".join(src for src, _ in plan) or "nowhere (no usable source)")
-    # Downloads run in a thread with their own connection; scene cutting starts on the first
+    # Downloads run in threads with their own connections; scene cutting starts on the first
     # finished file instead of after the last one.
-    import threading
-    from . import db
-    counts: list[int] = []
-
-    def download() -> None:
-        c = db.connect(settings.db_path)
-        try:
-            for src, queries in plan:
-                counts.append(common.ingest(c, settings, src, queries, per_term=settings.restock_per_term))
-        except Exception:  # noqa: BLE001
-            log.exception("restock download failed")
-        finally:
-            c.close()
-
-    t = threading.Thread(target=download, name="restock-download", daemon=True)
-    t.start()
-    process_all(conn, settings, more_coming=t.is_alive)
-    t.join()
-    new = sum(counts)
+    dl = Downloads(settings, plan)
+    process_all(conn, settings, more_coming=dl.running)
+    new = dl.join()
     if new == 0:
         log.warning("no new footage found for '%s': add search hints to its categories, more "
                     "search_terms or sources to config/channels/%s.toml (or free disk space)",
@@ -134,6 +117,77 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need
     embed_pending(conn, settings)
     sort_pending(conn, settings)
     log.info("added %d videos; footage for %d Shorts now", new, shorts_left(conn, settings, channel))
+    return new
+
+
+class Downloads:
+    """Downloads for a restock plan, one thread per source (each source keeps its own polite
+    limit, so NASA and Commons don't wait on each other). quiet: no progress lines (downloads
+    running in the background of another step)."""
+
+    def __init__(self, settings: Settings, plan: list[tuple[str, list[str]]], quiet: bool = False):
+        import threading
+        self.settings, self.quiet, self.counts = settings, quiet, []
+        self.threads = [threading.Thread(target=self._run, args=(src, queries), name=f"restock-{src}",
+                                         daemon=True) for src, queries in plan]
+        for t in self.threads:
+            t.start()
+
+    def _run(self, src: str, queries: list[str]) -> None:
+        from . import db, progress
+        from .sources import common
+        if self.quiet:
+            progress.mute()
+        c = db.connect(self.settings.db_path)
+        try:
+            self.counts.append(common.ingest(c, self.settings, src, queries,
+                                             per_term=self.settings.restock_per_term))
+        except Exception:  # noqa: BLE001
+            log.exception("restock download from %s failed", src)
+        finally:
+            c.close()
+
+    def running(self) -> bool:
+        return any(t.is_alive() for t in self.threads)
+
+    def join(self) -> int:
+        for t in self.threads:
+            t.join()
+        return sum(self.counts)
+
+
+def prefetch(conn: sqlite3.Connection, settings: Settings,
+             orders: list[tuple[Channel, int]]) -> Downloads | None:
+    """Start the downloads that the restock after this make would do, right away, in the
+    background: the network is idle while Claude writes and the CPU renders. Only downloads;
+    cutting them into scenes waits for finish_prefetch() after rendering. orders: (channel, Shorts
+    about to be made). None when no channel will run low."""
+    plan: dict[str, list[str]] = {}
+    for ch, count in orders:
+        left = shorts_left(conn, settings, ch)
+        if max(0, left - count) >= settings.restock_below and all(
+                shorts_left(conn, settings, ch, c) >= settings.restock_below for c in ch.categories):
+            continue
+        for src, queries in restock_plan(conn, settings, ch, need=settings.restock_below + count):
+            plan[src] = list(dict.fromkeys(plan.get(src, []) + queries))
+    if not plan:
+        return None
+    log.info("stock runs low after this batch: downloading more from %s while it is made",
+             ", ".join(plan))
+    return Downloads(settings, list(plan.items()), quiet=True)
+
+
+def finish_prefetch(conn: sqlite3.Connection, settings: Settings, dl: Downloads) -> int:
+    """After rendering: cut, embed and sort what prefetch() downloaded (and what is still coming)."""
+    from .categorize import sort_pending
+    from .embed import embed_pending
+    from .scenes import process_all
+    process_all(conn, settings, more_coming=dl.running)
+    new = dl.join()
+    process_all(conn, settings)
+    embed_pending(conn, settings)
+    sort_pending(conn, settings)
+    log.info("added %d prefetched videos", new)
     return new
 
 

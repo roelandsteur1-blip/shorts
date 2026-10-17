@@ -21,28 +21,31 @@ BACKLOG_DAYS = 3  # don't make more while this many days of Shorts still wait fo
 
 
 def run(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
-    from .pipeline import make
+    from .pipeline import make_many
     from .upload import fetch_stats_all, upload_approved
 
     done = {}
-    for cid in list_channels(settings.config_dir):
-        ch = load_channel(cid, settings.config_dir)
-        if not ch.auto_run:
-            continue
-        waiting = conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='rendered'",
-                               (cid,)).fetchone()[0]
-        made = 0
-        if waiting < BACKLOG_DAYS * ch.uploads_per_day:
-            made = len(make(conn, settings, ch, ch.uploads_per_day)) - waiting
+    chans = [load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)]
+    chans = [ch for ch in chans if ch.auto_run]
+    waiting = {ch.id: conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='rendered'",
+                                   (ch.id,)).fetchone()[0] for ch in chans}
+    orders = []
+    for ch in chans:
+        if waiting[ch.id] < BACKLOG_DAYS * ch.uploads_per_day:
+            orders.append((ch, ch.uploads_per_day, None))
         else:
-            log.info("%s: %d Shorts still wait for review; not making more today", cid, waiting)
+            log.info("%s: %d Shorts still wait for review; not making more today", ch.id, waiting[ch.id])
+    # One run for all channels: Claude writes the next channel while the previous one renders.
+    ready = make_many(conn, settings, orders)
+    for ch in chans:
+        made = ready.get(ch.id, waiting[ch.id]) - waiting[ch.id]
         try:
             uploaded = len(upload_approved(conn, settings, ch, interactive=False))
         except Exception as e:  # noqa: BLE001 - one channel's login problem must not stop the others
-            log.warning("%s: scheduling failed: %s", cid, e)
+            log.warning("%s: scheduling failed: %s", ch.id, e)
             uploaded = 0
-        done[cid] = f"made {max(made, 0)}, scheduled {uploaded}"
-        log.info("%s: %s", cid, done[cid])
+        done[ch.id] = f"made {max(made, 0)}, scheduled {uploaded}"
+        log.info("%s: %s", ch.id, done[ch.id])
     fetch_stats_all(conn, settings)
     return done
 

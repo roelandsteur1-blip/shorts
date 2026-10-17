@@ -21,6 +21,10 @@ def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
     in_short = {hero["id"]}
     hero_left = (hero["end"] - hero["start"]) - blocks[0]["seconds"]
     allowed = allowed_scenes(conn, categories)
+    # One CLIP call for every block that may need a search, instead of one per block.
+    queries = {b["id"]: f"{b['visual'] or ''}, {short['topic'] or ''}".strip(", ") for b in blocks[1:]
+               if not b["scene_id"]}
+    vecs = dict(zip(queries, embed.get_encoder(settings).texts(list(queries.values())))) if queries else {}
 
     for b in blocks[1:]:
         if b["scene_id"]:
@@ -31,8 +35,8 @@ def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
             conn.execute("UPDATE blocks SET scene_id=? WHERE id=?", (hero["id"], b["id"]))
             hero_left -= b["seconds"]
             continue
-        query = f"{b['visual'] or ''}, {short['topic'] or ''}".strip(", ")
-        best = _best(conn, settings, query, used | in_short, b["seconds"], hero, allowed)
+        best = _best(conn, settings, queries[b["id"]], used | in_short, b["seconds"], hero, allowed,
+                     vecs[b["id"]])
         if best is None:
             best = hero["id"]
         conn.execute("UPDATE blocks SET scene_id=? WHERE id=?", (best, b["id"]))
@@ -40,14 +44,20 @@ def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
     conn.commit()
 
 
-def _best(conn, settings, query, exclude, seconds, hero, allowed=None) -> int | None:
+def _best(conn, settings, query, exclude, seconds, hero, allowed=None, qvec=None) -> int | None:
     half = settings.segment_seconds / 2
-    hits = embed.search(conn, settings, query, k=40, exclude=exclude, allowed=allowed)
+    hits = embed.search(conn, settings, query, k=40, exclude=exclude, allowed=allowed, qvec=qvec)
+    if not hits:
+        return None
+    rows = {r["id"]: r for r in conn.execute(
+        f"""SELECT sc.id, sc.start, sc.end, sc.asset_id, a.needs_check FROM scenes sc
+              JOIN assets a ON a.id = sc.asset_id WHERE sc.id IN ({",".join("?" * len(hits))})""",
+        [sid for sid, _ in hits])}
     best, best_score = None, -1e9
     for sid, score in hits:
-        sc = conn.execute(
-            """SELECT sc.start, sc.end, sc.asset_id, a.needs_check FROM scenes sc
-                 JOIN assets a ON a.id = sc.asset_id WHERE sc.id=?""", (sid,)).fetchone()
+        sc = rows.get(sid)
+        if sc is None:
+            continue
         if sc["needs_check"] or sc["end"] - sc["start"] < seconds:
             continue
         if sc["asset_id"] == hero["asset_id"] and abs(sc["start"] - hero["start"]) <= half:

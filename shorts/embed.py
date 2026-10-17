@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import threading
 from typing import Protocol
 
 import numpy as np
@@ -61,12 +62,15 @@ class ClipEncoder:
 
 
 _encoder: Encoder | None = None
+_encoder_lock = threading.Lock()  # make warms CLIP up in a thread: load it once, not twice
 
 
 def get_encoder(settings: Settings) -> Encoder:
     global _encoder
     if _encoder is None:
-        _encoder = ClipEncoder(settings.clip_model, settings.clip_pretrained)
+        with _encoder_lock:
+            if _encoder is None:
+                _encoder = ClipEncoder(settings.clip_model, settings.clip_pretrained)
     return _encoder
 
 
@@ -135,9 +139,10 @@ def _get_index(conn: sqlite3.Connection) -> _Index:
 
 def search(conn: sqlite3.Connection, settings: Settings, query: str, k: int = 10,
            exclude: set[int] | None = None, asset_id: int | None = None,
-           allowed: set[int] | None = None) -> list[tuple[int, float]]:
+           allowed: set[int] | None = None, qvec: np.ndarray | None = None) -> list[tuple[int, float]]:
     """Best scenes for a text query: CLIP similarity plus a small boost when the archive's own
     title/keywords mention the query words. allowed: only these scenes (a channel's categories).
+    qvec: the query's CLIP vector when the caller already has it (one CLIP call for many queries).
     Returns [(scene_id, score)]."""
     index = _get_index(conn)
     mask = np.ones(len(index.ids), dtype=bool)
@@ -150,7 +155,7 @@ def search(conn: sqlite3.Connection, settings: Settings, query: str, k: int = 10
     sel = np.where(mask)[0]
     if not len(sel):
         return []
-    q = get_encoder(settings).texts([query])[0]
+    q = qvec if qvec is not None else get_encoder(settings).texts([query])[0]
     sims = index.mat[sel] @ q
     qw = _words(query)
     if qw:

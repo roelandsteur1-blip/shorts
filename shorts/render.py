@@ -165,6 +165,10 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     (work / "subs.ass").write_text(build_ass(blocks, channel.style), encoding="utf-8")
 
     inputs, filters, offsets = [], [], {}
+    # 4K sources: the GPU's video decoder does the heavy decoding, frames come back for the CPU
+    # filters. 1080p is cheap on the CPU and keeps GPU memory free for parallel renders.
+    gpu_decode = (settings.render_gpu_decode and settings.encoder != "libx264"
+                  and any((b["height"] or 0) > 1080 for b in blocks) and media.nvdec_works())
     for i, b in enumerate(blocks):
         # Consecutive blocks on the same scene continue where the previous one stopped.
         off = offsets.get(b["scene_id"], 0.0)
@@ -175,6 +179,8 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         # Never read past the scene's end: that is a cut to another shot (or a title card).
         avail = max(b["end"] - start, 0.1)
         hold = b["seconds"] + 0.2 - avail if avail < b["seconds"] + 0.2 else 0.0
+        if gpu_decode and (b["height"] or 0) > 1080:
+            inputs += ["-hwaccel", "cuda"]
         inputs += ["-ss", f"{start:.3f}", "-t", f"{min(b['seconds'] + 0.2, avail):.3f}", "-i", b["path"]]
         mode = choose_mode(b["width"] or W, b["height"] or H, b["crop_x"] if b["crop_x"] is not None else 0.5)
         drift = 1 if i % 2 == 0 else -1

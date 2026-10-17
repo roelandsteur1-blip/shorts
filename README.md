@@ -32,6 +32,7 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 | 1 | `python -m shorts embed` | Maakt scènes doorzoekbaar met CLIP op je GPU (geen Claude-gebruik). |
 | – | `python -m shorts search "saturn rings"` | Test de beeldzoeker. |
 | 2–5 | `python -m shorts make -n 5` | Kiest 5 hero shots, laat Claude er scripts bij schrijven (1 aanroep per 5), controleert de feiten in een aparte aanroep, zoekt beeld per tekstblok en rendert. De stappen lopen door elkaar: terwijl Claude de volgende 5 schrijft, wordt de vorige 5 gecontroleerd en gerenderd. Alleen als er te weinig beeld is voor deze batch haalt `make` eerst nieuw beeld op; het bijvullen tot 15 gebeurt ná het renderen, als de Shorts al klaarstaan voor review. Uitzetten: `--no-restock`. |
+| 2–5 | `python -m shorts make-all --to 10` | Vult elk kanaal aan tot 10 wachtende Shorts, in één run (de knop *Make for every channel*): Claude schrijft het volgende kanaal terwijl het vorige rendert. Beeld voor de volgende aanvulling wordt al gedownload terwijl Claude schrijft. |
 | 6 | `python -m shorts dashboard` | Open http://127.0.0.1:5000 (alleen op deze laptop). Zie [Dashboard](#dashboard). `review` doet hetzelfde. |
 | 7 | `python -m shorts upload` | Uploadt goedgekeurde Shorts als privé met een publicatietijd (standaard 15:00 en 21:00 UTC, max 2 per dag). |
 | 8 | `python -m shorts stats` | Haalt views, engaged views en kijkpercentage op; na ~10 Shorts met cijfers stuurt dit de hero-shotkeuze bij. |

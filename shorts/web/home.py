@@ -83,24 +83,20 @@ def index():
 @bp.post("/make-all")
 def make_all():
     """One click: top every channel up to `count` Shorts waiting (to review or approved, not uploaded
-    yet). Channels that already have enough are skipped; the jobs run one after another."""
+    yet). Channels that already have enough are skipped. One job for all of them: Claude writes the
+    next channel while the previous one renders."""
     from .. import jobs
+    from ..pipeline import top_up_orders
     try:
         target = max(1, min(100, int(request.form.get("count") or 2)))
     except ValueError:
         target = 2
-    started, enough = 0, []
-    for ch in channels():
-        have = conn().execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status IN ('rendered','approved')",
-                              (ch.id,)).fetchone()[0]
-        if have >= target:
-            enough.append(f"{ch.name} ({have})")
-            continue
-        n = target - have
-        jobs.submit(conn(), ch.id, ["make", "-n", str(n)], f"Make {n} Shorts (to {target})")
-        started += 1
-    if not started:
+    orders, enough = top_up_orders(conn(), channels(), target)
+    if not orders:
         return redirect(url_for("home.index", msg=f"Every channel already has {target} or more: " + ", ".join(enough)))
+    n = sum(count for _, count, _ in orders)
+    jobs.submit(conn(), None, ["make-all", "--to", str(target)],
+                f"Make {n} Shorts for {len(orders)} channels (to {target} each)")
     return redirect(url_for("jobs.job_list"))
 
 

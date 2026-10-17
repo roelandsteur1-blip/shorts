@@ -67,15 +67,31 @@ def set_engine(engine) -> None:
     _engine = engine
 
 
+_load_lock = threading.Lock()  # make loads the model in a warm-up thread: once, not twice
+
+
 def engine():
     global _engine
     if _engine is None:
-        try:
-            _engine = Kokoro()
-        except Exception as e:  # noqa: BLE001 - not installed: Shorts stay text-only
-            log.warning("voice-over not available (%s): run 'python -m pip install kokoro'", e)
-            _engine = False
+        with _load_lock:
+            if _engine is None:
+                try:
+                    _engine = Kokoro()
+                except Exception as e:  # noqa: BLE001 - not installed: Shorts stay text-only
+                    log.warning("voice-over not available (%s): run 'python -m pip install kokoro'", e)
+                    _engine = False
     return _engine
+
+
+def warm_up(voices: set[str]) -> None:
+    """Load the model and these voices before the first Short needs them (make does this in a
+    thread while Claude writes the first scripts)."""
+    eng = engine()
+    if not eng:
+        return
+    for v in voices:
+        with _lock:
+            eng.speak("Hi.", v)
 
 
 def available() -> bool:

@@ -306,20 +306,56 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
     return done
 
 
+UPLOADS_AT_ONCE = 3  # channels uploading at the same time (each upload is many 8 MB round trips)
+STATS_AT_ONCE = 4    # channels fetching stats at the same time
+
+
+def _per_channel(settings: Settings, cids: list[str], work, at_once: int, failed: str = "failed") -> dict[str, str]:
+    """Run work(conn, channel) for each channel id, `at_once` channels at a time, each in a thread
+    with its own database connection. One channel's problem doesn't stop the others."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .config import load_channel
+
+    def one(cid: str) -> str:
+        c = db.connect(settings.db_path)
+        try:
+            return work(c, load_channel(cid, settings.config_dir))
+        except Exception as e:  # noqa: BLE001
+            log.warning("%s: %s: %s", cid, failed, e)
+            return f"{failed}: {e}"
+        finally:
+            c.close()
+
+    if not cids:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(at_once, len(cids)), thread_name_prefix="yt") as pool:
+        out = dict(zip(cids, pool.map(one, cids)))
+    for cid, result in out.items():
+        log.info("%s: %s", cid, result)
+    return out
+
+
 def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
     """'Daily upload': every channel uploads its approved Shorts, up to channel_uploads_per_day,
-    then fetches stats. One channel's problem (login, YouTube's limit) doesn't stop the others."""
+    then fetches stats. Several channels upload at once; the shared API quota is divided over them
+    first (in channel order), so together they never go over it."""
     from .config import list_channels, load_channel
 
-    out = {}
+    left = settings.upload_quota - uploads_today(conn)
+    share: dict[str, int] = {}
     for cid in list_channels(settings.config_dir):
         ch = load_channel(cid, settings.config_dir)
-        try:
-            out[cid] = f"uploaded {len(upload_approved(conn, settings, ch, interactive=False))}"
-        except Exception as e:  # noqa: BLE001
-            log.warning("%s: upload failed: %s", cid, e)
-            out[cid] = f"failed: {e}"
-        log.info("%s: %s", cid, out[cid])
+        approved = conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='approved'",
+                                (cid,)).fetchone()[0]
+        n = max(0, min(approved, settings.channel_uploads_per_day - channel_uploads_last_day(conn, ch), left))
+        share[cid] = n
+        left -= n
+
+    def upload(c: sqlite3.Connection, ch: Channel) -> str:
+        return f"uploaded {len(upload_approved(c, settings, ch, limit=share[ch.id], interactive=False))}"
+
+    out = _per_channel(settings, list(share), upload, UPLOADS_AT_ONCE)
     for cid, result in fetch_stats_all(conn, settings).items():
         out[cid] = f"{out.get(cid, '')}, {result}".lstrip(", ")
     return out
@@ -374,20 +410,13 @@ def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel, 
 
 
 def fetch_stats_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
-    """Stats for every channel that has a YouTube login; never opens a browser."""
-    from .config import list_channels, load_channel
+    """Stats for every channel that has a YouTube login (several at once); never opens a browser."""
+    from .config import list_channels
 
-    out = {}
-    for cid in list_channels(settings.config_dir):
-        if not (settings.secrets_dir / f"token-{cid}.json").exists():
-            continue
-        try:
-            out[cid] = f"stats for {fetch_stats(conn, settings, load_channel(cid, settings.config_dir), interactive=False)}"
-        except Exception as e:  # noqa: BLE001 - one channel's login problem must not stop the others
-            log.warning("%s: stats failed: %s", cid, e)
-            out[cid] = f"stats failed: {e}"
-        log.info("%s: %s", cid, out[cid])
-    return out
+    cids = [cid for cid in list_channels(settings.config_dir)
+            if (settings.secrets_dir / f"token-{cid}.json").exists()]
+    return _per_channel(settings, cids, lambda c, ch: f"stats for {fetch_stats(c, settings, ch, interactive=False)}",
+                        STATS_AT_ONCE, failed="stats failed")
 
 
 def save_body_preview(path: Path, meta: dict, publish_at: datetime | None) -> None:

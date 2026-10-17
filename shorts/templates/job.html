@@ -7,7 +7,7 @@
 <p id="buttons">
 {% if job.status in ('queued', 'running') %}<form class="inline" method="post" action="/jobs/{{ job.id }}/stop"><button class="danger">Stop</button></form>{% endif %}
 {% if follow_up %}<form class="inline" method="post" action="/jobs/{{ job.id }}/again"><button class="primary">{{ follow_up[0] }}</button></form>{% endif %}
-{% if job.status == 'done' and (job.command|args).startswith('make') %}<a class="button" href="/review?channel={{ job.channel }}">Review</a>{% endif %}
+{% if job.status == 'done' and (job.command|args).startswith('make') %}<a class="button" href="/review{% if job.channel %}?channel={{ job.channel }}{% endif %}">Review</a>{% endif %}
 </p></div>
 <pre class="log" id="log">{{ log }}</pre>
 {% if job.status in ('queued', 'running') %}

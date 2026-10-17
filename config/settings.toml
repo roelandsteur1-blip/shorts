@@ -31,6 +31,9 @@ encoder = "auto"
 # "veryfast" looks the same after upload as "medium" (the old setting) in a fraction of the time.
 x264_preset = "veryfast"
 
+# Render: sources above 1080p (4K) are decoded by the GPU's video decoder when the driver allows.
+render_gpu_decode = true
+
 # Cutting videos into scenes: "fast" reads each video once with ffmpeg (on the GPU when the
 # driver allows), small frames, long videos split over several workers. "pyscenedetect" is the
 # old, slower way; 'python -m shorts bench --scenes' compares both on your own footage.

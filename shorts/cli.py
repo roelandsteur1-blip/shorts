@@ -12,7 +12,7 @@ from .config import list_channels, load_channel, load_settings
 
 
 # Commands that keep the CPU/GPU busy for a while; they run at below-normal priority.
-HEAVY = {"ingest", "import", "restock", "categorize", "dedupe", "scenes", "embed", "make", "finish",
+HEAVY = {"ingest", "import", "restock", "categorize", "dedupe", "scenes", "embed", "make", "make-all", "finish",
          "rerender", "daily", "bench", "music", "voice-test"}
 
 
@@ -59,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     pm.add_argument("--format", dest="format_id")
     pm.add_argument("--no-restock", action="store_true",
                     help="don't download new footage, even when the library is running low")
+
+    pma = sub.add_parser("make-all", help="2-5. top every channel up to --to Shorts waiting, in one run")
+    pma.add_argument("--to", type=int, default=2, help="Shorts waiting (to review or approved) per channel")
+    pma.add_argument("--no-restock", action="store_true")
 
     pcl = sub.add_parser("cleanup", help="delete videos that are used up (all scenes used, Shorts uploaded)")
     pcl.add_argument("--dry-run", action="store_true", help="only show what would be deleted")
@@ -174,6 +178,16 @@ def main(argv: list[str] | None = None) -> int:
         from .pipeline import make
         done = make(conn, settings, channel, args.count, args.format_id, restock=not args.no_restock)
         print(f"{len(done)} Shorts ready for review: run 'python -m shorts review'")
+    elif args.cmd == "make-all":
+        from .pipeline import make_many, top_up_orders
+        channels = [load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)]
+        orders, enough = top_up_orders(conn, channels, args.to)
+        if enough:
+            print("already enough: " + ", ".join(enough))
+        if orders:
+            print("making " + ", ".join(f"{ch.id} {n}" for ch, n, _ in orders))
+        for cid, n in make_many(conn, settings, orders, restock=not args.no_restock).items():
+            print(f"{cid}: {n} Shorts ready for review")
     elif args.cmd == "cleanup":
         from .library import cleanup
         n, gb = cleanup(conn, settings, dry_run=args.dry_run)

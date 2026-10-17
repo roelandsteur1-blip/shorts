@@ -4,11 +4,23 @@ Printed to stdout (the runner reads the job's log file), so they also show in a 
 from __future__ import annotations
 
 import re
+import threading
 
 PATTERN = re.compile(r"^PROGRESS (\d+)/(\d+) (.+)$")
 
 
+_local = threading.local()
+
+
+def mute() -> None:
+    """No progress lines from this thread (background work inside a job, e.g. downloads during
+    make, would otherwise make the job's progress bar jump between steps)."""
+    _local.muted = True
+
+
 def report(done: int, total: int, step: str) -> None:
+    if getattr(_local, "muted", False):
+        return
     print(f"PROGRESS {done}/{total} {step}", flush=True)
 
 

@@ -97,7 +97,8 @@ def test_daily_run(conn, settings, cfg, monkeypatch):
     path = cfg / "channels" / "space.toml"
     path.write_text(path.read_text().replace('id = "space"', 'id = "space"\nauto_run = true'))
     made, uploaded = [], []
-    monkeypatch.setattr(shorts.pipeline, "make", lambda c, s, ch, n: made.append((ch.id, n)) or [1, 2])
+    monkeypatch.setattr(shorts.pipeline, "make_many",
+                        lambda c, s, orders: made.extend((ch.id, n) for ch, n, _ in orders) or {ch.id: 2 for ch, _, _ in orders})
     monkeypatch.setattr(up, "upload_approved", lambda c, s, ch, **k: uploaded.append(ch.id) or ["yt"])
     assert daily.run(conn, settings) == {"space": "made 2, scheduled 1"}
     assert made == [("space", 2)]
@@ -216,9 +217,15 @@ def test_home_daily_buttons(client, conn, cfg):
     add_short(conn, status="scheduled")  # uploaded already: doesn't count
     r = client.post("/make-all", data={"count": "500"})  # capped at 100
     assert r.status_code == 302
-    cmds = {r["channel"]: json.loads(r["command"]) for r in conn.execute("SELECT channel, command FROM jobs")}
-    assert set(cmds) == set(list_channels(cfg)) and cmds["space"] == ["make", "-n", "96"]
+    # One job for every channel (Claude writes the next channel while the previous one renders).
+    jobs = conn.execute("SELECT channel, command FROM jobs").fetchall()
+    assert len(jobs) == 1 and jobs[0]["channel"] is None
+    assert json.loads(jobs[0]["command"]) == ["make-all", "--to", "100"]
+    from shorts.config import load_channel
+    from shorts.pipeline import top_up_orders
+    chans = [load_channel(c, cfg) for c in list_channels(cfg)]
+    orders, _ = top_up_orders(conn, chans, 100)
+    assert {ch.id: n for ch, n, _ in orders}["space"] == 96
     # Space already has 4 waiting: topping up to 3 skips it.
-    conn.execute("DELETE FROM jobs"); conn.commit()
-    client.post("/make-all", data={"count": "3"})
-    assert "space" not in {r[0] for r in conn.execute("SELECT channel FROM jobs")}
+    orders, enough = top_up_orders(conn, chans, 3)
+    assert "space" not in {ch.id for ch, _, _ in orders} and any("(4)" in e for e in enough)
