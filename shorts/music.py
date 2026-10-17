@@ -299,20 +299,23 @@ def check_hit(settings: Settings, fold: str, hit: dict, session: requests.Sessio
     dst_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(hit["url"].split("?")[0]).suffix.lower()
     dst = dst_dir / f"{hit['source']}-{_slug(hit['source_id'])}-{_slug(hit['title'])[:40]}{ext if ext in MUSIC_EXT else '.mp3'}"
+    part = dst.with_name(dst.name + ".part")  # a stopped run never leaves a half file that looks like a track
     try:
         with session.get(hit["url"], headers=UA, stream=True, timeout=120) as r:
             r.raise_for_status()
-            with open(dst, "wb") as f:
+            with open(part, "wb") as f:
                 for chunk in r.iter_content(1 << 16):
                     f.write(chunk)
                     if f.tell() > 60_000_000:
                         raise ValueError("file too large")
+        part.replace(dst)
         duration = media.probe(dst)["duration"]
         if not FETCH_MIN_SECONDS <= duration <= MAX_TRACK_SECONDS:
             raise ValueError(f"length {duration:.0f}s")
         with _clap_lock:  # one model on the GPU
             info = analyse(dst, f"{hit['title']} {hit.get('words', '')}")
     except (requests.RequestException, ValueError, KeyError, subprocess.CalledProcessError, OSError) as e:
+        part.unlink(missing_ok=True)
         dst.unlink(missing_ok=True)
         return {"status": "rejected", "note": str(e)[:200]}
     keep = {k: info[k] for k in ("start", "mood", "music_score")} | {"duration": duration}
