@@ -48,3 +48,8 @@ default_channel = "space"
 
 # YouTube uploads per day for the Google Cloud project; all channels share it.
 upload_quota = 100
+
+# Uploads per channel per 24 hours. YouTube has its own per-channel daily limit (lower for new or
+# unverified channels); going over it fails with uploadLimitExceeded. The rest stay approved and
+# go up on the next run. Publishing stays at the channel's uploads_per_day / publish_times_utc.
+channel_uploads_per_day = 5

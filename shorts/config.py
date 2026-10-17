@@ -35,6 +35,7 @@ class Settings:
     sibling_gap_days: int = 2         # Shorts from the same video are published at least this many days apart
     restock_per_term: int = 2         # videos per search term in one automatic restock
     upload_quota: int = 100           # uploads per day for the Google Cloud project (all channels)
+    channel_uploads_per_day: int = 5  # uploads per channel per 24 hours (YouTube's own per-channel limit)
     config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR
 
     @property

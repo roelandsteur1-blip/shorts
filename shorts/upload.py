@@ -168,6 +168,39 @@ def uploads_today(conn: sqlite3.Connection, now: datetime | None = None) -> int:
                         (iso(pacific_midnight(now)),)).fetchone()[0]
 
 
+def channel_uploads_last_day(conn: sqlite3.Connection, channel: Channel, now: datetime | None = None) -> int:
+    """Uploads to this channel in the last 24 hours (YouTube's per-channel limit is a rolling window)."""
+    now = now or datetime.now(timezone.utc)
+    return conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND uploaded_at >= ?",
+                        (channel.id, iso(now - timedelta(days=1)))).fetchone()[0]
+
+
+def _blocked_path(settings: Settings, channel: Channel) -> Path:
+    return settings.data_dir / f"upload-blocked-{channel.id}.txt"
+
+
+def blocked_until(settings: Settings, channel: Channel, now: datetime | None = None) -> datetime | None:
+    """When YouTube refused an upload for this channel (uploadLimitExceeded), don't try again for 24 hours."""
+    now = now or datetime.now(timezone.utc)
+    try:
+        since = datetime.fromisoformat(_blocked_path(settings, channel).read_text(encoding="utf-8").strip()
+                                       .replace("Z", "+00:00"))
+    except (OSError, ValueError):
+        return None
+    until = since + timedelta(days=1)
+    return until if until > now else None
+
+
+def _limit_reason(e: Exception) -> str | None:
+    """'uploadLimitExceeded' (channel's daily limit) or 'quotaExceeded' (API quota), else None."""
+    content = getattr(e, "content", b"") or b""
+    text = content.decode("utf-8", "replace") if isinstance(content, bytes) else str(content)
+    for reason in ("uploadLimitExceeded", "quotaExceeded"):
+        if reason in text or reason in str(e):
+            return reason
+    return None
+
+
 def iso(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -193,6 +226,7 @@ def body_for(meta: dict, publish_at: datetime | None) -> dict:
 
 def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Channel,
                     limit: int | None = None, schedule: bool = True) -> list[str]:
+    from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
 
     from .render import metadata
@@ -201,6 +235,16 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
                         (channel.id,)).fetchall()
     if limit is not None:
         rows = rows[:limit]
+    until = blocked_until(settings, channel)
+    if until:
+        log.warning("'%s': YouTube refused uploads (daily limit); trying again after %s", channel.id, iso(until))
+        return []
+    per_channel = settings.channel_uploads_per_day - channel_uploads_last_day(conn, channel)
+    if len(rows) > per_channel:
+        log.info("'%s': %d of %d uploads used in the last 24 hours; uploading %d of %d now, the rest stay "
+                 "approved for the next run", channel.id, settings.channel_uploads_per_day - per_channel,
+                 settings.channel_uploads_per_day, max(per_channel, 0), len(rows))
+        rows = rows[:max(per_channel, 0)]
     left = settings.upload_quota - uploads_today(conn)
     if len(rows) > left:
         log.warning("daily upload quota: %d of %d used today (all channels); uploading %d of %d now, "
@@ -219,8 +263,22 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
             media_body=MediaFileUpload(s["video_path"], mimetype="video/mp4", chunksize=8 << 20, resumable=True),
         )
         response = None
-        while response is None:
-            _, response = request.next_chunk()
+        try:
+            while response is None:
+                _, response = request.next_chunk()
+        except HttpError as e:
+            reason = _limit_reason(e)
+            if not reason:
+                raise
+            if reason == "uploadLimitExceeded":
+                _blocked_path(settings, channel).write_text(iso(datetime.now(timezone.utc)), encoding="utf-8")
+                log.warning("'%s': YouTube's daily upload limit for this channel is reached; stopped after %d. "
+                            "The other %d stay approved and upload on a later run.",
+                            channel.id, len(done), len(rows) - len(done))
+            else:
+                log.warning("'%s': the YouTube API quota for today is used up; stopped after %d. "
+                            "The other %d stay approved.", channel.id, len(done), len(rows) - len(done))
+            break
         vid = response["id"]
         db.set_short(conn, s["id"], status="scheduled" if slot else "uploaded", youtube_id=vid,
                      publish_at=iso(slot) if slot else None, uploaded_at=iso(datetime.now(timezone.utc)))
