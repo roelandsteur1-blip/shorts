@@ -1,5 +1,7 @@
 {% extends "base.html" %}{% block title %}Home{% endblock %}{% block body %}
 {% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+{% if warnings %}<div class="card"><h2 style="margin-top:0" class="warn">Needs attention</h2>
+{% for w in warnings %}<p style="margin:4px 0"><b>{{ w.channel.name }}</b>: <a href="{{ w.link }}">{{ w.text }}</a></p>{% endfor %}</div>{% endif %}
 <div class="card"><h2 style="margin-top:0">Daily</h2>
 <form method="post" action="/make-all" class="inline"><label style="display:inline">Every channel at least
 <input type="number" name="count" value="10" min="1" max="100" style="width:80px"></label>

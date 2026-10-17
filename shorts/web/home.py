@@ -36,10 +36,47 @@ def channel_card(ch) -> dict:
     }
 
 
+def warnings(cards: list[dict], now: datetime | None = None) -> list[dict]:
+    """Things to fix: an expired YouTube login, a channel blocked by YouTube's upload limit, footage
+    running low, and days in the coming week with nothing scheduled. Each: {channel, text, link}."""
+    from ..upload import blocked_until, login_expired_path
+
+    now = now or datetime.now(timezone.utc)
+    c, s, out = conn(), settings(), []
+    for card in cards:
+        ch = card["ch"]
+        if login_expired_path(s, ch.id).exists():
+            out.append({"channel": ch, "text": "YouTube login expired: connect YouTube again",
+                        "link": f"/channels/{ch.id}"})
+        until = blocked_until(s, ch, now)
+        if until:
+            out.append({"channel": ch, "text": f"YouTube's daily upload limit reached; uploads resume after "
+                                               f"{until.strftime('%a %H:%M')} UTC", "link": f"/schedule?channel={ch.id}"})
+        if card["footage_left"] < s.restock_below:
+            out.append({"channel": ch, "text": f"footage running low: {card['footage_left']} Shorts left "
+                                               f"(from {card['footage_videos']} videos); the next Make downloads more",
+                        "link": f"/make?channel={ch.id}"})
+        if not card["connected"]:
+            continue  # not uploading yet: an empty schedule is expected
+        days = [(now + timedelta(days=i)).date() for i in range(1, 8)]
+        planned = {r[0] for r in c.execute("""SELECT substr(publish_at, 1, 10) FROM shorts WHERE channel=?
+                                                AND status='scheduled' AND publish_at >= ?""",
+                                           (ch.id, days[0].isoformat()))}
+        empty = [d for d in days if d.isoformat() not in planned]
+        if empty:
+            when = ("the next 7 days" if len(empty) == len(days)
+                    else ", ".join(d.strftime("%a %d %b") for d in empty))
+            extra = f" ({card['approved']} approved waiting: press Daily upload)" if card["approved"] else ""
+            out.append({"channel": ch, "text": f"nothing scheduled on {when}{extra}" if len(empty) < len(days)
+                        else f"nothing scheduled in {when}{extra}", "link": f"/schedule?channel={ch.id}"})
+    return out
+
+
 @bp.get("/")
 def index():
     running = conn().execute("SELECT * FROM jobs WHERE status IN ('running','queued') ORDER BY id").fetchall()
-    return render_template("home.html", cards=[channel_card(ch) for ch in channels()], running=running,
+    cards = [channel_card(ch) for ch in channels()]
+    return render_template("home.html", cards=cards, running=running, warnings=warnings(cards),
                            per_channel=settings().channel_uploads_per_day, msg=request.args.get("msg"))
 
 

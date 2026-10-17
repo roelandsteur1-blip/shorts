@@ -137,3 +137,23 @@ def test_reject_rate_on_stats(client, conn):
     rates = stats_page.review_rates(conn)
     assert rates == [{"channel": "space", "reviewed": 3, "rejected": 2, "rate": 2 / 3, "reasons": [("weak hook", 2)]}]
     assert "weak hook (2)" in client.get("/stats").data.decode()
+
+
+def test_home_warnings(client, conn, settings):
+    from datetime import datetime, timedelta, timezone
+    page = client.get("/").data.decode()
+    assert "Needs attention" not in page  # tests: restock_below 0, no logins
+    settings.restock_below = 1000
+    (settings.secrets_dir / "token-space.json").write_text("{}")
+    upload.login_expired_path(settings, "space").write_text("2026-10-17T10:00:00Z")
+    (settings.data_dir / "upload-blocked-space.txt").write_text(upload.iso(datetime.now(timezone.utc)))
+    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
+    add_short(conn, status="scheduled", youtube_id="y", publish_at=tomorrow)
+    add_short(conn, status="approved")
+    page = client.get("/").data.decode()
+    assert "Needs attention" in page and "YouTube login expired" in page and "daily upload limit reached" in page
+    assert "footage running low" in page and "1 approved waiting" in page
+    empty = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%a %d %b")
+    assert f"nothing scheduled on {empty}" in page
+    conn.execute("DELETE FROM blocks"); conn.execute("DELETE FROM shorts"); conn.commit()
+    assert "nothing scheduled in the next 7 days" in client.get("/").data.decode()
