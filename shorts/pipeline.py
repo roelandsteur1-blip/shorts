@@ -18,6 +18,7 @@ from .config import Channel, Settings
 log = logging.getLogger(__name__)
 
 _DONE = None  # end-of-stream marker on the queues
+REFILL_ROUNDS = 3  # times Make picks new hero shots for ones Claude skipped as off-niche
 
 
 def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: int,
@@ -48,8 +49,15 @@ def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: 
     from . import music
     music.restock(conn, settings, channel)
 
+    def refill(c: sqlite3.Connection, n: int) -> list[int]:
+        """New hero shots for ones that gave no script (off-niche videos are now excluded)."""
+        more = hero.candidates(c, settings, channel.id, n, categories=channel.categories, query=channel.hero_query)
+        if more:
+            log.info("picked %d more hero shots for the ones skipped", len(more))
+        return more
+
     # 3-5. Scripts -> fact check -> footage + render, overlapping.
-    run_steps(conn, settings, channel, fmt_id, heroes)
+    run_steps(conn, settings, channel, fmt_id, heroes, refill)
 
     # 6. Refill the library for next time (below restock_below), after this batch is reviewable.
     if restock:
@@ -70,10 +78,11 @@ def _ids(conn: sqlite3.Connection, channel: Channel, *statuses: str) -> list[int
 
 
 def run_steps(conn: sqlite3.Connection, settings: Settings, channel: Channel, fmt_id: str | None,
-              heroes: list[int]) -> None:
+              heroes: list[int], refill=None) -> None:
     """Scripts for `heroes`, plus everything left halfway by an earlier run ('scripted' ->
     fact check, 'checked'/'failed' -> render). Three lanes: Claude writes, Claude checks, the main
-    thread picks footage and hands renders to a pool. Each lane has its own database connection."""
+    thread picks footage and hands renders to a pool. Each lane has its own database connection.
+    refill(conn, n) gives n new heroes when scripts come back short, so Make still reaches its count."""
     to_check: queue.Queue = queue.Queue()
     to_render: queue.Queue = queue.Queue()
     for sid in _ids(conn, channel, "checked", "failed"):
@@ -88,7 +97,15 @@ def run_steps(conn: sqlite3.Connection, settings: Settings, channel: Channel, fm
         try:
             if heroes:
                 progress.report(0, expected, "script")
-                script.write_scripts(c, settings, channel, fmt_id, heroes, on_batch=to_check.put)
+                pending = heroes
+                for _ in range(REFILL_ROUNDS + 1):
+                    made = script.write_scripts(c, settings, channel, fmt_id, pending, on_batch=to_check.put)
+                    missing = len(pending) - len(made)
+                    if not missing or not refill or llm.limit_reached():
+                        break
+                    pending = refill(c, missing)
+                    if not pending:
+                        break
         except Exception:  # noqa: BLE001 - heroes without a script are picked again next run
             log.exception("writing scripts failed")
         finally:

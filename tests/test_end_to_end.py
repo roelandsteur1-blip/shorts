@@ -54,3 +54,24 @@ def test_music_is_mixed(library, settings, channel, monkeypatch):
     done = pipeline.make(library, settings, channel, count=1)
     s = library.execute("SELECT music FROM shorts WHERE id=?", (done[0],)).fetchone()
     assert s["music"].endswith("track.mp3")
+
+
+def test_make_replaces_off_niche_heroes(library, settings, channel, monkeypatch):
+    """Claude skips a hero as off-niche: Make picks another shot and still reaches its count."""
+    from shorts import llm
+    fake_claude(monkeypatch)
+    real, calls = llm.ask, []
+
+    def ask(prompt, *a, **k):
+        out = real(prompt, *a, **k)
+        if "fact checker" not in prompt:
+            calls.append(prompt)
+            if len(calls) == 1:  # first batch: the first hero is off-niche
+                data = json.loads(out.strip("`\njson"))
+                data[0] = {"hero": 1, "skip": "not on topic"}
+                out = json.dumps(data)
+        return out
+    monkeypatch.setattr(llm, "ask", ask)
+    done = pipeline.make(library, settings, channel, count=1)
+    assert len(done) == 1 and len(calls) == 2
+    assert library.execute("SELECT COUNT(*) FROM off_niche").fetchone()[0] == 1
