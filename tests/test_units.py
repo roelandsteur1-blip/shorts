@@ -67,3 +67,14 @@ def test_upload_body():
                            datetime(2026, 10, 17, 15, tzinfo=timezone.utc))
     assert body["status"] == {"privacyStatus": "private", "selfDeclaredMadeForKids": False,
                               "containsSyntheticMedia": False, "publishAt": "2026-10-17T15:00:00Z"}
+
+
+def test_find_claude_in_store_app_folder(tmp_path, monkeypatch):
+    """The Store (MSIX) desktop app keeps Claude Code under %LOCALAPPDATA%\Claude-Data."""
+    from shorts import llm
+    exe = tmp_path / "local" / "Claude-Data" / "claude_abc" / "claude-code" / "2.1.299" / "f0584be0fbaf" / "claude.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    assert llm.find_claude("C:/gone/claude.exe") == str(exe)

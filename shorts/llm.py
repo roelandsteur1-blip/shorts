@@ -27,12 +27,15 @@ def find_claude(claude_cmd: str = "claude") -> str | None:
     found = shutil.which(claude_cmd)
     if found:
         return found
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        bundled = sorted(Path(appdata, "Claude", "claude-code").glob("*/*/claude.exe"),
-                         key=lambda p: p.stat().st_mtime, reverse=True)
-        if bundled:
-            return str(bundled[0])
+    # Older app installs keep it in %APPDATA%\Claude, the Store (MSIX) app in
+    # %LOCALAPPDATA%\Claude-Data\claude_<id>.
+    bundled = []
+    if appdata := os.environ.get("APPDATA"):
+        bundled += Path(appdata, "Claude", "claude-code").glob("*/*/claude.exe")
+    if local := os.environ.get("LOCALAPPDATA"):
+        bundled += Path(local, "Claude-Data").glob("claude_*/claude-code/*/*/claude.exe")
+    if bundled:
+        return str(max(bundled, key=lambda p: p.stat().st_mtime))
     return None
 
 
