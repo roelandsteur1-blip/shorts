@@ -1,32 +1,19 @@
 """Background music: fetching CC0 tracks, moods, picking, claims, Music page."""
 import subprocess
 
-import numpy as np
 import pytest
 
 from shorts import music
 from shorts.web import create_app
 
 
-def tone(path, seconds=40, silence=0.0, freq=330):
+def tone(path, seconds=70, silence=0.0, freq=330):
     """An mp3 with `silence` seconds of quiet before the tone."""
     path.parent.mkdir(parents=True, exist_ok=True)
     src = f"sine=f={freq}:d={seconds}"
     filt = ["-af", f"adelay={int(silence * 1000)}:all=1,atrim=0:{seconds}"] if silence else []
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", src, *filt, str(path)], check=True)
     return path
-
-
-class FakeClap:
-    """Every track sounds like `kind` in `mood`."""
-    def __init__(self, mood="epic", kind=music.KIND[0]):
-        self.mood, self.kind = mood, kind
-
-    def audio(self, waves):
-        return np.array([[1.0, 0.0]])
-
-    def texts(self, texts):
-        return np.array([[1.0, 0.0] if t in (music.MOODS[self.mood], self.kind) else [0.0, 1.0] for t in texts])
 
 
 def short(conn, channel="space", music_path=None, mood=None, status="rendered", youtube_id=None):
@@ -82,32 +69,33 @@ def test_fetch_keeps_only_cc0_music(conn, settings, channel, tmp_path):
                 if params["page"] > 1:
                     return Resp(status=400)
                 return Resp({"results": [
-                    {"id": "1", "title": "Good space ambient", "license": "cc0", "url": "https://x/good.mp3", "duration": 40000},
-                    {"id": "2", "title": "Needs credit", "license": "by", "url": "https://x/by.mp3", "duration": 40000},
+                    {"id": "1", "title": "Good space ambient", "license": "cc0", "url": "https://x/good.mp3", "duration": 70000},
+                    {"id": "2", "title": "Needs credit", "license": "by", "url": "https://x/by.mp3", "duration": 70000},
                     {"id": "3", "title": "Jingle", "license": "pdm", "url": "https://x/short.mp3", "duration": 10000},
-                    {"id": "4", "title": "Podcast", "license": "cc0", "url": "https://x/good.mp3", "duration": 40000},
+                    {"id": "5", "title": "Cinematic whoosh hit", "license": "cc0", "url": "https://x/good.mp3", "duration": 90000},
+                    {"id": "4", "title": "Podcast", "license": "cc0", "url": "https://x/good.mp3", "duration": 70000},
                 ]})
             return Resp(body=files["good"].read_bytes())
 
     channel.music_terms = ["space ambient"]
-    clap = FakeClap("mysterious")
-    music.set_tagger(clap)
-    real = music.add_fetched
+    real = music.analyse
 
-    def add(conn_, settings_, fold, hit, s):  # the 'podcast' sounds like people talking
-        clap.kind = "people talking" if hit["title"] == "Podcast" else music.KIND[0]
-        return real(conn_, settings_, fold, hit, s)
+    def analyse(path, words=""):  # the 'podcast' sounds like people talking
+        info = real(path, words)
+        return info | {"mood": "mysterious", "music_score": 0.9,
+                       "kind": "people talking" if "Podcast" in words else music.KIND[0]}
 
-    music.add_fetched = add
+    music.analyse = analyse
     try:
         assert music.fetch(conn, settings, channel, want=5, session=Session()) == 1
     finally:
-        music.add_fetched = real
+        music.analyse = real
     ok = music.usable(conn, "space")
     assert [(t["title"], t["license"], t["mood"]) for t in ok] == [("Good space ambient", "CC0", "mysterious")]
     assert any((settings.music_dir / "space").glob("openverse-1-*.mp3"))
     notes = dict(conn.execute("SELECT title, note FROM tracks WHERE status='rejected'").fetchall())
     assert "length" in notes["Jingle"] and "talking" in notes["Podcast"]
+    assert "sound effect" in notes["Cinematic whoosh hit"]
     assert "Needs credit" not in notes  # never even stored: wrong licence
     downloads = sum(1 for c in calls if c.startswith("https://x/"))
     music.fetch(conn, settings, channel, want=5, session=Session())

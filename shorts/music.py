@@ -18,6 +18,8 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +32,6 @@ log = logging.getLogger(__name__)
 
 MUSIC_EXT = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
 CLAIMED = "_claimed"
-MIN_TRACK_SECONDS = 30      # shorter clips are mostly jingles and sound effects
 MAX_TRACK_SECONDS = 15 * 60
 SR = 48000                  # CLAP's sample rate
 
@@ -130,7 +131,7 @@ def mood_from_words(text: str) -> str | None:
 
 # ---------- analysis: where the music starts, mood, is it music at all ----------
 
-def decode(path: Path, seconds: float = 180) -> np.ndarray:
+def decode(path: Path, seconds: float = 90) -> np.ndarray:
     """Mono float32 samples at 48 kHz, the first `seconds` of the track."""
     out = subprocess.run(["ffmpeg", "-v", "error", "-t", str(seconds), "-i", str(path), "-ac", "1",
                           "-ar", str(SR), "-f", "f32le", "-"], capture_output=True, check=True).stdout
@@ -243,7 +244,7 @@ def search_openverse(term: str, page: int, session: requests.Session) -> list[di
 def search_freesound(term: str, page: int, session: requests.Session, key: str) -> list[dict]:
     r = session.get(FREESOUND, params={
         "query": f"{term} music", "token": key, "page": page, "page_size": 30, "sort": "rating_desc",
-        "filter": f'license:"Creative Commons 0" duration:[{MIN_TRACK_SECONDS} TO {MAX_TRACK_SECONDS}]',
+        "filter": f'license:"Creative Commons 0" duration:[{FETCH_MIN_SECONDS} TO {MAX_TRACK_SECONDS}]',
         "fields": "id,name,username,license,duration,previews,url,tags"}, headers=UA, timeout=60)
     if r.status_code == 404:
         return []
@@ -273,21 +274,27 @@ def _known(conn: sqlite3.Connection, source: str, source_id: str) -> bool:
     return conn.execute("SELECT 1 FROM tracks WHERE source=? AND source_id=?", (source, source_id)).fetchone() is not None
 
 
-def add_fetched(conn: sqlite3.Connection, settings: Settings, fold: str, hit: dict,
-                session: requests.Session) -> bool:
-    """Download one search hit, check it and store it. True = it's a usable track now."""
-    def store(status: str, path: str | None = None, note: str | None = None, **info) -> None:
-        conn.execute("""INSERT OR IGNORE INTO tracks (folder, path, source, source_id, title, creator, license,
-                            source_url, duration, start, mood, music_score, status, note, analysed)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                     (fold, path, hit["source"], hit["source_id"], hit["title"], hit["creator"], hit["license"],
-                      hit["source_url"], info.get("duration"), info.get("start", 0), info.get("mood"),
-                      info.get("music_score"), status, note, int(bool(info))))
-        conn.commit()
+# Free sound sites hold far more sound effects than music: skip those by title before downloading.
+SFX_WORDS = re.compile(r"\b(hit|hits|whoosh|swoosh|impact|riser|rumble|boom|sfx|foley|footsteps?|field recording|"
+                       r"sound ?effects?|notification|alarm|beep|glitch|transition|stinger|jingle|rain|wind|birds?|"
+                       r"thunder|crowd|traffic|engine|door|explosion|gunshot|voice|speech|scream)\b", re.I)
+FETCH_MIN_SECONDS = 60   # a fetched clip shorter than this is almost never usable music
+WORKERS = 6              # parallel downloads: fetching waits on the network, not the CPU
+_clap_lock = threading.Lock()
 
-    if hit.get("seconds") and not MIN_TRACK_SECONDS <= hit["seconds"] <= MAX_TRACK_SECONDS:
-        store("rejected", note=f"length {hit['seconds']:.0f}s")
-        return False
+
+def pre_check(hit: dict) -> str | None:
+    """Why a search hit isn't worth downloading, or None."""
+    if hit.get("seconds") and not FETCH_MIN_SECONDS <= hit["seconds"] <= MAX_TRACK_SECONDS:
+        return f"length {hit['seconds']:.0f}s"
+    if m := SFX_WORDS.search(f"{hit['title']} {hit.get('words', '')}"):
+        return f"sound effect ('{m.group(0)}' in title/tags)"
+    return None
+
+
+def check_hit(settings: Settings, fold: str, hit: dict, session: requests.Session) -> dict:
+    """Download one hit and judge it. No database access: runs in parallel.
+    Returns {'status': 'ok'|'rejected', 'path', 'note', 'duration', 'start', 'mood', 'music_score'}."""
     dst_dir = settings.music_dir / fold
     dst_dir.mkdir(parents=True, exist_ok=True)
     ext = Path(hit["url"].split("?")[0]).suffix.lower()
@@ -301,19 +308,28 @@ def add_fetched(conn: sqlite3.Connection, settings: Settings, fold: str, hit: di
                     if f.tell() > 60_000_000:
                         raise ValueError("file too large")
         duration = media.probe(dst)["duration"]
-        if not MIN_TRACK_SECONDS <= duration <= MAX_TRACK_SECONDS:
+        if not FETCH_MIN_SECONDS <= duration <= MAX_TRACK_SECONDS:
             raise ValueError(f"length {duration:.0f}s")
-        info = analyse(dst, f"{hit['title']} {hit['words']}")
+        with _clap_lock:  # one model on the GPU
+            info = analyse(dst, f"{hit['title']} {hit.get('words', '')}")
     except (requests.RequestException, ValueError, KeyError, subprocess.CalledProcessError, OSError) as e:
         dst.unlink(missing_ok=True)
-        store("rejected", note=str(e)[:200])
-        return False
+        return {"status": "rejected", "note": str(e)[:200]}
+    keep = {k: info[k] for k in ("start", "mood", "music_score")} | {"duration": duration}
     if info["kind"] and info["kind"] != KIND[0]:
         dst.unlink(missing_ok=True)
-        store("rejected", note=f"sounds like {info['kind']}", duration=duration, **{k: info[k] for k in ("start", "mood", "music_score")})
-        return False
-    store("ok", str(dst), duration=duration, **{k: info[k] for k in ("start", "mood", "music_score")})
-    return True
+        return {"status": "rejected", "note": f"sounds like {info['kind']}"} | keep
+    return {"status": "ok", "path": str(dst)} | keep
+
+
+def store_hit(conn: sqlite3.Connection, fold: str, hit: dict, res: dict) -> None:
+    conn.execute("""INSERT OR IGNORE INTO tracks (folder, path, source, source_id, title, creator, license,
+                        source_url, duration, start, mood, music_score, status, note, analysed)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 (fold, res.get("path"), hit["source"], hit["source_id"], hit["title"], hit["creator"],
+                  hit["license"], hit["source_url"], res.get("duration"), res.get("start") or 0, res.get("mood"),
+                  res.get("music_score"), res["status"], res.get("note"), int("start" in res)))
+    conn.commit()
 
 
 def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel, want: int,
@@ -327,27 +343,41 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel, want: 
         return 0
     terms = channel.music_terms or DEFAULT_TERMS
     got = 0
-    for page in range(1, max_pages + 1):
-        for term in terms:
-            for src in music_sources(settings):
-                if got >= need:
-                    return got
-                try:
-                    hits = (search_openverse(term, page, s) if src == "openverse"
-                            else search_freesound(term, page, s, sources.api_key(settings, "freesound")))
-                except (requests.RequestException, ValueError) as e:
-                    log.warning("music search %s '%s' failed: %s", src, term, e)
-                    continue
-                log.info("music: %s '%s' page %d: %d CC0/public-domain results", src, term, page, len(hits))
-                for hit in hits:
+    with ThreadPoolExecutor(WORKERS) as pool:
+        for page in range(1, max_pages + 1):
+            for term in terms:
+                for src in music_sources(settings):
                     if got >= need:
-                        break
-                    if _known(conn, hit["source"], hit["source_id"]):
+                        return got
+                    try:
+                        hits = (search_openverse(term, page, s) if src == "openverse"
+                                else search_freesound(term, page, s, sources.api_key(settings, "freesound")))
+                    except (requests.RequestException, ValueError) as e:
+                        log.warning("music search %s '%s' failed: %s", src, term, e)
                         continue
-                    progress.report(got, need, "music: download")
-                    if add_fetched(conn, settings, fold, hit, s):
-                        got += 1
-                        log.info("music: %s (%s, %s)", hit["title"], hit["source"], hit["license"])
+                    todo = []
+                    for hit in hits:
+                        if _known(conn, hit["source"], hit["source_id"]) or any(
+                                h["source_id"] == hit["source_id"] for h in todo):
+                            continue
+                        if why := pre_check(hit):
+                            store_hit(conn, fold, hit, {"status": "rejected", "note": why})
+                        else:
+                            todo.append(hit)
+                    log.info("music: %s '%s' page %d: %d CC0/public-domain results, %d worth downloading",
+                             src, term, page, len(hits), len(todo))
+                    # Download a few more than still needed at once: most turn out not to be music.
+                    while todo and got < need:
+                        batch, todo = todo[:WORKERS], todo[WORKERS:]
+                        for hit, res in zip(batch, pool.map(lambda h: check_hit(settings, fold, h, s), batch)):
+                            if got >= need and res["status"] == "ok":
+                                Path(res["path"]).unlink(missing_ok=True)
+                                continue  # not stored: may be fetched again another time
+                            store_hit(conn, fold, hit, res)
+                            if res["status"] == "ok":
+                                got += 1
+                                log.info("music: kept %s (%s, %s, %s)", hit["title"], hit["source"], hit["license"], res["mood"])
+                        progress.report(got, need, "music: download")
     return got
 
 
