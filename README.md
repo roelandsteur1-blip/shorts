@@ -49,6 +49,8 @@ Activeer eerst de omgeving: `.\.venv\Scripts\activate`
 
 `python -m shorts dashboard` en open http://127.0.0.1:5000. Het dashboard luistert alleen op de laptop zelf (geen wachtwoord, niet bereikbaar vanaf je telefoon of het netwerk).
 
+**Snelkoppeling:** `powershell -ExecutionPolicy Bypass -File launcher\install_shortcuts.ps1` zet **Shorts Dashboard** op het bureaublad en in het Startmenu. Dubbelklik start het dashboard op de achtergrond (geen zwart venster; draait het al, dan opent alleen de browser). Met `-Startup` start het ook bij inloggen, `-Remove` haalt de snelkoppelingen weg. Uitvoer staat in `launcher\dashboard.log`.
+
 - **Home**: per kanaal een kaart met Shorts om te reviewen, goedgekeurd, ingepland voor de komende 7 dagen, aantal ongebruikte video's en de laatste taak. Knoppen *Make Shorts*, *Review*, *Schedule*.
 - **Make**: kies kanaal, aantal en format en start. Het werk draait op de achtergrond als `python -m shorts --channel <id> make -n N`, met de huidige stap (download / script / feitencheck / render), "3 van 10", de laatste logregels en een Stop-knop. Er draait één zware taak tegelijk; de rest wacht in de rij. Reviewen kan intussen gewoon.
 - **Review**: dezelfde reviewpagina als eerst, met een kanaalfilter. Toetsen: <kbd>A</kbd> goedkeuren, <kbd>R</kbd> afwijzen (met de gekozen reden), <kbd>N</kbd> volgende, <kbd>E</kbd> tekst bewerken, spatie pauze; de volgende Short laadt al op de achtergrond. Een fout woord? Pas de tekst van een blok aan en klik *Save text and re-render*: de Short wordt opnieuw gerenderd met hetzelfde beeld (de feitencheck draait niet opnieuw).
