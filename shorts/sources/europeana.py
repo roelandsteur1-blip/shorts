@@ -18,6 +18,7 @@ LICENSE = "public domain, CC0, CC BY (credit needed); CC BY-SA skipped"
 NOTE = "Many items only link to the holding archive's own player; only direct video files are used."
 NEEDS_KEY = True
 KEY_URL = "https://pro.europeana.eu/pages/get-api"
+KEY_HELP = "Fill in the short form on the Get API page; Europeana emails the key (the 'API key', not the private key)."
 HERO_OK = True
 MIN_HEIGHT = 360
 

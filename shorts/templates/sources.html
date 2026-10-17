@@ -2,10 +2,23 @@
 <h1>Footage sources</h1>
 <p class="muted">A channel downloads from the sources in its settings; switching one off here stops it for every channel.
 CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p>
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+<b>{{ summary['connected'] }} of {{ total }} archives connected</b>
+{% if summary['failing'] %}<span class="bad">{{ summary['failing'] }} failing</span>{% endif %}
+{% if summary['needs-key'] %}<span class="warn">{{ summary['needs-key'] }} need a key</span>{% endif %}
+{% if summary['untested'] %}<span class="muted">{{ summary['untested'] }} not tested yet</span>{% endif %}
+{% if summary['off'] %}<span class="muted">{{ summary['off'] }} off</span>{% endif %}
+<form method="post" action="/sources-test-all" class="inline" style="margin-left:auto"
+ onsubmit="this.querySelector('button').textContent='Testing… (up to 45 s)';this.querySelector('button').disabled=true">
+<button class="primary">Test all</button></form>
+<span class="muted" style="font-size:12px;flex-basis:100%">A test searches one page and checks the rights of the first 5 results. Nothing is downloaded.</span>
+</div>
 <table><tr><th>Source</th><th>License</th><th>Downloaded</th><th>Rejected (rights)</th><th></th></tr>
-{% for r in rows %}<tr>
+{% for r in rows %}<tr id="src-{{ r.mod.NAME }}">
 <td><b>{{ r.mod.LABEL }}</b> <span class="muted">{{ r.mod.NAME }}</span><br>
-{% if r.usable %}<span class="ok">in use</span>{% else %}<span class="warn">{{ r.why }}</span>{% endif %}
+{% set cls = {'connected': 'ok', 'failing': 'bad', 'needs-key': 'warn', 'untested': 'warn'}.get(r.state, 'muted') %}
+<span class="{{ cls }}"><b>{{ {'connected': 'Connected', 'failing': 'Failing', 'needs-key': 'Needs key', 'untested': 'Not tested', 'off': 'Off', 'import': 'Import folder'}[r.state] }}</b></span>
+<span class="muted" style="font-size:12px">{{ r.state_msg }}{% if r.tested_at and r.state in ('connected', 'failing') %} ({{ r.tested_at }} UTC){% endif %}</span>
 {% if r.mod.HERO_OK is defined and not r.mod.HERO_OK %}<br><span class="muted">stock B-roll: used between text blocks, never as hero shot</span>{% endif %}</td>
 <td>{{ r.mod.LICENSE }}{% if r.mod.NOTE is defined %}<br><span class="muted">{{ r.mod.NOTE }}</span>{% endif %}</td>
 <td>{{ r.downloaded }}{% if r.failed %} <span class="muted">({{ r.failed }} failed)</span>{% endif %}</td>
@@ -15,7 +28,10 @@ CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p
 <button>{{ 'Switch off' if r.on else 'Switch on' }}</button></form>
 {% if r.mod.NEEDS_KEY %}<form method="post" action="/sources/{{ r.mod.NAME }}" style="margin-top:6px">
 <input type="password" name="api_key" placeholder="{{ 'key saved: paste to replace' if r.has_key else 'API key (free)' }}" autocomplete="off">
-<button style="margin-top:4px">Save key</button>{% if r.mod.KEY_URL is defined %} <a href="{{ r.mod.KEY_URL }}" target="_blank" rel="noopener">get a key</a>{% endif %}</form>{% endif %}
+<button style="margin-top:4px">Save &amp; test key</button>{% if r.mod.KEY_URL is defined %} <a href="{{ r.mod.KEY_URL }}" target="_blank" rel="noopener">get a free key</a>{% endif %}
+{% if r.mod.KEY_HELP is defined and not r.has_key %}<br><span class="muted" style="font-size:12px">{{ r.mod.KEY_HELP }}</span>{% endif %}</form>{% endif %}
+{% if r.state in ('connected', 'failing', 'untested') %}<form method="post" action="/sources/{{ r.mod.NAME }}/test" style="margin-top:6px"
+ onsubmit="this.querySelector('button').textContent='Testing…';this.querySelector('button').disabled=true"><button>Test</button></form>{% endif %}
 {% if r.mod.IMPORT_ONLY is defined and r.mod.IMPORT_ONLY %}<p class="muted" style="font-size:12px">no API: use the import folder below</p>
 {% elif r.usable %}<form method="post" action="/sources/{{ r.mod.NAME }}/try" style="margin-top:6px">
 <input type="text" name="query" placeholder="try a search (no download)"></form>{% endif %}

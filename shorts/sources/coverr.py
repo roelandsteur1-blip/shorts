@@ -9,6 +9,7 @@ LABEL = "Coverr"
 LICENSE = "Coverr License: bans AI use of the videos (skipped until CLIP search is cleared)"
 NEEDS_KEY = True
 KEY_URL = "https://coverr.co/developers"
+KEY_HELP = "Off on purpose: Coverr's terms ban AI use."
 HERO_OK = False
 
 

@@ -150,6 +150,57 @@ def check(item: Item, session: requests.Session, key: str | None) -> tuple[Item,
     return item, mod.rights(item)
 
 
+TEST_QUERY = {"nasa": "moon", "openbeelden": "zee", "prelinger": "city"}  # default: "ocean"
+
+
+def test_connection(settings: Settings, name: str, query: str | None = None, sample: int = 5) -> dict:
+    """Search one page (nothing is downloaded) and rights-check the first few results.
+    Returns {ok, message, results, usable, at} and saves it for the Sources page."""
+    from datetime import datetime, timezone
+    from . import save_test
+    mod = get(name)
+    key = api_key(settings, name)
+    query = query or TEST_QUERY.get(name, "ocean")
+    s = requests.Session()
+    result = {"ok": False, "results": 0, "usable": 0, "query": query,
+              "at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    try:
+        items = mod.search(query, page=1, session=s, key=key)
+    except requests.HTTPError as e:
+        code = e.response.status_code if e.response is not None else 0
+        if code in (401, 403) and getattr(mod, "NEEDS_KEY", False):
+            result["message"] = f"API key rejected (HTTP {code}): check you pasted the whole key"
+        elif code in (403, 429, 503):
+            result["message"] = f"blocked or rate-limited by the archive (HTTP {code})"
+        else:
+            result["message"] = f"search failed: HTTP {code}"
+    except requests.Timeout:
+        result["message"] = "the archive did not answer in time"
+    except requests.ConnectionError as e:
+        result["message"] = f"could not reach the archive ({type(e).__name__})"
+    except (requests.RequestException, ValueError, KeyError) as e:
+        result["message"] = f"search failed: {str(e)[:200]}"
+    else:
+        result["results"] = len(items)
+        checked = 0
+        for item in items[:sample]:
+            try:
+                _, r = check(item, s, key)
+            except (requests.RequestException, ValueError, KeyError):
+                continue
+            checked += 1
+            result["usable"] += not r.reject
+        if not items:
+            result["ok"] = True
+            result["message"] = f"connected, but no results for '{query}'"
+        else:
+            result["ok"] = True
+            result["message"] = (f"connected: {len(items)} results for '{query}', "
+                                 f"{result['usable']} of the first {checked or min(sample, len(items))} usable")
+    save_test(settings, name, result)
+    return result
+
+
 # Files downloaded at once per source: archives that ask for few connections get fewer.
 POLITE = {"commons": 2, "internet_archive": 2, "prelinger": 2, "europeana": 2, "loc": 1, "openbeelden": 1}
 

@@ -111,3 +111,36 @@ def test_shutdown_interrupts_running_jobs(conn, settings):
     runner.shutdown()
     assert proc.wait(timeout=10) is not None
     assert conn.execute("SELECT status FROM jobs WHERE id=?", (a,)).fetchone()[0] == "interrupted"
+
+
+def test_sources_status_and_test_button(client, settings, monkeypatch):
+    import requests
+    from shorts import sources
+    from shorts.sources import pexels, prelinger
+
+    assert sources.status(settings, "pexels")[0] == "needs-key"
+    assert sources.status(settings, "loc")[0] == "off"
+    assert sources.status(settings, "mixkit")[0] == "import"
+    assert sources.status(settings, "prelinger")[0] == "untested"
+
+    def bad_key(query, page=1, session=None, key=None):
+        resp = requests.Response()
+        resp.status_code = 401
+        raise requests.HTTPError(response=resp)
+    monkeypatch.setattr(pexels, "search", bad_key)
+    r = client.post("/sources/pexels", data={"api_key": " wrong "})
+    assert r.status_code == 302
+    state, msg = sources.status(settings, "pexels")
+    assert state == "failing" and "key rejected" in msg
+
+    monkeypatch.setattr(prelinger, "search", lambda q, page=1, session=None, key=None: [
+        sources.Item(source="prelinger", source_id=str(i), title="t", license_hint="http://creativecommons.org/publicdomain/mark/1.0/")
+        for i in range(3)])
+    monkeypatch.setattr(prelinger, "rights", lambda item: sources.Rights(license="public-domain"))
+    client.post("/sources/prelinger/test")
+    state, msg = sources.status(settings, "prelinger")
+    assert state == "connected" and "3 results" in msg and "3 of the first 3 usable" in msg
+
+    page = client.get("/sources").get_data(as_text=True)
+    assert "Connected" in page and "Failing" in page and "Test all" in page
+    assert "1 of 10 archives connected" in page

@@ -16,6 +16,7 @@ LICENSE = "Pexels License (free, no credit needed)"
 NOTE = "API terms forbid AI training (we only search with CLIP); no brand endorsement or negative context for people."
 NEEDS_KEY = True
 KEY_URL = "https://www.pexels.com/api/"
+KEY_HELP = "Sign up free, then click 'Your API Key' on the Pexels API page and copy the key."
 HERO_OK = False
 API = "https://api.pexels.com/videos/search"
 

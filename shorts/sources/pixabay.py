@@ -13,6 +13,7 @@ LICENSE = "Pixabay Content License (free, no credit needed)"
 NOTE = "No model/property releases: logos and recognisable people are our risk."
 NEEDS_KEY = True
 KEY_URL = "https://pixabay.com/api/docs/"
+KEY_HELP = "Log in (free account); the Pixabay API docs page then shows your key under 'Parameters' (key)."
 HERO_OK = False
 API = "https://pixabay.com/api/videos/"
 

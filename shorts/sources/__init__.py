@@ -136,6 +136,37 @@ def usable(settings: Settings, name: str) -> tuple[bool, str]:
     return True, ""
 
 
+def test_results(settings: Settings) -> dict:
+    """Last connection test per source (Sources page Test button): {name: {ok, message, at}}."""
+    return _read(settings.data_dir / "sources.json").get("tests", {})
+
+
+def save_test(settings: Settings, name: str, result: dict) -> None:
+    path = settings.data_dir / "sources.json"
+    data = _read(path)
+    data.setdefault("tests", {})[name] = result
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def status(settings: Settings, name: str) -> tuple[str, str]:
+    """Connection status for the Sources page: (state, explanation). state is one of
+    'connected', 'untested', 'failing', 'needs-key', 'off', 'import'."""
+    mod = get(name)
+    if name in FOLDER_SOURCES:
+        return "import", "no API: download files yourself into the import folder"
+    if name in disabled(settings):
+        why = {"coverr": "off on purpose: its terms ban AI use",
+               "loc": "off: Cloudflare blocks scripted requests"}.get(name, "switched off")
+        return "off", why
+    if getattr(mod, "NEEDS_KEY", False) and not api_key(settings, name):
+        return "needs-key", "paste a free API key below"
+    test = test_results(settings).get(name)
+    if not test:
+        return "untested", "press Test to check the connection"
+    return ("connected" if test["ok"] else "failing"), test["message"]
+
+
 # ---------- license helpers shared by the source modules ----------
 
 def strip_html(text) -> str:
