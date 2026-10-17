@@ -205,3 +205,20 @@ def test_daily_upload_all_channels(conn, settings, cfg, client, fake_upload):
     job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
     assert json.loads(job["command"]) == ["upload-all"] and job["channel"] is None
     assert r.headers["Location"].endswith(f"/jobs/{job['id']}")
+
+
+def test_home_daily_buttons(client, conn, cfg):
+    page = client.get("/").data.decode()
+    assert "Make for every channel" in page and "Daily upload" in page
+    for _ in range(3):
+        add_short(conn, status="approved")
+    add_short(conn, status="rendered")
+    add_short(conn, status="scheduled")  # uploaded already: doesn't count
+    r = client.post("/make-all", data={"count": "500"})  # capped at 100
+    assert r.status_code == 302
+    cmds = {r["channel"]: json.loads(r["command"]) for r in conn.execute("SELECT channel, command FROM jobs")}
+    assert set(cmds) == set(list_channels(cfg)) and cmds["space"] == ["make", "-n", "96"]
+    # Space already has 4 waiting: topping up to 3 skips it.
+    conn.execute("DELETE FROM jobs"); conn.commit()
+    client.post("/make-all", data={"count": "3"})
+    assert "space" not in {r[0] for r in conn.execute("SELECT channel FROM jobs")}

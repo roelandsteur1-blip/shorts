@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from flask import Blueprint, redirect, render_template, request
+from flask import Blueprint, redirect, render_template, request, url_for
 
 from ..hero import shorts_left
 from .common import channels, conn, settings
@@ -39,7 +39,32 @@ def channel_card(ch) -> dict:
 @bp.get("/")
 def index():
     running = conn().execute("SELECT * FROM jobs WHERE status IN ('running','queued') ORDER BY id").fetchall()
-    return render_template("home.html", cards=[channel_card(ch) for ch in channels()], running=running)
+    return render_template("home.html", cards=[channel_card(ch) for ch in channels()], running=running,
+                           per_channel=settings().channel_uploads_per_day, msg=request.args.get("msg"))
+
+
+@bp.post("/make-all")
+def make_all():
+    """One click: top every channel up to `count` Shorts waiting (to review or approved, not uploaded
+    yet). Channels that already have enough are skipped; the jobs run one after another."""
+    from .. import jobs
+    try:
+        target = max(1, min(100, int(request.form.get("count") or 2)))
+    except ValueError:
+        target = 2
+    started, enough = 0, []
+    for ch in channels():
+        have = conn().execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status IN ('rendered','approved')",
+                              (ch.id,)).fetchone()[0]
+        if have >= target:
+            enough.append(f"{ch.name} ({have})")
+            continue
+        n = target - have
+        jobs.submit(conn(), ch.id, ["make", "-n", str(n)], f"Make {n} Shorts (to {target})")
+        started += 1
+    if not started:
+        return redirect(url_for("home.index", msg=f"Every channel already has {target} or more: " + ", ".join(enough)))
+    return redirect(url_for("jobs.job_list"))
 
 
 @bp.post("/speed")

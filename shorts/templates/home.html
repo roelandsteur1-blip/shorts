@@ -1,4 +1,11 @@
 {% extends "base.html" %}{% block title %}Home{% endblock %}{% block body %}
+{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+<div class="card"><h2 style="margin-top:0">Daily</h2>
+<form method="post" action="/make-all" class="inline"><label style="display:inline">Every channel at least
+<input type="number" name="count" value="10" min="1" max="100" style="width:80px"></label>
+Shorts <button class="primary">Make for every channel</button></form>
+<form method="post" action="/schedule/upload-all" class="inline" style="margin-left:16px"><button class="primary">Daily upload</button></form>
+<p class="muted" style="margin-bottom:0">Make: tops every channel up to that many Shorts waiting (to review or approved); channels that already have enough are skipped. Daily upload: approved Shorts for every channel, up to {{ per_channel }} per channel per 24 hours.</p></div>
 {% if running %}<div class="card">{% for j in running %}
 <p><a href="/jobs/{{ j.id }}">{{ j.label }}</a> <span class="muted">({{ j.channel or 'all' }}) · {{ j.status }}{% if j.progress %} · {{ j.progress }} {{ j.progress_done }}/{{ j.progress_total }}{% endif %}</span></p>
 {% endfor %}</div>{% endif %}
