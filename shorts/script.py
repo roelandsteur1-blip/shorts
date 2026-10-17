@@ -52,7 +52,7 @@ Answer with only a JSON array, one object per hero shot, in the same order:
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", "description": "...", "tags": ["..."], "mood": "..."}}]
 
-Topics we already covered (do not repeat them): {past_topics}
+{lessons}Topics we already covered (do not repeat them): {past_topics}
 
 Hero shots:
 {heroes}
@@ -99,7 +99,43 @@ def url_hint(channel: Channel) -> str:
     return "reputable (museum, national archive, university, government or encyclopedia)"
 
 
-def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: list[str]) -> str:
+MIN_RANKED = 6     # Shorts with stats before the best and worst ones go into the prompt
+SHOWN = 3          # best and worst Shorts shown
+MAX_REJECTS = 10   # recent rejected Shorts shown
+NOT_SCRIPT = ("bad footage", "rights doubt")  # reject reasons that say nothing about the writing
+
+
+def winners_note(conn: sqlite3.Connection, channel: str) -> str:
+    """The channel's best and worst Shorts by views at the same age (longest age with enough Shorts)."""
+    for days in (7, 3, 1):
+        rows = conn.execute(
+            """SELECT s.hook, s.title, a.views FROM stats_age a JOIN shorts s ON s.id = a.short_id
+                WHERE s.channel = ? AND a.days = ? ORDER BY a.views DESC""", (channel, days)).fetchall()
+        if len(rows) >= MIN_RANKED:
+            break
+    else:
+        return ""
+    n = min(SHOWN, len(rows) // 2)
+    line = lambda r: f'- {r["views"] or 0:,} views. Hook: "{r["hook"]}" Title: "{r["title"]}"'  # noqa: E731
+    return (f"What worked on this channel so far (views in a Short's first {days} day{'s' if days > 1 else ''}). "
+            "Learn from the pattern in hooks and titles, don't copy them:\nBest:\n"
+            + "\n".join(line(r) for r in rows[:n]) + "\nWorst:\n" + "\n".join(line(r) for r in rows[-n:]) + "\n\n")
+
+
+def rejects_note(conn: sqlite3.Connection, channel: str) -> str:
+    """Recent Shorts the reviewer rejected, with the reason typed in review."""
+    rows = [r for r in conn.execute(
+        """SELECT hook, title, reject_reason FROM shorts WHERE channel = ? AND status = 'rejected'
+              AND reject_reason IS NOT NULL ORDER BY updated_at DESC, id DESC LIMIT ?""",
+        (channel, MAX_REJECTS * 2)) if not r["reject_reason"].startswith(NOT_SCRIPT)][:MAX_REJECTS]
+    if not rows:
+        return ""
+    return ("The reviewer rejected these recent Shorts on this channel. Avoid the same mistakes:\n"
+            + "\n".join(f'- Hook: "{r["hook"]}" Title: "{r["title"]}" Reason: {r["reject_reason"][:200]}'
+                         for r in rows) + "\n\n")
+
+
+def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: list[str], lessons: str = "") -> str:
     max_blocks = max(3, math.floor(channel.max_seconds / 2.6))
     min_blocks = max(3, math.ceil(channel.min_seconds / 3.0))
     hero_text = "\n\n".join(
@@ -119,7 +155,7 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
         format_title=fmt["title"], format_brief=fmt["brief"].strip(),
         min_blocks=min_blocks, max_blocks=max_blocks, max_words=MAX_WORDS,
         past_topics="; ".join(past_topics[-80:]) or "(none yet)",
-        heroes=hero_text, url_hint=url_hint(channel), moods=", ".join(MOODS),
+        heroes=hero_text, url_hint=url_hint(channel), moods=", ".join(MOODS), lessons=lessons,
         voice_line=("A narrator voice reads every text block out loud, and the same text is on screen: write "
                     "lines that sound natural spoken and read well, over real archive footage"
                     if channel_voice(channel) else
@@ -207,7 +243,8 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
     for i in range(0, len(hero_scene_ids), batch_size):
         progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
-        prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id))
+        prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id),
+                              winners_note(conn, channel.id) + rejects_note(conn, channel.id))
         try:
             replies = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude script")
         except llm.LLMLimitError:

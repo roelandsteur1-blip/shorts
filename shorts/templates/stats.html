@@ -23,6 +23,11 @@ so a channel that started earlier doesn't look better. Small numbers: change fro
 <span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span></div>{% endfor %}</div>
 <h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>
 {% for f in by_format %}<tr><td>{{ f.channel }}</td><td>{{ f.format_id }}</td><td>{{ f.shorts }}</td><td>{{ '%.0f'|format(f.views or 0) }}</td><td>{{ '%.0f'|format(f.pct or 0) }}%</td></tr>{% endfor %}</table>{% endif %}
+{% if reviews %}<h3>Review <span class="muted" style="font-size:14px">Shorts made in the last 30 days</span></h3>
+<p class="muted">Rejected Shorts and their reasons also go into the script prompt, so the writer avoids the same mistakes.</p>
+<table><tr><th>Channel</th><th>Reviewed</th><th>Rejected</th><th>Top reasons</th></tr>
+{% for r in reviews %}<tr><td>{{ r.channel }}</td><td>{{ r.reviewed }}</td><td class="{{ 'bad' if r.rate >= 0.3 }}">{{ '%.0f'|format(100 * r.rate) }}% ({{ r.rejected }})</td>
+<td class="muted">{% for reason, n in r.reasons %}{{ reason }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}</td></tr>{% endfor %}</table>{% endif %}
 <h3>Voice-over vs text + music <span class="muted" style="font-size:14px">first {{ days }} day{{ 's' if days > 1 }}</span></h3>
 <p class="muted">Fair test: each Short is scored against its own channel's typical Short at the same age (1.0× = typical for that channel), so the topic of a channel doesn't count as voice.
 Only channels with both voiced and text-only Shorts count{% if voice.one_kind %} ({{ voice.one_kind }} channel{{ 's' if voice.one_kind > 1 }} with only one kind left out){% endif %}.

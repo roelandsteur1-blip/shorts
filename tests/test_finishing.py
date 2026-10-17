@@ -109,3 +109,31 @@ def test_voice_test_scores_against_own_channel(conn, client):
     assert round(g[True]["views"] / g[False]["views"], 1) == 2.0
     page = client.get("/stats?days=3").data.decode()
     assert "Views vs own channel" in page and "1 channel with only one kind left out" in page
+
+
+def test_script_prompt_learns_from_winners_and_rejects(conn, channel):
+    from shorts import script
+    assert script.winners_note(conn, "space") == "" and script.rejects_note(conn, "space") == ""
+    for v in range(1, 9):
+        _age(conn, add_short(conn, status="scheduled", hook=f"hook {v}", title=f"title {v}"), 3, v * 100)
+    _age(conn, add_short(conn, status="scheduled", hook="other channel"), 3, 99999)
+    conn.execute("UPDATE shorts SET channel='other' WHERE hook='other channel'")
+    add_short(conn, status="rejected", hook="Did you know rocks", reject_reason="weak hook: too vague")
+    add_short(conn, status="rejected", hook="pretty clip", reject_reason="bad footage")  # not about the writing
+    lessons = script.winners_note(conn, "space") + script.rejects_note(conn, "space")
+    assert "first 3 days" in lessons and "800 views. Hook: \"hook 8\"" in lessons and "100 views" in lessons
+    assert lessons.index("hook 8") < lessons.index("Worst") < lessons.index("hook 1")
+    assert "hook 5" not in lessons and "other channel" not in lessons
+    assert "Reason: weak hook: too vague" in lessons and "pretty clip" not in lessons
+    prompt = script.build_prompt(channel, {"title": "T", "brief": "b"}, [], [], lessons)
+    assert "Avoid the same mistakes" in prompt and prompt.index("Worst") < prompt.index("Topics we already covered")
+
+
+def test_reject_rate_on_stats(client, conn):
+    add_short(conn, status="approved")
+    add_short(conn, status="rejected", reject_reason="weak hook: meh")
+    add_short(conn, status="rejected", reject_reason="weak hook")
+    add_short(conn, status="rendered")  # not reviewed yet
+    rates = stats_page.review_rates(conn)
+    assert rates == [{"channel": "space", "reviewed": 3, "rejected": 2, "rate": 2 / 3, "reasons": [("weak hook", 2)]}]
+    assert "weak hook (2)" in client.get("/stats").data.decode()

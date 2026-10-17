@@ -87,6 +87,25 @@ def voice_test(c: sqlite3.Connection, days: int) -> dict:
     return {"groups": groups, "channels": channels_both, "one_kind": one_kind}
 
 
+def review_rates(c: sqlite3.Connection, days: int = 30) -> list[dict]:
+    """Per channel, Shorts reviewed (made in the last `days` days): how many were rejected, and why."""
+    reviewed = ("rejected", "approved", "scheduled", "uploaded")
+    out = []
+    for ch, total, rejected in c.execute(
+            f"""SELECT channel, COUNT(*), SUM(status = 'rejected') FROM shorts
+                 WHERE status IN ({','.join('?' * len(reviewed))}) AND created_at >= datetime('now', ?)
+                 GROUP BY channel ORDER BY SUM(status = 'rejected') * 1.0 / COUNT(*) DESC""",
+            (*reviewed, f"-{days} days")).fetchall():
+        reasons: dict[str, int] = {}
+        for (reason,) in c.execute("""SELECT reject_reason FROM shorts WHERE channel = ? AND status = 'rejected'
+                                        AND created_at >= datetime('now', ?)""", (ch, f"-{days} days")):
+            key = (reason or "no reason").split(":")[0]
+            reasons[key] = reasons.get(key, 0) + 1
+        out.append({"channel": ch, "reviewed": total, "rejected": rejected, "rate": rejected / total,
+                    "reasons": sorted(reasons.items(), key=lambda kv: -kv[1])[:3]})
+    return out
+
+
 @bp.get("/stats")
 def index():
     c = conn()
@@ -107,7 +126,7 @@ def index():
                                 FROM ({LATEST}) GROUP BY channel, format_id ORDER BY channel, views DESC""").fetchall()
     from ..timing import claude_usage, summary
     return render_template("stats.html", compare=compare_channels(c, days, csort), days=days, ages=AGES,
-                           csort=csort, compare_sorts=COMPARE_SORTS, rows=rows, totals=totals, by_format=by_format, voice=voice_test(c, days), sort=sort,
+                           csort=csort, compare_sorts=COMPARE_SORTS, rows=rows, totals=totals, by_format=by_format, voice=voice_test(c, days), reviews=review_rates(c), sort=sort,
                            channels=channels(), selected=selected, timings=summary(c),
                            claude=claude_usage(c))
 
