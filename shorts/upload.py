@@ -346,7 +346,8 @@ def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel, 
     creds = credentials(settings, channel, interactive)
     yta = build("youtubeAnalytics", "v2", credentials=creds, cache_discovery=False)
     rows = conn.execute(
-        "SELECT id, youtube_id, publish_at, created_at FROM shorts WHERE channel=? AND youtube_id IS NOT NULL",
+        """SELECT id, youtube_id, publish_at, created_at FROM shorts
+            WHERE channel=? AND youtube_id IS NOT NULL AND NOT stats_hidden""",
         (channel.id,)).fetchall()
     today = today or datetime.now(timezone.utc).date()
     n = 0

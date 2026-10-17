@@ -15,7 +15,7 @@ bp = Blueprint("stats", __name__)
 LATEST = """SELECT s.id, s.channel, s.title, s.voice, s.youtube_id, s.publish_at, s.format_id, st.views, st.engaged_views,
                    st.avg_view_pct, st.avg_view_dur, st.likes, st.shares, st.subs_gained, st.fetched_at
               FROM shorts s JOIN stats st ON st.short_id = s.id
-             WHERE st.rowid = (SELECT MAX(rowid) FROM stats WHERE short_id = s.id)"""
+             WHERE st.rowid = (SELECT MAX(rowid) FROM stats WHERE short_id = s.id) AND NOT s.stats_hidden"""
 
 SORTS = {"views": "views DESC", "retention": "avg_view_pct DESC", "engaged": "engaged_views * 1.0 / NULLIF(views, 0) DESC",
          "newest": "publish_at DESC"}
@@ -28,7 +28,8 @@ def at_age(c: sqlite3.Connection, days: int) -> list[dict]:
     """Every Short with numbers for its first `days` days; 'reached' is the day that period ended."""
     rows = c.execute("""SELECT s.id, s.channel, s.voice, s.publish_at, s.created_at, a.views, a.engaged_views,
                                a.avg_view_pct, a.subs_gained
-                          FROM stats_age a JOIN shorts s ON s.id = a.short_id WHERE a.days = ?""", (days,)).fetchall()
+                          FROM stats_age a JOIN shorts s ON s.id = a.short_id
+                         WHERE a.days = ? AND NOT s.stats_hidden""", (days,)).fetchall()
     return [dict(r) | {"reached": date.fromisoformat((r["publish_at"] or r["created_at"])[:10]) + timedelta(days=days - 1)}
             for r in rows]
 
@@ -93,7 +94,8 @@ def review_rates(c: sqlite3.Connection, days: int = 30) -> list[dict]:
     out = []
     for ch, total, rejected in c.execute(
             f"""SELECT channel, COUNT(*), SUM(status = 'rejected') FROM shorts
-                 WHERE status IN ({','.join('?' * len(reviewed))}) AND created_at >= datetime('now', ?)
+                 WHERE status IN ({','.join('?' * len(reviewed))}) AND NOT stats_hidden
+                   AND created_at >= datetime('now', ?)
                  GROUP BY channel ORDER BY SUM(status = 'rejected') * 1.0 / COUNT(*) DESC""",
             (*reviewed, f"-{days} days")).fetchall():
         reasons: dict[str, int] = {}

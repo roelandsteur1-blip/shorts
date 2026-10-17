@@ -157,3 +157,16 @@ def test_home_warnings(client, conn, settings):
     assert f"nothing scheduled on {empty}" in page
     conn.execute("DELETE FROM blocks"); conn.execute("DELETE FROM shorts"); conn.commit()
     assert "nothing scheduled in the next 7 days" in client.get("/").data.decode()
+
+
+def test_stats_hidden_shorts(client, conn, settings, channel, analytics):
+    """Old uploads kept as a record (their footage and topics stay used) are left out of Stats."""
+    from shorts import db
+    hidden = add_short(conn, status="scheduled", title="Old upload", youtube_id="y1", publish_at="2026-10-01T15:00:00Z")
+    shown = add_short(conn, status="scheduled", title="New upload", youtube_id="y2", publish_at="2026-10-01T15:00:00Z")
+    db.set_short(conn, hidden, stats_hidden=1)
+    assert upload.fetch_stats(conn, settings, channel, today=date(2026, 10, 17)) == 1
+    assert {r[0] for r in conn.execute("SELECT short_id FROM stats")} == {shown}
+    _age(conn, hidden, 3, 9999)
+    page = client.get("/stats?days=3").data.decode()
+    assert "New upload" in page and "Old upload" not in page and "9,999" not in page

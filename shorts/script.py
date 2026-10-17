@@ -110,7 +110,7 @@ def winners_note(conn: sqlite3.Connection, channel: str) -> str:
     for days in (7, 3, 1):
         rows = conn.execute(
             """SELECT s.hook, s.title, a.views FROM stats_age a JOIN shorts s ON s.id = a.short_id
-                WHERE s.channel = ? AND a.days = ? ORDER BY a.views DESC""", (channel, days)).fetchall()
+                WHERE s.channel = ? AND a.days = ? AND NOT s.stats_hidden ORDER BY a.views DESC""", (channel, days)).fetchall()
         if len(rows) >= MIN_RANKED:
             break
     else:

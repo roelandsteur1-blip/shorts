@@ -166,7 +166,7 @@ def learned_bonus(conn: sqlite3.Connection, channel: str, asset_ids: list[int]) 
         """SELECT a.keywords, MAX(st.engaged_views * 1.0 / NULLIF(st.views, 0)) AS ratio
              FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id JOIN assets a ON a.id = sc.asset_id
              JOIN stats st ON st.short_id = s.id
-            WHERE s.channel = ? AND st.views >= 200 GROUP BY s.id""",
+            WHERE s.channel = ? AND st.views >= 200 AND NOT s.stats_hidden GROUP BY s.id""",
         (channel,),
     ).fetchall()
     if len(rows) < 10:
