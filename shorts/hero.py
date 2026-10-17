@@ -37,6 +37,13 @@ def earlier_heroes(conn: sqlite3.Connection, channel: str | None = None) -> dict
     return out
 
 
+def other_channels_videos(conn: sqlite3.Connection, channel: str) -> set[int]:
+    """Videos that already gave a (non-rejected) Short's hero shot on another channel."""
+    return {r[0] for r in conn.execute(
+        """SELECT DISTINCT sc.asset_id FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id
+            WHERE s.status != 'rejected' AND s.channel != ?""", (channel,))}
+
+
 def far_enough(settings: Settings, start: float, others: list[float]) -> bool:
     return all(abs(start - o) >= settings.segment_seconds for o in others)
 
@@ -58,9 +65,15 @@ def _eligible(conn: sqlite3.Connection, settings: Settings, channel: str, use_cl
     ).fetchall()
     earlier = earlier_heroes(conn, channel)
     used_scenes = db.used_scene_ids(conn, channel)  # also scenes already shown as B-roll
+    # One channel per video: a video another channel already opened a Short with stays there, and
+    # videos the script writer found off-niche for this channel are never offered again.
+    blocked = other_channels_videos(conn, channel) | {
+        r[0] for r in conn.execute("SELECT asset_id FROM off_niche WHERE channel=?", (channel,))}
     out = []
     for r in rows:
         prev = earlier.get(r["asset_id"], [])
+        if r["asset_id"] in blocked:
+            continue
         if r["id"] in used_scenes or len(prev) >= budget(settings, r["duration"]):
             continue
         if not far_enough(settings, r["start"], [p["start"] for p in prev]):

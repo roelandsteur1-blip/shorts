@@ -120,29 +120,32 @@ def next_slots(conn: sqlite3.Connection, channel: Channel, n: int,
 
 def slots_for(conn: sqlite3.Connection, settings: Settings, channel: Channel, short_ids: list[int],
               now: datetime | None = None) -> list[datetime]:
-    """A publish time per Short, in order: the earliest free slot that is at least
-    settings.sibling_gap_days (calendar days) away from every other Short from the same video,
-    scheduled before or in this same run. Skipped slots stay free for the next Short."""
+    """A publish time per Short (in the order given). Every free slot is filled, earliest first:
+    each slot gets the first waiting Short that is at least settings.sibling_gap_days (calendar
+    days) away from the other Shorts from the same video on this channel; when none is, the slot
+    still gets the first waiting Short, so the channel never has empty slots."""
     if not short_ids:
         return []
     gap = settings.sibling_gap_days
-    per_day = max(1, min(channel.uploads_per_day, len(channel.publish_times_utc)))
-    free = next_slots(conn, channel, len(short_ids) * (gap + 1) * per_day + per_day, now=now)
-    taken: dict[int, list] = {}  # video -> publish dates of its Shorts
+    free = next_slots(conn, channel, len(short_ids), now=now)
+    taken: dict[int, list] = {}  # video -> publish dates of its Shorts on this channel
     for r in conn.execute(
             """SELECT sc.asset_id, s.publish_at FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id
-                WHERE s.publish_at IS NOT NULL AND s.status != 'rejected'"""):
+                WHERE s.publish_at IS NOT NULL AND s.status != 'rejected' AND s.channel = ?""", (channel.id,)):
         taken.setdefault(r["asset_id"], []).append(datetime.fromisoformat(r["publish_at"].replace("Z", "+00:00")).date())
-    out = []
+    video = {}
     for sid in short_ids:
-        asset = conn.execute("""SELECT sc.asset_id FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id
-                                 WHERE s.id=?""", (sid,)).fetchone()
-        dates = taken.setdefault(asset[0] if asset else -sid, [])
-        pick = next((s for s in free if all(abs((s.date() - d).days) >= gap for d in dates)), free[-1])
-        free.remove(pick)
-        dates.append(pick.date())
-        out.append(pick)
-    return out
+        a = conn.execute("""SELECT sc.asset_id FROM shorts s JOIN scenes sc ON sc.id = s.hero_scene_id
+                             WHERE s.id=?""", (sid,)).fetchone()
+        video[sid] = a[0] if a else -sid
+    waiting, out = list(short_ids), {}
+    for slot in free:
+        pick = next((sid for sid in waiting
+                     if all(abs((slot.date() - d).days) >= gap for d in taken.get(video[sid], []))), waiting[0])
+        waiting.remove(pick)
+        taken.setdefault(video[pick], []).append(slot.date())
+        out[pick] = slot
+    return [out[sid] for sid in short_ids]
 
 
 def pacific_midnight(now: datetime | None = None) -> datetime:

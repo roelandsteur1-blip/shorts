@@ -40,6 +40,10 @@ Rules:
 - Description: 1-2 sentences in plain English expanding on the Short.
 - Tags: 5-10 search tags.
 
+Niche check first: this channel is only about {niche}. If a hero video (title, description, keywords)
+is not clearly about that, do NOT write a Short for it; answer {{"hero": <hero number>, "skip": "<why, a few words>"}}
+for it instead. A loose link ("the steel in this mill is also in your blood") is not enough.
+
 Answer with only a JSON array, one object per hero shot, in the same order:
 [{{"hero": <hero number>, "topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
@@ -209,6 +213,10 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
                 # attach a script to the wrong footage.
                 if not 1 <= n <= len(heroes) or n in done_heroes:
                     raise ValueError(f"unexpected hero number {reply.get('hero')!r}")
+                if reply.get("skip"):
+                    mark_off_niche(conn, channel, heroes[n - 1]["asset_id"], str(reply["skip"]))
+                    done_heroes.add(n)
+                    continue
                 batch_ids.append(save_script(conn, channel, fmt_id, heroes[n - 1], reply))
                 done_heroes.add(n)
             except (ValueError, TypeError, AttributeError) as e:
@@ -217,6 +225,13 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
         if on_batch and batch_ids:
             on_batch(batch_ids)  # pipelined make: fact check this batch while the next is written
     return created
+
+
+def mark_off_niche(conn: sqlite3.Connection, channel: Channel, asset_id: int, reason: str) -> None:
+    conn.execute("INSERT OR REPLACE INTO off_niche (channel, asset_id, reason) VALUES (?,?,?)",
+                 (channel.id, asset_id, reason[:200]))
+    conn.commit()
+    log.info("%s: video %s doesn't fit the niche (%s); not used on this channel", channel.id, asset_id, reason)
 
 
 def edit_blocks(conn: sqlite3.Connection, channel: Channel, short_id: int, texts: dict[int, str]) -> bool:

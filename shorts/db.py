@@ -155,6 +155,15 @@ CREATE TABLE IF NOT EXISTS jobs (
     started_at     TEXT,
     finished_at    TEXT
 );
+
+-- Videos the script writer said don't fit a channel's niche: never picked as a hero there again.
+CREATE TABLE IF NOT EXISTS off_niche (
+    channel   TEXT NOT NULL,
+    asset_id  INTEGER NOT NULL,
+    reason    TEXT,
+    at        TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (channel, asset_id)
+);
 """
 
 

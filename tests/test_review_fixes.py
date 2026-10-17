@@ -105,3 +105,17 @@ def test_search_cache_follows_rejections(library, settings):
     library.execute("UPDATE scenes SET rejected=1 WHERE id=?", (first,))
     library.commit()
     assert first not in [s for s, _ in embed.search(library, settings, "saturn", k=100)]
+
+
+def test_off_niche_hero_is_skipped_and_remembered(library, settings, channel, monkeypatch):
+    heroes = hero.candidates(library, settings, channel.id, 2)
+    reply = [{"hero": 1, "skip": "a steel mill, not space"},
+             {"hero": 2, "topic": "two", "blocks": [{"text": "a b c"}] * 4}]
+    monkeypatch.setattr(llm, "ask", lambda *a, **k: json.dumps(reply))
+    created = script.write_scripts(library, settings, channel, "what_youre_seeing", heroes)
+    assert len(created) == 1
+    skipped = library.execute("SELECT asset_id FROM scenes WHERE id=?", (heroes[0],)).fetchone()[0]
+    assert library.execute("SELECT reason FROM off_niche WHERE channel=? AND asset_id=?",
+                           (channel.id, skipped)).fetchone()[0] == "a steel mill, not space"
+    again = hero.candidates(library, settings, channel.id, 10)
+    assert skipped not in {library.execute("SELECT asset_id FROM scenes WHERE id=?", (h,)).fetchone()[0] for h in again}

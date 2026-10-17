@@ -128,5 +128,37 @@ def test_siblings_are_scheduled_days_apart(conn, settings, channel):
     s3 = add_short(conn, b_ids[0], status="approved")
     now = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
     slots = upload.slots_for(conn, settings, channel, [s1, s2, s3], now=now)
-    assert [upload.iso(s) for s in slots] == ["2026-10-16T15:00:00Z", "2026-10-18T15:00:00Z",
+    # Every slot is filled: s2 has to go a day after s1, nothing else is waiting.
+    assert [upload.iso(s) for s in slots] == ["2026-10-16T15:00:00Z", "2026-10-17T15:00:00Z",
                                               "2026-10-16T21:00:00Z"]
+    # With more Shorts waiting, the sibling waits for its gap and others fill the slots in between.
+    _, c_ids = add_video(conn, 1, title="Third")
+    _, d_ids = add_video(conn, 1, title="Fourth")
+    s4, s5 = add_short(conn, c_ids[0], status="approved"), add_short(conn, d_ids[0], status="approved")
+    slots = upload.slots_for(conn, settings, channel, [s1, s2, s3, s4, s5], now=now)
+    assert [upload.iso(s) for s in slots] == ["2026-10-16T15:00:00Z", "2026-10-18T15:00:00Z",
+                                              "2026-10-16T21:00:00Z", "2026-10-17T15:00:00Z",
+                                              "2026-10-17T21:00:00Z"]
+
+
+def test_siblings_on_other_channels_dont_push_slots(conn, settings, channel):
+    _, a_ids = add_video(conn, 10)
+    other = add_short(conn, a_ids[0], status="scheduled", publish_at="2026-10-16T15:00:00Z")
+    conn.execute("UPDATE shorts SET channel='other' WHERE id=?", (other,))
+    mine = add_short(conn, a_ids[20], status="approved")
+    now = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
+    assert [upload.iso(s) for s in upload.slots_for(conn, settings, channel, [mine], now=now)] == ["2026-10-16T15:00:00Z"]
+
+
+def test_one_channel_per_video_and_off_niche(conn, settings, channel):
+    from shorts import hero, script
+    _, a_ids = add_video(conn, 10)
+    _, b_ids = add_video(conn, 10, title="Other")
+    other = add_short(conn, a_ids[0])
+    conn.execute("UPDATE shorts SET channel='other' WHERE id=?", (other,))
+    conn.commit()
+    picked = hero.candidates(conn, settings, "space", 5, use_clip=False)
+    assert {conn.execute("SELECT asset_id FROM scenes WHERE id=?", (p,)).fetchone()[0] for p in picked} == {
+        conn.execute("SELECT asset_id FROM scenes WHERE id=?", (b_ids[0],)).fetchone()[0]}
+    script.mark_off_niche(conn, channel, conn.execute("SELECT asset_id FROM scenes WHERE id=?", (b_ids[0],)).fetchone()[0], "cars")
+    assert hero.candidates(conn, settings, "space", 5, use_clip=False) == []
