@@ -19,6 +19,15 @@ FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
 
 # ---------- subtitles ----------
 
+def _fontsdir(work: Path) -> str:
+    """FONTS_DIR for ffmpeg's ass filter: relative to work, or absolute (colon escaped) when the
+    render folder is on another drive."""
+    try:
+        return os.path.relpath(FONTS_DIR, work).replace("\\", "/")
+    except ValueError:
+        return FONTS_DIR.as_posix().replace(":", "\\:")
+
+
 def _ass_time(t: float) -> str:
     cs = int(round(t * 100))
     h, cs = divmod(cs, 360000)
@@ -153,7 +162,7 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     n = len(blocks)
     total = sum(b["seconds"] for b in blocks)
     concat = "".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[vcat]"
-    fontsdir = os.path.relpath(FONTS_DIR, work).replace("\\", "/") if FONTS_DIR.exists() else None
+    fontsdir = _fontsdir(work) if FONTS_DIR.exists() else None
     subs = "ass=subs.ass" + (f":fontsdir='{fontsdir}'" if fontsdir else "")
     filters += [concat, f"[vcat]{subs}[vout]"]
 
