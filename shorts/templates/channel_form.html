@@ -9,6 +9,9 @@
 <label>Name<input type="text" name="name" value="{{ d.name or '' }}" required></label>
 {% if new %}<label>Id (file name, can't change later)<input type="text" name="id" value="{{ d.id or '' }}" required pattern="[a-z][a-z0-9_]{1,30}"></label>{% endif %}
 <label>Voice-over (free AI voice; <a href="/voices">listen to the voices</a>)<select name="voice"><option value="" {{ 'selected' if not d.voice }}>No voice: text + music</option>{% for v in voices %}<option value="{{ v }}" {{ 'selected' if v == d.voice }}>{{ voice_label(v) }}</option>{% endfor %}</select></label>
+{% if same_voice %}<p class="bad">Same voice as {{ same_voice|join(', ') }}: give every channel its own voice.</p>{% endif %}
+<label>Caption look (font and outline or box; highlight words are always yellow)<select name="look"><option value="" {{ 'selected' if not (d.style or {}).look }}>Pick one automatically (one no other channel uses)</option>{% for k, v in looks.items() %}<option value="{{ k }}" {{ 'selected' if k == (d.style or {}).look }}>{{ v }}</option>{% endfor %}{% if (d.style or {}).look == 'custom' %}<option value="custom" selected>Custom (font settings in the config file)</option>{% endif %}</select></label>
+{% if same_look %}<p class="bad">Same caption look as {{ same_look|join(', ') }}.</p>{% endif %}
 <label>Voice speed<select name="voice_speed">{% for x in speeds %}<option value="{{ x }}" {{ 'selected' if x == (d.voice_speed or 1.0) }}>{{ x }}×</option>{% endfor %}</select></label>
 <label>Language<select name="language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == d.language }}>{{ v }}</option>{% endfor %}</select></label>
 <label>Niche, in one line<input type="text" name="niche" value="{{ d.niche or '' }}" placeholder="e.g. Dutch history from old newsreels"></label>
@@ -31,6 +34,8 @@
 {% set extra = [1, 3 - (d.formats or [])|length]|max if new else 1 %}
 {% set fmts = (d.formats or []) + [blank] * extra %}
 <input type="hidden" name="format_count" value="{{ fmts|length }}">
+<label><input type="checkbox" name="library_formats" value="1" {{ 'checked' if d.library_formats is not defined or d.library_formats }}> Also use shared formats, up to 3 in total, so the channel doesn't post one template only</label>
+{% if library_extra %}<p class="muted">Shared formats this channel also uses: {{ library_extra|map(attribute='title')|join(', ') }}. The script writer picks the one that fits each video best.</p>{% endif %}
 {% for f in fmts %}{% set i = loop.index0 %}
 <div style="border-top:1px solid var(--line);padding-top:6px;margin-top:6px">
 <label style="display:inline"><input type="checkbox" name="format_enabled_{{ i }}" value="1" {{ 'checked' if f.enabled is not defined or f.enabled }}> on</label>

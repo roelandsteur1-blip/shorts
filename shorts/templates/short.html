@@ -19,7 +19,13 @@
 <input type="text" name="block_{{ b.idx }}" value="{{ b.text }}"></label>{% endfor %}
 <p class="muted" style="font-size:12px">*word* = highlighted. Keep blocks short (8 words); the fact check is not run again.</p>
 <button>Save text and re-render</button></form>{% endif %}</div>
-<div class="card"><h3>Footage</h3>{% for a in assets %}<p><a href="{{ a.source_url }}" target="_blank" rel="noopener">{{ a.title }}</a> <span class="muted">· {{ a.license }} · {{ a.credit }}</span>{% if a.needs_check %} <span class="bad">rights check needed</span>{% endif %}</p>{% endfor %}</div>
+<div class="card"><h3>Footage</h3>{% for a in assets %}<p><a href="{{ a.source_url }}" target="_blank" rel="noopener">{{ a.title }}</a> <span class="muted">· {{ a.license }} · {{ a.credit }}</span>{% if a.needs_check %} <span class="bad">rights check needed</span>{% endif %}{% if a.claimed %} <span class="bad">claimed by {{ a.claimed }}</span>{% endif %}</p>{% endfor %}
+<details><summary class="muted">Got a copyright claim on this Short?</summary>
+<form method="post" action="/short/{{ s.id }}/claim">{% for a in assets %}<label style="display:block"><input type="checkbox" name="asset" value="{{ a.id }}"> {{ a.title }}</label>{% endfor %}
+<label>Claimed by<input type="text" name="claimant" placeholder="as shown in YouTube Studio"></label>
+<label>Note<input type="text" name="note" placeholder="e.g. disputed with NASA public-domain proof"></label>
+<button>Log claim (the ticked videos are never used again)</button>
+<p class="muted" style="font-size:12px">Only dispute with proof the footage is public domain. A rejected dispute can turn into a copyright strike; crediting the source is not a valid reason.</p></form></details></div>
 <form method="post" class="card" action="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">
 <label>Title<input type="text" name="title" value="{{ s.title }}" maxlength="100"></label>
 <label>Tags<input type="text" name="tags" value="{{ tags }}"></label>

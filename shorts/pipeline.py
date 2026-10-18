@@ -84,6 +84,8 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
         prefetched = library.prefetch(conn, settings, [(ch, count) for ch, count, _ in orders])
 
     channels = [ch for ch, _, _ in orders]
+    from . import looks
+    looks.assign_missing(settings, channels)  # each channel its own caption look, saved in its config
     # Music (tag tracks added by hand, fetch more when the library runs low) and loading the models
     # happen next to the first Claude calls; the first render waits for the music check.
     music_check = threading.Thread(target=_music_check, args=(settings, channels[0]), name="music", daemon=True)
@@ -92,7 +94,8 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
 
     # 2-5. Hero shots -> scripts -> fact check -> footage + render, overlapping (and channel after
     #      channel for the Claude steps).
-    lanes = [Lane(ch, fmt or ch.enabled_formats[0]["id"], count) for ch, count, fmt in orders]
+    # No format given: the script writer picks per Short from the channel's formats.
+    lanes = [Lane(ch, fmt, count) for ch, count, fmt in orders]
     run_steps(conn, settings, lanes, before_render=music_check)
     music_check.join()  # also when nothing rendered: don't cut a music download off at exit
 
@@ -118,8 +121,9 @@ def _music_check(settings: Settings, channel: Channel) -> None:
 
 def _warm_up(settings: Settings, channels: list[Channel]) -> None:
     """Load what the first render needs while Claude writes: GPU checks, CLIP, Kokoro."""
-    from . import embed, media
+    from . import embed, looks, media
     try:
+        looks.ensure_fonts({looks.resolve(ch.style).get("font") for ch in channels})
         if settings.encoder in ("auto", "h264_nvenc"):
             media._nvenc_works()
             media.nvdec_works()

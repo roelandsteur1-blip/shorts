@@ -6,6 +6,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+MAX_SHORT_SECONDS = 60
 ROOT = Path(__file__).resolve().parent.parent
 # SHORTS_CONFIG_DIR / --config-dir: another config folder (tests, or jobs started by the dashboard).
 CONFIG_DIR = Path(os.environ.get("SHORTS_CONFIG_DIR") or ROOT / "config")
@@ -99,6 +100,12 @@ class Channel:
     youtube_channel_id: str | None = None  # set by 'Connect YouTube'; upload refuses another channel
     auto_run: bool = False                 # daily make + upload (python -m shorts daily)
     hero_query: str | None = None          # what a scroll-stopping first frame looks like (CLIP)
+    library_formats: bool = True           # also use shared formats (shorts/formats.py) up to 3 in total
+
+    def __post_init__(self):
+        # Claimed Shorts over a minute can't earn at all, and evidence favours short ones.
+        self.max_seconds = min(int(self.max_seconds), MAX_SHORT_SECONDS)
+        self.min_seconds = min(int(self.min_seconds), self.max_seconds - 1)
 
     @property
     def enabled_formats(self) -> list[dict]:
@@ -108,6 +115,9 @@ class Channel:
         for f in self.formats:
             if f["id"] == format_id:
                 return f
+        from .formats import get
+        if f := get(format_id):
+            return f
         raise KeyError(f"unknown format {format_id!r} for channel {self.id}")
 
 

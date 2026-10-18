@@ -117,7 +117,7 @@ def index():
         days = 3
     days = days if days in AGES else 3
     csort = request.args.get("csort", "views")
-    sort = request.args.get("sort", "views")
+    sort = request.args.get("sort", "engaged")  # views count every replay since Mar 2025: judge by engaged
     selected = request.args.get("channel") or None
     rows = c.execute(f"SELECT * FROM ({LATEST}) WHERE (? IS NULL OR channel = ?) ORDER BY {SORTS.get(sort, SORTS['views'])}",
                      (selected, selected)).fetchall()

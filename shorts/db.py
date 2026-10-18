@@ -195,6 +195,17 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 
 -- Videos the script writer said don't fit a channel's niche: never picked as a hero there again.
+-- Copyright (Content ID) claims on our Shorts. Claimed footage is never used again: public-domain
+-- clips can't be in Content ID, but broadcasters whose programmes contain them do claim them.
+CREATE TABLE IF NOT EXISTS claims (
+    id        INTEGER PRIMARY KEY,
+    short_id  INTEGER REFERENCES shorts(id),
+    asset_id  INTEGER REFERENCES assets(id),
+    claimant  TEXT,
+    note      TEXT,
+    at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS off_niche (
     channel   TEXT NOT NULL,
     asset_id  INTEGER NOT NULL,
@@ -229,6 +240,7 @@ ADDED_COLUMNS = [
     ("shorts", "mood", "TEXT"),                            # music mood the script asked for
     ("shorts", "voice", "TEXT"),                           # Kokoro voice reading it; NULL = text only
     ("shorts", "stats_hidden", "INTEGER NOT NULL DEFAULT 0"),  # 1 = left out of Stats; still blocks reuse
+    ("assets", "claimed", "TEXT"),                         # who claimed it (claims table); never used again
 ]
 
 
@@ -243,6 +255,14 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def log_claim(conn: sqlite3.Connection, short_id: int, asset_ids: list[int], claimant: str, note: str = "") -> None:
+    for aid in asset_ids:
+        conn.execute("INSERT INTO claims (short_id, asset_id, claimant, note) VALUES (?,?,?,?)",
+                     (short_id, aid, claimant, note))
+        conn.execute("UPDATE assets SET claimed=? WHERE id=?", (claimant or "unknown", aid))
+    conn.commit()
+
+
 def set_short(conn: sqlite3.Connection, short_id: int, **fields) -> None:
     if not fields:
         return
@@ -254,16 +274,16 @@ def set_short(conn: sqlite3.Connection, short_id: int, **fields) -> None:
     conn.commit()
 
 
-def used_scene_ids(conn: sqlite3.Connection, channel: str) -> set[int]:
-    """Scenes already used by a non-rejected short on this channel."""
+def used_scene_ids(conn: sqlite3.Connection, channel: str | None) -> set[int]:
+    """Scenes already used by a non-rejected short on this channel (None: on any channel)."""
     rows = conn.execute(
         """
         SELECT s.hero_scene_id AS sid FROM shorts s
-         WHERE s.channel = ? AND s.status != 'rejected' AND s.hero_scene_id IS NOT NULL
+         WHERE (? IS NULL OR s.channel = ?) AND s.status != 'rejected' AND s.hero_scene_id IS NOT NULL
         UNION
         SELECT b.scene_id FROM blocks b JOIN shorts s ON s.id = b.short_id
-         WHERE s.channel = ? AND s.status != 'rejected' AND b.scene_id IS NOT NULL
+         WHERE (? IS NULL OR s.channel = ?) AND s.status != 'rejected' AND b.scene_id IS NOT NULL
         """,
-        (channel, channel),
+        (channel, channel, channel, channel),
     ).fetchall()
     return {r[0] for r in rows}

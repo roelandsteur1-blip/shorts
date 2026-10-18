@@ -17,7 +17,8 @@ def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
     short = conn.execute("SELECT * FROM shorts WHERE id=?", (short_id,)).fetchone()
     hero = conn.execute("SELECT * FROM scenes WHERE id=?", (short["hero_scene_id"],)).fetchone()
     blocks = conn.execute("SELECT * FROM blocks WHERE short_id=? ORDER BY idx", (short_id,)).fetchall()
-    used = db.used_scene_ids(conn, short["channel"]) - {hero["id"]}
+    # Footage shown on any channel stays there: the same clip on two channels looks mass-produced.
+    used = db.used_scene_ids(conn, None) - {hero["id"]}
     in_short = {hero["id"]}
     hero_left = (hero["end"] - hero["start"]) - blocks[0]["seconds"]
     allowed = allowed_scenes(conn, categories)
@@ -50,7 +51,7 @@ def _best(conn, settings, query, exclude, seconds, hero, allowed=None, qvec=None
     if not hits:
         return None
     rows = {r["id"]: r for r in conn.execute(
-        f"""SELECT sc.id, sc.start, sc.end, sc.asset_id, a.needs_check FROM scenes sc
+        f"""SELECT sc.id, sc.start, sc.end, sc.asset_id, a.needs_check, a.claimed FROM scenes sc
               JOIN assets a ON a.id = sc.asset_id WHERE sc.id IN ({",".join("?" * len(hits))})""",
         [sid for sid, _ in hits])}
     best, best_score = None, -1e9
@@ -58,7 +59,7 @@ def _best(conn, settings, query, exclude, seconds, hero, allowed=None, qvec=None
         sc = rows.get(sid)
         if sc is None:
             continue
-        if sc["needs_check"] or sc["end"] - sc["start"] < seconds:
+        if sc["needs_check"] or sc["claimed"] or sc["end"] - sc["start"] < seconds:
             continue
         if sc["asset_id"] == hero["asset_id"] and abs(sc["start"] - hero["start"]) <= half:
             score += SAME_VIDEO_BONUS

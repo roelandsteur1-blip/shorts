@@ -9,12 +9,13 @@ import sqlite3
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import db, media
+from . import db, looks, media
 from .config import Channel, Settings
 from .music import MUSIC_EXT  # noqa: F401 - imported from here by the dashboard and 'check'
 
 W, H, FPS = 1080, 1920, 30
-FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
+END_FADE = 0.3  # seconds: end sharply on the payoff, no long music fade (research/shorts-studies.md)
+FONTS_DIR = looks.FONTS_DIR
 
 
 # ---------- subtitles ----------
@@ -42,13 +43,19 @@ def _ass_text(text: str, highlight: str, primary: str) -> str:
 
 
 def build_ass(blocks: list[dict], style: dict) -> str:
+    """style: the channel's [style]; its look (shorts/looks.py) sets font and outline or box."""
+    style = looks.resolve(style)
     font = style.get("font", "Arial Black")
     size = style.get("font_size", 88)
     hook_size = style.get("hook_font_size", size + 16)
     primary = style.get("primary_color", "&H00FFFFFF")
-    highlight = style.get("highlight_color", "&H0000D7FF")
+    highlight = style["highlight_color"]
     outline = style.get("outline", 6)
     margin_v = style.get("margin_v", 760)
+    ml, mr = looks.MARGIN_L, looks.MARGIN_R
+    # Outline: black edge + soft shadow. Box: a dark see-through box behind the text (BorderStyle 3
+    # fills the box with the outline colour; the outline width is the padding).
+    border, edge, shadow, hook_edge = (3, "&H50000000", 0, outline) if style["box"] else (1, "&H00000000", 3, outline + 1)
     head = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {W}
@@ -58,8 +65,8 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Body,{font},{size},{primary},{primary},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline},3,2,90,90,{margin_v},1
-Style: Hook,{font},{hook_size},{primary},{primary},&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline + 1},3,2,80,80,{margin_v},1
+Style: Body,{font},{size},{primary},{primary},{edge},&H80000000,-1,0,0,0,100,100,0,0,{border},{outline},{shadow},2,{ml},{mr},{margin_v},1
+Style: Hook,{font},{hook_size},{primary},{primary},{edge},&H80000000,-1,0,0,0,100,100,0,0,{border},{hook_edge},{shadow},2,{ml},{mr},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -130,6 +137,7 @@ def work_dir(settings: Settings, channel: Channel, short_id: int) -> Path:
 def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel, short_id: int) -> Path:
     from . import speed, timing, voice
     voice.prepare(conn, settings, channel, short_id)  # no-op unless voiced and the text changed
+    looks.ensure_fonts({looks.resolve(channel.style).get("font")})
     lim = speed.limits(settings.data_dir)
     enc = media.video_encoder_args(settings.encoder, settings.x264_preset, lim.x264_threads)
     work, args, total, music = build_render(conn, settings, channel, short_id, enc)
@@ -207,7 +215,7 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         inputs += ["-stream_loop", "-1", "-i", str(music)]
         filters.append(
             f"[{idx}:a]atrim=start={picked[1]:.2f}:duration={total:.3f},asetpts=PTS-STARTPTS,"
-            f"afade=t=in:d=0.3,afade=t=out:st={max(total - 1.2, 0):.3f}:d=1.2,"
+            f"afade=t=in:d=0.3,afade=t=out:st={max(total - END_FADE, 0):.3f}:d={END_FADE},"
             f"loudnorm=I={-24 if voiced else -14}:TP=-1.5:LRA=11,{stereo}[mus]"
         )
         idx += 1
@@ -217,7 +225,8 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         if picked:
             filters += ["[voc]asplit=2[vkey][vmix]",
                         "[mus][vkey]sidechaincompress=threshold=0.04:ratio=6:attack=15:release=400[duck]",
-                        "[duck][vmix]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.9[aout]"]
+                        "[duck][vmix]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.9,"
+                        f"loudnorm=I=-14:TP=-1.5:LRA=11,{stereo}[aout]"]
         else:
             filters.append("[voc]anull[aout]")
     elif picked:
@@ -271,6 +280,12 @@ def footage_credit(asset) -> str:
     return f"{label(asset['source'])} ({lic})" if lic and lic != "unknown" else label(asset["source"])
 
 
+def hashtags(channel: Channel) -> list[str]:
+    """YouTube shows three hashtags above the title: two about the topic, then #shorts."""
+    tags = [h for h in dict.fromkeys(channel.hashtags) if h.lower() != "#shorts"]
+    return tags[:2] + ["#shorts"]
+
+
 def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int) -> dict:
     s = conn.execute("SELECT * FROM shorts WHERE id=?", (short_id,)).fetchone()
     assets = conn.execute(
@@ -288,7 +303,7 @@ def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int) -> dict:
         parts += ["", "Sources: " + ", ".join(sources)]
     if any(a["source"] == "nasa" for a in assets):
         parts += ["", "NASA does not endorse this channel."]
-    parts += ["", " ".join(channel.hashtags)]
+    parts += ["", " ".join(hashtags(channel))]
     tags = json.loads(s["tags"] or "[]")
     title = clean_text(s["title"]).strip() or clean_text(s["topic"] or s["hook"] or "").replace("*", "").strip()
     return {

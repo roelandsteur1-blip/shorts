@@ -5,7 +5,8 @@ import json
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
-from .. import categorize, channels as chans, llm, sources
+from .. import categorize, channels as chans, formats as fmtlib, llm, looks, sources
+from ..config import list_channels, load_channel
 from ..render import MUSIC_EXT
 from ..voice import SPEEDS, VOICES, label
 from ..upload import found_path
@@ -47,6 +48,14 @@ def form_to_data(form, base: dict) -> dict:
         except (TypeError, ValueError):
             data[key] = form.get(key)
     data["auto_run"] = form.get("auto_run") == "1"
+    if "look" in form:
+        data["style"] = dict(data.get("style") or chans.DEFAULT_STYLE)
+        if form["look"]:
+            data["style"]["look"] = form["look"]
+        else:
+            data["style"].pop("look", None)
+    if "format_count" in form:
+        data["library_formats"] = form.get("library_formats") == "1"
     formats = []
     for i in range(int(form.get("format_count", 0))):
         fid = (form.get(f"format_id_{i}") or "").strip()
@@ -64,8 +73,27 @@ def _context(data: dict, errors=None, new=False) -> dict:
     counts = dict(conn().execute(
         """SELECT c.category, COUNT(*) FROM scene_categories c JOIN scenes sc ON sc.id = c.scene_id
             WHERE c.confidence > 0 AND sc.rejected = 0 GROUP BY c.category""").fetchall())
+    # Other channels' looks and voices: each channel should look and sound like itself.
+    others = {}
+    for cid in list_channels(settings().config_dir):
+        if cid != data.get("id"):
+            try:
+                others[cid] = load_channel(cid, settings().config_dir)
+            except Exception:  # noqa: BLE001 - one broken file must not break this page
+                pass
+    same_voice = [c.name for c in others.values() if data.get("voice") and c.voice == data.get("voice")]
+    same_look = [c.name for c in others.values() if (data.get("style") or {}).get("look")
+                 and c.style.get("look") == (data.get("style") or {}).get("look")]
+    lib = None
+    if data.get("id") and not new:
+        try:
+            lib = [f for f in fmtlib.for_channel(load_channel(data["id"], settings().config_dir))
+                   if f["id"] not in {x.get("id") for x in data.get("formats") or []}]
+        except Exception:  # noqa: BLE001
+            lib = None
     return {"d": data, "errors": errors or [], "new": new, "cats": cats, "counts": counts,
-            "sources": sources.all_sources(), "languages": chans.LANGUAGES, "voices": VOICES, "speeds": SPEEDS, "voice_label": label}
+            "sources": sources.all_sources(), "languages": chans.LANGUAGES, "voices": VOICES, "speeds": SPEEDS, "voice_label": label,
+            "looks": looks.LABELS, "same_voice": same_voice, "same_look": same_look, "library_extra": lib}
 
 
 @bp.get("/channels/new")

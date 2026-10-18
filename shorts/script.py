@@ -7,38 +7,52 @@ import math
 import re
 import sqlite3
 
-from . import llm, progress
+from . import formats as fmtlib, llm, looks, progress
 from .config import Channel, Settings
 from .music import MOODS
 from .voice import channel_voice
 
 log = logging.getLogger(__name__)
 
-MAX_WORDS = 8
+MAX_WORDS = 6           # per text block; blocks also never wrap past 2 lines (looks.MAX_LINES)
 WORDS_PER_SECOND = 3.0
 MIN_BLOCK_SECONDS = 1.6
+END_LINGER = 0.3        # extra seconds on the last block: land the payoff, then cut (no long fade)
 
 PROMPT = """You write on-screen text for YouTube Shorts on the channel "{channel_name}" ({niche}).
 {voice_line} ({archives}).
 Language: {language_name}.
 
-Format: "{format_title}"
-{format_brief}
+{format_section}
 
 For EACH hero shot below, write one Short built around that shot. The hero shot is the first thing
 the viewer sees; the first text block is the hook and must make sense on top of that image.
 
+Every Short is a tiny story that teaches ONE specific thing, never a list of loose facts over
+footage (YouTube does not recommend or pay for templated, mass-produced Shorts):
+- Block 1 is the hook: open on the most surprising true claim or a sharp question about what is on
+  screen, with honest emotion (awe, danger, strangeness). No date or background first. Never
+  "Did you know", "You won't believe", or anything the Short doesn't deliver.
+- Block 2 hints at the payoff so the viewer wants to stay ("but that's not the strange part").
+- The middle blocks build: link them with "but" / "so" / "then", each adding something new.
+- The LAST block is the payoff: the most surprising fact or the answer to the hook. Nothing after
+  it: no summary, no "comment below", no "follow for more".
+- Never write as a person or an expert ("As an engineer...", "I").
+
 Rules:
 - {min_blocks} to {max_blocks} text blocks, each at most {max_words} words. Plain words, no emoji,
-  no hashtags. Wrap one or two key words per block in *asterisks* to highlight them.
-- Block 1 is the hook: a question, a surprising claim or "you're looking at...". Never "Did you know".
+  no hashtags. Wrap the one key word or number of a block in *asterisks* to highlight it (at most
+  two words per block).
 - Every factual claim must be true and must be listed in "facts" with a source. Prefer the archive
   description given below (source "archive" + the exact supporting quote). If a fact is general
   knowledge not in that text, give a specific, real {url_hint} URL you are
   sure exists, and the quote it supports; do not invent URLs. When in doubt, leave the fact out.
-- For blocks after the first, "visual" describes in 3-8 plain words what footage should show
-  (e.g. "Saturn rings close up", "astronaut floating inside station"). Block 1 visual is "hero".
-- Title: max 70 characters, curiosity-driven, no clickbait lies, no hashtags.
+- For blocks after the first, "visual" describes in 3-8 plain words what footage should show,
+  preferring one clear subject close up (e.g. "Saturn rings close up", "astronaut floating inside
+  station"). Block 1 visual is "hero".
+- Title: max 70 characters. Name the subject plainly so people searching for it find it (e.g.
+  "Saturn's rings are disappearing"), make it match the video, no clickbait lies, no hashtags, and
+  don't start every title the same way.
 - Description: 1-2 sentences in plain English expanding on the Short.
 - Tags: 5-10 search tags.
 - Mood: the background music that fits this Short, one of: {moods}.
@@ -48,12 +62,12 @@ is not clearly about that, do NOT write a Short for it; answer {{"hero": <hero n
 for it instead. A loose link ("the steel in this mill is also in your blood") is not enough.
 
 Answer with only a JSON array, one object per hero shot, in the same order:
-[{{"hero": <hero number>, "topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
+[{{"hero": <hero number>, {format_field}"topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", "description": "...", "tags": ["..."], "mood": "..."}}]
 
 {lessons}Topics we already covered (do not repeat them): {past_topics}
-
+{other_topics}
 Hero shots:
 {heroes}
 """
@@ -135,7 +149,21 @@ def rejects_note(conn: sqlite3.Connection, channel: str) -> str:
                          for r in rows) + "\n\n")
 
 
-def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: list[str], lessons: str = "") -> str:
+def format_section(fmts: list[dict], used: dict[str, int] | None = None) -> tuple[str, str]:
+    """(prompt text, extra JSON field) for one fixed format or a choice of several."""
+    if len(fmts) == 1:
+        return f'Format: "{fmts[0]["title"]}"\n{fmts[0]["brief"].strip()}', ""
+    used = used or {}
+    lines = "\n".join(f'- "{f["id"]}" ({f["title"]}, used {used.get(f["id"], 0)}x lately): {" ".join(f["brief"].split())}'
+                      for f in fmts)
+    return ("Formats (series) of this channel. For each hero shot pick the one that fits it best; over the\n"
+            "batch use different ones, preferring formats used least lately:\n" + lines,
+            '"format": "<format id>", ')
+
+
+def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], past_topics: list[str],
+                 lessons: str = "", other_topics: list[str] | None = None,
+                 format_use: dict[str, int] | None = None) -> str:
     max_blocks = max(3, math.floor(channel.max_seconds / 2.6))
     min_blocks = max(3, math.ceil(channel.min_seconds / 3.0))
     hero_text = "\n\n".join(
@@ -152,7 +180,10 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
     return PROMPT.format(
         channel_name=channel.name, niche=channel.niche,
         language_name=LANGS.get(channel.language, channel.language),
-        format_title=fmt["title"], format_brief=fmt["brief"].strip(),
+        format_section=(sections := format_section(fmt if isinstance(fmt, list) else [fmt], format_use))[0],
+        format_field=sections[1],
+        other_topics=(f"Topics our other channels covered (pick a different angle or fact): "
+                      f"{'; '.join(other_topics[-60:])}\n" if other_topics else ""),
         min_blocks=min_blocks, max_blocks=max_blocks, max_words=MAX_WORDS,
         past_topics="; ".join(past_topics[-80:]) or "(none yet)",
         heroes=hero_text, url_hint=url_hint(channel), moods=", ".join(MOODS), lessons=lessons,
@@ -164,13 +195,20 @@ def build_prompt(channel: Channel, fmt: dict, heroes: list[dict], past_topics: l
     )
 
 
-def split_block(text: str, max_words: int = MAX_WORDS) -> list[str]:
+def split_block(text: str, max_words: int = MAX_WORDS, style: dict | None = None) -> list[str]:
+    """Split a block into parts of at most max_words that each fit in looks.MAX_LINES lines in the
+    channel's caption style (balanced parts, so no one-word leftovers)."""
     words = text.split()
-    if len(words) <= max_words:
-        return [text.strip()]
-    n = math.ceil(len(words) / max_words)
-    size = math.ceil(len(words) / n)
-    return [" ".join(words[i:i + size]) for i in range(0, len(words), size)]
+    if not words:
+        return []
+    fits = (lambda ws: len(ws) <= max_words and looks.line_count(" ".join(ws), style) <= looks.MAX_LINES) \
+        if style is not None else (lambda ws: len(ws) <= max_words)
+    for n in range(math.ceil(len(words) / max_words), len(words) + 1):
+        size = math.ceil(len(words) / n)
+        parts = [words[i:i + size] for i in range(0, len(words), size)]
+        if all(fits(p) for p in parts):
+            return [" ".join(p) for p in parts]
+    return words
 
 
 def block_seconds(text: str) -> float:
@@ -182,7 +220,7 @@ def normalise_blocks(raw_blocks: list[dict], channel: Channel) -> list[dict]:
     blocks = []
     for i, b in enumerate(raw_blocks):
         visual = "hero" if i == 0 else (b.get("visual") or "").strip()
-        for j, part in enumerate(split_block(b.get("text", ""))):
+        for j, part in enumerate(split_block(b.get("text", ""), style=looks.resolve(channel.style))):
             if part:
                 blocks.append({"text": part, "visual": visual if j == 0 else (visual or "hero"),
                                "seconds": block_seconds(part)})
@@ -192,13 +230,16 @@ def normalise_blocks(raw_blocks: list[dict], channel: Channel) -> list[dict]:
         factor = channel.min_seconds / total
         for b in blocks:
             b["seconds"] = round(b["seconds"] * factor, 2)
-    # Last block lingers a bit so the ending lands (and the loop feels natural).
+    # The last block lingers a moment so the payoff lands, then the Short ends.
     if blocks:
-        blocks[-1]["seconds"] = round(blocks[-1]["seconds"] + 0.6, 2)
+        blocks[-1]["seconds"] = round(blocks[-1]["seconds"] + END_LINGER, 2)
     return blocks
 
 
-def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str, hero: dict, data: dict) -> int:
+def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[str], hero: dict, data: dict) -> int:
+    """fmt_id: the format, or the ids Claude could choose from (its "format" field picks one)."""
+    if isinstance(fmt_id, list):
+        fmt_id = data.get("format") if data.get("format") in fmt_id else fmt_id[0]
     blocks = normalise_blocks(data.get("blocks") or [], channel)
     if len(blocks) < 3:
         raise ValueError("script too short")
@@ -235,16 +276,34 @@ def past_topics(conn: sqlite3.Connection, channel: str) -> list[str]:
         "SELECT topic FROM shorts WHERE channel=? AND topic IS NOT NULL ORDER BY id", (channel,))]
 
 
-def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel, fmt_id: str,
+def other_topics(conn: sqlite3.Connection, channel: str) -> list[str]:
+    """Recent topics of the other channels: the same story on two channels looks mass-produced."""
+    return [r[0] for r in conn.execute(
+        """SELECT topic FROM shorts WHERE channel != ? AND topic IS NOT NULL AND status != 'rejected'
+            ORDER BY id DESC LIMIT 60""", (channel,))][::-1]
+
+
+def format_use(conn: sqlite3.Connection, channel: str) -> dict[str, int]:
+    """How often each format was used on this channel in the last 14 days."""
+    return dict(conn.execute(
+        """SELECT format_id, COUNT(*) FROM shorts WHERE channel=? AND status != 'rejected'
+              AND created_at >= datetime('now', '-14 days') GROUP BY format_id""", (channel,)).fetchall())
+
+
+def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel, fmt_id: str | None,
                   hero_scene_ids: list[int], batch_size: int = 5, on_batch=None) -> list[int]:
-    """on_batch(short_ids) is called after each batch is saved."""
-    fmt = channel.format(fmt_id)
+    """fmt_id: one format for all; None = Claude picks per Short from the channel's formats
+    (its own plus shared ones, shorts/formats.py). on_batch(short_ids) is called after each batch
+    is saved."""
+    fmt = [channel.format(fmt_id)] if fmt_id else fmtlib.for_channel(channel)
+    fmt_ids = [f["id"] for f in fmt]
     created = []
     for i in range(0, len(hero_scene_ids), batch_size):
         progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
         prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id),
-                              winners_note(conn, channel.id) + rejects_note(conn, channel.id))
+                              winners_note(conn, channel.id) + rejects_note(conn, channel.id),
+                              other_topics(conn, channel.id), format_use(conn, channel.id))
         try:
             replies = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude script")
         except llm.LLMLimitError:
@@ -264,7 +323,7 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
                     mark_off_niche(conn, channel, heroes[n - 1]["asset_id"], str(reply["skip"]))
                     done_heroes.add(n)
                     continue
-                batch_ids.append(save_script(conn, channel, fmt_id, heroes[n - 1], reply))
+                batch_ids.append(save_script(conn, channel, fmt_ids, heroes[n - 1], reply))
                 done_heroes.add(n)
             except (ValueError, TypeError, AttributeError) as e:
                 log.warning("skipping a script: %s", e)
@@ -291,7 +350,7 @@ def edit_blocks(conn: sqlite3.Connection, channel: Channel, short_id: int, texts
         new = " ".join((texts.get(b["idx"]) or "").split())
         if new and new != b["text"]:
             b["text"], changed = new, True
-            b["seconds"] = block_seconds(new) + (0.6 if b is blocks[-1] else 0)
+            b["seconds"] = block_seconds(new) + (END_LINGER if b is blocks[-1] else 0)
     if not changed:
         return False
     total = sum(b["seconds"] for b in blocks)

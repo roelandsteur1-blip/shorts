@@ -138,7 +138,7 @@ def prepare(conn: sqlite3.Connection, settings: Settings, channel: Channel, shor
     """Speak the blocks of a voiced Short into voice.wav and stretch each block to its speech.
     Returns the wav, or None for a text-only Short. Does nothing when the text didn't change."""
     from .render import work_dir
-    from .script import block_seconds
+    from .script import END_LINGER, block_seconds
     s = conn.execute("SELECT voice FROM shorts WHERE id=?", (short_id,)).fetchone()
     if not s or not s["voice"]:
         return None
@@ -165,11 +165,16 @@ def prepare(conn: sqlite3.Connection, settings: Settings, channel: Channel, shor
         for i, (b, audio) in enumerate(zip(blocks, audios)):
             spoken = len(audio) / SR
             # Never shorter than reading it; the last block lingers like the text-only version.
-            secs = max(block_seconds(b["text"]), spoken + GAP) + (0.6 if i == len(blocks) - 1 else 0)
+            secs = max(block_seconds(b["text"]), spoken + GAP) + (END_LINGER if i == len(blocks) - 1 else 0)
             secs = round(secs, 2)
             pad = int(round(secs * SR)) - len(audio)
             parts.append(np.concatenate([audio, np.zeros(max(pad, 0), dtype=np.float32)])[: int(round(secs * SR))])
             seconds.append(secs)
+    words = sum(len(_speakable(b["text"]).split()) for b in blocks)
+    spoken_s = sum(len(a) for a in audios) / SR
+    if spoken_s:
+        # Research: about 150-170 words a minute works for Shorts; voice_speed changes it.
+        log.info("short %d: voice speaks %.0f words a minute", short_id, 60 * words / spoken_s)
     total = sum(seconds)
     if total < channel.min_seconds:  # short script: spread the extra time over the pauses
         extra = (channel.min_seconds - total) / len(seconds)

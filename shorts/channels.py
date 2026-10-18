@@ -53,8 +53,8 @@ def validate(data: dict, known_categories: set[str]) -> list[str]:
         errors.append("upload times: HH:MM, e.g. 15:00, 21:00")
     try:
         lo, hi = int(data.get("min_seconds", 0)), int(data.get("max_seconds", 0))
-        if not 5 <= lo < hi <= 180:
-            errors.append("length: 5 <= min < max <= 180 seconds")
+        if not 5 <= lo < hi <= 60:
+            errors.append("length: 5 <= min < max <= 60 seconds")
         if not 1 <= int(data.get("uploads_per_day", 0)) <= 20:
             errors.append("uploads per day: 1 to 20")
     except (TypeError, ValueError):
@@ -70,6 +70,10 @@ def validate(data: dict, known_categories: set[str]) -> list[str]:
     bad_src = [s for s in data.get("sources") or [] if s not in sources.ORDER]
     if bad_src:
         errors.append(f"unknown sources: {', '.join(bad_src)}")
+    from .looks import LOOK_NAMES
+    look = (data.get("style") or {}).get("look")
+    if look and look not in LOOK_NAMES + ["custom"]:
+        errors.append(f"unknown caption look: {look}")
     allowed = {f.name for f in fields(Channel)}
     extra = set(data) - allowed
     if extra:
@@ -117,7 +121,7 @@ Footage categories available (id: label): {categories}
 Footage sources available (id: label): {sources}
 
 Answer with only JSON:
-{{"hashtags": ["#..." 3-5, the last one "#shorts"],
+{{"hashtags": ["#..." 2 specific to the niche, then "#shorts" (YouTube shows 3)],
   "categories": ["category ids from the list that fit the niche"],
   "sources": ["source ids from the list that will have this footage; nasa only for space"],
   "search_terms": ["8-15 short search terms for footage archives"],

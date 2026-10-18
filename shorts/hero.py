@@ -11,6 +11,9 @@ from .config import Settings
 
 # What a scroll-stopping first frame looks like, as text for CLIP.
 HERO_QUERY = "a stunning dramatic space image, rocket launch fire, glowing planet, explosion of light"
+# Simple frames with one clear subject hold attention better than busy ones (Wals et al. 2026).
+SIMPLE_QUERY = "one clear subject filling the frame, close-up, simple uncluttered background"
+SIMPLE_WEIGHT = 0.10
 MIN_HERO_SECONDS = 4.0  # the hook block is usually 3-4 s; a shorter shot would freeze
 
 
@@ -59,7 +62,7 @@ def _eligible(conn: sqlite3.Connection, settings: Settings, channel: str, use_cl
         f"""SELECT sc.id, sc.asset_id, sc.motion, sc.contrast, sc.start, sc.end, a.duration,
                    {"sc.embedding" if use_clip else "NULL AS embedding"}
               FROM scenes sc JOIN assets a ON a.id = sc.asset_id
-             WHERE sc.rejected = 0 AND a.needs_check = 0 AND (sc.end - sc.start) >= ?
+             WHERE sc.rejected = 0 AND a.needs_check = 0 AND a.claimed IS NULL AND (sc.end - sc.start) >= ?
                AND a.source NOT IN ({",".join("?" * len(stock))}) AND {cond}""",
         (MIN_HERO_SECONDS, *stock, *args),
     ).fetchall()
@@ -108,11 +111,12 @@ def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: in
     score = 0.45 * np.clip(motion / 0.05, 0, 1) + 0.30 * np.clip(contrast / 0.25, 0, 1)
 
     if use_clip and rows[0]["embedding"] is not None:
-        q = embed.get_encoder(settings).texts([query or HERO_QUERY])[0]
+        q, simple = embed.get_encoder(settings).texts([query or HERO_QUERY, SIMPLE_QUERY])
         mat = np.stack([np.frombuffer(r["embedding"], dtype=np.float32) for r in rows])
-        sims = mat @ q
-        span = sims.max() - sims.min()
-        score = score + 0.25 * ((sims - sims.min()) / span if span > 0 else 0)
+        for vec, weight in ((q, 0.25), (simple, SIMPLE_WEIGHT)):
+            sims = mat @ vec
+            span = sims.max() - sims.min()
+            score = score + weight * ((sims - sims.min()) / span if span > 0 else 0)
 
     score = score + learned_bonus(conn, channel, [r["asset_id"] for r in rows])
 

@@ -95,6 +95,19 @@ def decide(sid: int):
                     else url_for("review.index", channel=channel))
 
 
+@bp.post("/short/<int:sid>/claim")
+def claim(sid: int):
+    """Log a copyright claim: the ticked videos are never used in a Short again."""
+    s = conn().execute("SELECT id FROM shorts WHERE id=?", (sid,)).fetchone()
+    if not s:
+        abort(404)
+    ids = [int(x) for x in request.form.getlist("asset") if x.isdigit()]
+    if ids:
+        db.log_claim(conn(), sid, ids, (request.form.get("claimant") or "").strip()[:200],
+                     (request.form.get("note") or "").strip()[:500])
+    return redirect(url_for("review.short", sid=sid))
+
+
 @bp.post("/short/<int:sid>/blocks")
 def edit_blocks(sid: int):
     """Fix a text block and re-render, instead of rejecting the Short for one wrong word."""

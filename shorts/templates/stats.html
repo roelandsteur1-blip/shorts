@@ -41,7 +41,7 @@ On a channel the voiced Shorts are usually the newer ones, so a channel that is 
 {% else %}<p class="muted">Not enough yet: this needs channels with both voiced and text-only Shorts that are {{ days + 3 }} days old.</p>{% endif %}
 {% if rows %}<h3>Per Short</h3>
 <p class="muted">Sort: {% for k in ['views', 'retention', 'engaged', 'newest'] %}<a href="?sort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == sort }}">{{ k }}</a> {% endfor %}
-· engaged = engaged views / views, the closest public signal to "viewed vs swiped away"</p>
+· engaged = engaged views / views, the closest public signal to "viewed vs swiped away". Since March 2025 views count every start and replay, so judge Shorts by engaged and avg viewed, not views</p>
 <table><tr><th>#</th><th>Title</th><th>Published</th><th>Views</th><th>Engaged</th><th>Avg viewed</th><th>Likes</th><th>Subs</th></tr>
 {% for r in rows %}<tr><td><a href="/short/{{ r.id }}">{{ r.id }}</a></td><td><a href="https://youtu.be/{{ r.youtube_id }}" target="_blank" rel="noopener">{{ r.title }}</a></td>
 <td class="muted">{{ (r.publish_at or '')[:10] }}</td><td>{{ '{:,}'.format(r.views or 0) }}</td>
