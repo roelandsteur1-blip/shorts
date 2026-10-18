@@ -206,6 +206,30 @@ CREATE TABLE IF NOT EXISTS claims (
     at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Competitor research (shorts/inspiration.py): recent Shorts of a channel's inspiration channels,
+-- and the idea bank Claude made from them.
+CREATE TABLE IF NOT EXISTS inspiration_videos (
+    channel        TEXT NOT NULL,             -- our channel
+    video_id       TEXT NOT NULL,
+    source_channel TEXT NOT NULL,             -- their YouTube channel id
+    source_title   TEXT,
+    title          TEXT,
+    views          INTEGER,
+    likes          INTEGER,
+    comments       INTEGER,
+    seconds        INTEGER,
+    published_at   TEXT,
+    fetched_at     TEXT NOT NULL,
+    PRIMARY KEY (channel, video_id)
+);
+
+CREATE TABLE IF NOT EXISTS idea_banks (
+    channel   TEXT PRIMARY KEY,
+    data      TEXT NOT NULL,                  -- JSON: topics, hooks, titles, avoid
+    videos    INTEGER,                        -- Shorts it was made from
+    made_at   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS off_niche (
     channel   TEXT NOT NULL,
     asset_id  INTEGER NOT NULL,
@@ -241,6 +265,7 @@ ADDED_COLUMNS = [
     ("shorts", "voice", "TEXT"),                           # Kokoro voice reading it; NULL = text only
     ("shorts", "stats_hidden", "INTEGER NOT NULL DEFAULT 0"),  # 1 = left out of Stats; still blocks reuse
     ("assets", "claimed", "TEXT"),                         # who claimed it (claims table); never used again
+    ("shorts", "screen_title", "TEXT"),                    # title bar at the top of the video (render.py)
 ]
 
 

@@ -47,6 +47,8 @@ def run(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
         done[ch.id] = f"made {max(made, 0)}, scheduled {uploaded}"
         log.info("%s: %s", ch.id, done[ch.id])
     fetch_stats_all(conn, settings)
+    from .inspiration import refresh_stale
+    refresh_stale(settings, [load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)])
     return done
 
 

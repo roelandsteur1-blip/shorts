@@ -42,8 +42,11 @@ def _ass_text(text: str, highlight: str, primary: str) -> str:
     return re.sub(r"\*(.+?)\*", lambda m: f"{{\\c{highlight}}}{m.group(1)}{{\\c{primary}}}", text).replace("*", "")
 
 
-def build_ass(blocks: list[dict], style: dict) -> str:
-    """style: the channel's [style]; its look (shorts/looks.py) sets font and outline or box."""
+def build_ass(blocks: list[dict], style: dict, title: str | None = None) -> str:
+    """style: the channel's [style]; its look (shorts/looks.py) sets font and outline or box.
+    title: the screen title, shown at the top per the channel's title_bar (always / hook / off)."""
+    bar = looks.title_bar(style)
+    title_size = looks.title_size(title, style) if title and bar != "off" else 0
     style = looks.resolve(style)
     font = style.get("font", "Arial Black")
     size = style.get("font_size", 88)
@@ -67,6 +70,7 @@ ScaledBorderAndShadow: yes
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Body,{font},{size},{primary},{primary},{edge},&H80000000,-1,0,0,0,100,100,0,0,{border},{outline},{shadow},2,{ml},{mr},{margin_v},1
 Style: Hook,{font},{hook_size},{primary},{primary},{edge},&H80000000,-1,0,0,0,100,100,0,0,{border},{hook_edge},{shadow},2,{ml},{mr},{margin_v},1
+Style: Title,{font},{title_size or size},{primary},{primary},{edge},&H80000000,-1,0,0,0,100,100,0,0,{border},{max(outline - 2, 3) if style["box"] else outline},{shadow},8,{ml},{mr},{looks.TITLE_TOP},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -80,6 +84,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             f"{pop}{_ass_text(b['text'], highlight, primary)}"
         )
         t = end
+    if title_size:
+        until = t if bar == "always" else blocks[0]["seconds"]
+        lines.append(f"Dialogue: 1,{_ass_time(0)},{_ass_time(until - 0.04)},Title,,0,0,0,,"
+                     rf"{{\fad(0,{0 if bar == 'always' else 120})}}{_ass_text(title, highlight, primary)}")
     return head + "\n".join(lines) + "\n"
 
 
@@ -170,7 +178,8 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
 
     work = work_dir(settings, channel, short_id)
     work.mkdir(parents=True, exist_ok=True)
-    (work / "subs.ass").write_text(build_ass(blocks, channel.style), encoding="utf-8")
+    title = conn.execute("SELECT screen_title FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
+    (work / "subs.ass").write_text(build_ass(blocks, channel.style, title), encoding="utf-8")
 
     inputs, filters, offsets = [], [], {}
     # 4K sources: the GPU's video decoder does the heavy decoding, frames come back for the CPU

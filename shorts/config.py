@@ -101,6 +101,7 @@ class Channel:
     auto_run: bool = False                 # daily make + upload (python -m shorts daily)
     hero_query: str | None = None          # what a scroll-stopping first frame looks like (CLIP)
     library_formats: bool = True           # also use shared formats (shorts/formats.py) up to 3 in total
+    inspiration: list[str] = field(default_factory=list)  # 2-3 similar channels (@handle / link) to learn from
 
     def __post_init__(self):
         # Claimed Shorts over a minute can't earn at all, and evidence favours short ones.

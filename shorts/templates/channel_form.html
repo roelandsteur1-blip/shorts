@@ -12,6 +12,7 @@
 {% if same_voice %}<p class="bad">Same voice as {{ same_voice|join(', ') }}: give every channel its own voice.</p>{% endif %}
 <label>Caption look (font and outline or box; highlight words are always yellow)<select name="look"><option value="" {{ 'selected' if not (d.style or {}).look }}>Pick one automatically (one no other channel uses)</option>{% for k, v in looks.items() %}<option value="{{ k }}" {{ 'selected' if k == (d.style or {}).look }}>{{ v }}</option>{% endfor %}{% if (d.style or {}).look == 'custom' %}<option value="custom" selected>Custom (font settings in the config file)</option>{% endif %}</select></label>
 {% if same_look %}<p class="bad">Same caption look as {{ same_look|join(', ') }}.</p>{% endif %}
+<label>Title at the top (the topic in 2 lines, key words yellow; helps people who watch muted)<select name="title_bar"><option value="" {{ 'selected' if not (d.style or {}).title_bar }}>Pick automatically (whole Short or hook only, in turn per channel)</option>{% for k, v in title_bars.items() %}<option value="{{ k }}" {{ 'selected' if k == (d.style or {}).title_bar }}>{{ v }}</option>{% endfor %}</select></label>
 <label>Voice speed<select name="voice_speed">{% for x in speeds %}<option value="{{ x }}" {{ 'selected' if x == (d.voice_speed or 1.0) }}>{{ x }}×</option>{% endfor %}</select></label>
 <label>Language<select name="language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == d.language }}>{{ v }}</option>{% endfor %}</select></label>
 <label>Niche, in one line<input type="text" name="niche" value="{{ d.niche or '' }}" placeholder="e.g. Dutch history from old newsreels"></label>
@@ -27,6 +28,12 @@
 <label>Extra search terms (one per line)<textarea name="search_terms" rows="4">{{ (d.search_terms or [])|join('\n') }}</textarea></label>
 <label>Music searches (one per line; added to the shared music library's searches, which always include ambient, cinematic, calm piano, epic orchestral)<textarea name="music_terms" rows="3">{{ (d.music_terms or [])|join('\n') }}</textarea></label>
 <label>What a scroll-stopping first frame looks like (for picking hero shots)<input type="text" name="hero_query" value="{{ d.hero_query or '' }}" placeholder="default: a stunning dramatic space image"></label>
+</div>
+
+<div class="card"><h3 style="margin-top:0">Competitor research</h3>
+<label>Inspiration channels: 2-3 successful Shorts channels in this niche, one per line (@handle or channel link)<textarea name="inspiration" id="inspiration" rows="3" placeholder="@somechannel">{{ (d.inspiration or [])|join('\n') }}</textarea></label>
+<p class="muted">Every week their most-viewed Shorts are read (free, hardly any API quota) and Claude turns them into proven topics, hook patterns and title patterns. Those steer which footage opens a Short, what to download, and how scripts are written. Their titles and clips are never copied.</p>
+{% if not new %}<p><button type="button" id="suggest">Suggest channels</button> <span class="muted" id="suggestmsg">searches YouTube for the niche's most-viewed Shorts (uses 100 of the daily API quota)</span></p><div id="suggestions"></div>{% endif %}
 </div>
 
 <div class="card"><h3 style="margin-top:0">Formats</h3>
@@ -72,6 +79,16 @@
 {% elif not found and not d.youtube_channel_id %}<form method="post" action="/channels/{{ d.id }}/connect"><button class="primary">Connect YouTube</button></form>
 {% elif d.youtube_channel_id %}<form method="post" action="/channels/{{ d.id }}/connect"><input type="hidden" name="fresh" value="1"><button>Connect again</button></form>{% endif %}
 </div>
+<div class="card"><h3 style="margin-top:0">Competitor research</h3>
+{% if bank %}<p class="muted">{{ bank.topics|length }} proven topics from {{ bank.videos }} Shorts, made {{ bank.made_at[:10] }} (refreshed weekly by Make and the daily run).</p>
+<ol style="padding-left:18px;margin:4px 0">{% for t in bank.topics[:8] %}<li>{{ t.topic }}{% if t.angle %} <span class="muted">· {{ t.angle }}</span>{% endif %}</li>{% endfor %}</ol>
+{% if bank.hooks %}<details><summary>Hook and title patterns</summary><p class="muted" style="font-size:13px">{{ bank.hooks|join(' · ') }}</p><p class="muted" style="font-size:13px">{{ bank.titles|join(' · ') }}</p>{% if bank.avoid %}<p class="muted" style="font-size:13px">Does badly: {{ bank.avoid|join(' · ') }}</p>{% endif %}</details>{% endif %}
+{% elif d.inspiration %}<p class="muted">Not run yet: runs by itself on the next Make, or now:</p>
+{% else %}<p class="muted">Add inspiration channels on the left and save.</p>{% endif %}
+{% if research_job and research_job.status in ('queued', 'running') %}<p class="muted">Research running… <a href="/jobs/{{ research_job.id }}">details</a></p>
+{% elif d.inspiration %}<form method="post" action="/channels/{{ d.id }}/research"><button>Refresh research now</button></form>
+{% if research_job and research_job.status == 'failed' %}<p class="bad">Last run failed: <a href="/jobs/{{ research_job.id }}">see why</a></p>{% endif %}{% endif %}
+</div>
 <div class="card"><h3 style="margin-top:0">4. Try it</h3>
 <p class="muted">Downloads footage for the chosen categories if needed, then makes 3 Shorts to review.</p>
 <form method="post" action="/channels/{{ d.id }}/try"><button class="primary">Try it</button></form></div>
@@ -95,6 +112,25 @@ document.getElementById('draft').onclick = async () => {
     f['format_id_' + i].value = fm.id; f['format_title_' + i].value = fm.title; f['format_brief_' + i].value = fm.brief;
   });
   msg.textContent = 'Check and edit, then save.';
+};
+const sug = document.getElementById('suggest');
+if (sug) sug.onclick = async () => {
+  const msg = document.getElementById('suggestmsg'), box = document.getElementById('suggestions');
+  msg.textContent = 'Searching YouTube...';
+  const r = await fetch('/channels/{{ d.id }}/suggest', {method: 'POST'}); const d = await r.json();
+  if (d.error) { msg.textContent = d.error; return; }
+  msg.textContent = d.channels.length ? 'Click one to add it, check it on YouTube, then save.' : 'Nothing found.';
+  box.innerHTML = '';
+  for (const c of d.channels) {
+    const p = document.createElement('p'), b = document.createElement('button'), a = document.createElement('a');
+    b.type = 'button'; b.textContent = 'Add'; b.onclick = () => {
+      const t = document.getElementById('inspiration'), link = 'https://www.youtube.com/channel/' + c.id;
+      if (!t.value.includes(c.id)) t.value = (t.value.trim() ? t.value.trim() + '\n' : '') + link;
+      b.disabled = true; };
+    a.href = 'https://www.youtube.com/channel/' + c.id + '/shorts'; a.target = '_blank'; a.rel = 'noopener'; a.textContent = c.title;
+    p.append(b, ' ', a, ` · ${c.views.toLocaleString()} views in ${c.shorts} top Shorts`);
+    box.append(p);
+  }
 };
 </script>
 {% endblock %}

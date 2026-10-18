@@ -74,6 +74,12 @@ def validate(data: dict, known_categories: set[str]) -> list[str]:
     look = (data.get("style") or {}).get("look")
     if look and look not in LOOK_NAMES + ["custom"]:
         errors.append(f"unknown caption look: {look}")
+    from .looks import TITLE_BARS
+    bar = (data.get("style") or {}).get("title_bar")
+    if bar and bar not in TITLE_BARS:
+        errors.append(f"unknown title bar: {bar}")
+    if not isinstance(data.get("inspiration", []), list):
+        errors.append("inspiration: a list of channels")
     allowed = {f.name for f in fields(Channel)}
     extra = set(data) - allowed
     if extra:

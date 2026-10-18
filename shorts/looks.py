@@ -47,6 +47,31 @@ for _name, (_font, _size, _hook) in _BASE.items():
 LOOK_NAMES = list(LOOKS)
 LABELS = {k: f"{v['font']}, {'dark box' if v['box'] else 'outline'}" for k, v in LOOKS.items()}
 
+# Title bar: the Short's topic in 2 lines at the top, key words in the same yellow. Channels are
+# given "always" and "hook" in turn, so they don't all look alike.
+TITLE_BARS = {"always": "Title at the top for the whole Short", "hook": "Title at the top during the hook only",
+              "off": "No title at the top"}
+TITLE_BAR_CYCLE = ["always", "hook"]
+TITLE_TOP = 300          # px from the top: below YouTube's search/menu icons (safe area starts at y 288)
+TITLE_SCALE = 0.8        # title size as a share of the caption size
+TITLE_MIN_SCALE = 0.5    # smallest it shrinks to so it fits in 2 lines
+
+
+def title_bar(style: dict) -> str:
+    bar = (style or {}).get("title_bar") or "always"
+    return bar if bar in TITLE_BARS else "always"
+
+
+def title_size(text: str, style: dict) -> int:
+    """Font size for the title bar: TITLE_SCALE of the caption size, smaller when needed to fit
+    MAX_LINES lines."""
+    st = resolve(style)
+    base = int(st.get("font_size", 88))
+    size = round(base * TITLE_SCALE)
+    while size > base * TITLE_MIN_SCALE and line_count(text, st | {"font_size": size}) > MAX_LINES:
+        size -= 4
+    return size
+
 
 def resolve(style: dict) -> dict:
     """The style render and script use: the channel's look (font, size, outline or box) over its
@@ -115,28 +140,38 @@ def line_count(text: str, style: dict, width: int = TEXT_WIDTH) -> int:
 
 
 def assign_missing(settings, channels: list) -> None:
-    """Give every channel without a look the first one no other channel uses, and save it in its
-    config, so a channel keeps its look when channels are added later."""
+    """Give every channel without a look the first one no other channel uses, and a title bar
+    (always / hook in turn), and save them in its config, so a channel keeps its look when
+    channels are added later."""
     from . import channels as chans, tomlw
     from .config import list_channels, load_channel
-    taken = set()
+    taken, bars = set(), []
     for cid in list_channels(settings.config_dir):
         try:
-            look = load_channel(cid, settings.config_dir).style.get("look")
+            style = load_channel(cid, settings.config_dir).style
         except Exception:  # noqa: BLE001 - a broken config elsewhere must not stop a run
             continue
-        if look:
-            taken.add(look)
+        if style.get("look"):
+            taken.add(style["look"])
+        if style.get("title_bar"):
+            bars.append(style["title_bar"])
     for ch in channels:
-        if ch.style.get("look"):
+        new = {}
+        if not ch.style.get("look"):
+            free = [n for n in LOOK_NAMES if n not in taken] or LOOK_NAMES
+            new["look"] = free[0]
+            taken.add(free[0])
+            log.info("%s: caption look %s", ch.id, LABELS[free[0]])
+        if not ch.style.get("title_bar"):
+            new["title_bar"] = min(TITLE_BAR_CYCLE, key=bars.count)  # the one fewer channels have
+            bars.append(new["title_bar"])
+            log.info("%s: %s", ch.id, TITLE_BARS[new["title_bar"]].lower())
+        if not new:
             continue
-        free = [n for n in LOOK_NAMES if n not in taken] or LOOK_NAMES
-        ch.style["look"] = free[0]
-        taken.add(free[0])
+        ch.style.update(new)
         path = chans.path_for(settings, ch.id)
         # Only settings read from a config folder (load_settings) save; hand-built ones (tests) don't.
         if settings.config_root is not None and path.exists():
             data = chans.raw(settings, ch.id)
-            data.setdefault("style", {})["look"] = free[0]
+            data.setdefault("style", {}).update(new)
             tomlw.write(path, data, chans.HEADER)
-        log.info("%s: caption look %s", ch.id, LABELS[free[0]])

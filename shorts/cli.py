@@ -105,6 +105,12 @@ def main(argv: list[str] | None = None) -> int:
     pb.add_argument("--renders", type=int, default=2, help="Shorts to render per setting")
     pb.add_argument("--scenes", type=int, default=2, help="videos to cut with each scene detector")
 
+    prr2 = sub.add_parser("research", help="learn topics, hooks and titles from the channel's inspiration channels")
+    prr2.add_argument("--all", action="store_true", help="every channel with inspiration channels")
+    prr2.add_argument("--stale", action="store_true", help="only idea banks older than a week")
+    prr2.add_argument("--suggest", action="store_true",
+                      help="list channels with the most-viewed Shorts for the niche (one search, 100 quota units)")
+
     sub.add_parser("daily", help="make + schedule for every channel with auto_run = true (run by the daily task)")
     pst = sub.add_parser("status", help="show counts per step")
     pst.add_argument("--per-video", action="store_true",
@@ -257,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from .upload import fetch_stats
             print(f"stats for {fetch_stats(conn, settings, channel)} Shorts")
+    elif args.cmd == "research":
+        return _research(conn, settings, channel, args)
     elif args.cmd == "status":
         print(f"channels: {', '.join(list_channels())}")
         for label, sql in [
@@ -282,6 +290,34 @@ def main(argv: list[str] | None = None) -> int:
         if unsorted:
             print(f"{unsorted} scenes not sorted into categories yet (python -m shorts categorize)")
     return 0
+
+
+def _research(conn, settings, channel, args) -> int:
+    from . import inspiration
+    if args.suggest:
+        for c in inspiration.suggest_channels(inspiration.reader(settings, channel), channel):
+            print(f"{c['views']:>13,} views in {c['shorts']} top Shorts  {c['title']}  "
+                  f"https://www.youtube.com/channel/{c['id']}")
+        return 0
+    chans = ([load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)]
+             if args.all else [channel])
+    chans = [ch for ch in chans if ch.inspiration and (not args.stale or inspiration.stale(conn, ch))]
+    if not chans:
+        print("no channel with inspiration channels" + (" and an old idea bank" if args.stale else "")
+              + ": add 2-3 on a channel's Settings page")
+        return 0 if args.all else 1
+    failed = 0
+    for i, ch in enumerate(chans):
+        from . import progress
+        progress.report(i, len(chans), f"research {ch.id}")
+        try:
+            r = inspiration.refresh(conn, settings, ch)
+            print(f"{ch.id}: {r['topics']} topics from {r['shorts']} Shorts on {r['channels']} channels"
+                  + (f" (not found: {', '.join(r['failed'])})" if r["failed"] else ""))
+        except Exception as e:  # noqa: BLE001 - one channel's problem must not stop the others
+            failed += 1
+            print(f"{ch.id}: failed: {e}")
+    return 1 if failed == len(chans) else 0
 
 
 def _music(conn, settings, channel, args) -> int:

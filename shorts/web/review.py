@@ -117,6 +117,12 @@ def edit_blocks(sid: int):
     if s["youtube_id"]:
         abort(400, "already uploaded: change it in YouTube Studio")
     texts = {int(k.removeprefix("block_")): v for k, v in request.form.items() if k.startswith("block_")}
-    if not script.edit_blocks(conn(), channel_or_404(s["channel"]), sid, texts):
+    changed = script.edit_blocks(conn(), channel_or_404(s["channel"]), sid, texts)
+    if "screen_title" in request.form:
+        new = script.clean_screen_title(request.form["screen_title"])
+        if new != s["screen_title"]:
+            db.set_short(conn(), sid, screen_title=new, edited=1)
+            changed = True
+    if not changed:
         return redirect(url_for("review.short", sid=sid))
     return start_job(s["channel"], ["rerender", str(sid)], f"Re-render #{sid} after text edit")

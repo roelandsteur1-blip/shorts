@@ -7,7 +7,7 @@ import math
 import re
 import sqlite3
 
-from . import formats as fmtlib, llm, looks, progress
+from . import formats as fmtlib, inspiration, llm, looks, progress
 from .config import Channel, Settings
 from .music import MOODS
 from .voice import channel_voice
@@ -53,7 +53,7 @@ Rules:
 - Title: max 70 characters. Name the subject plainly so people searching for it find it (e.g.
   "Saturn's rings are disappearing"), make it match the video, no clickbait lies, no hashtags, and
   don't start every title the same way.
-- Description: 1-2 sentences in plain English expanding on the Short.
+{screen_title_rule}- Description: 1-2 sentences in plain English expanding on the Short.
 - Tags: 5-10 search tags.
 - Mood: the background music that fits this Short, one of: {moods}.
 
@@ -64,13 +64,20 @@ for it instead. A loose link ("the steel in this mill is also in your blood") is
 Answer with only a JSON array, one object per hero shot, in the same order:
 [{{"hero": <hero number>, {format_field}"topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
-  "title": "...", "description": "...", "tags": ["..."], "mood": "..."}}]
+  "title": "...", {screen_title_field}"description": "...", "tags": ["..."], "mood": "..."}}]
 
 {lessons}Topics we already covered (do not repeat them): {past_topics}
 {other_topics}
 Hero shots:
 {heroes}
 """
+
+SCREEN_TITLE_RULE = """- Screen title: shown at the top of the video, so a viewer knows at a glance what this Short is
+  about (many watch muted). 2 to 6 words, at most 32 characters, no question mark needed. Wrap the 1
+  or 2 key words in *asterisks*. It names the subject, it does not repeat the hook (e.g. "Saturn's
+  *vanishing* rings", "The *loudest* sound ever").
+"""
+SCREEN_TITLE_CHARS = 40
 
 LANGS = {"en": "English", "nl": "Dutch", "de": "German", "es": "Spanish", "fr": "French"}
 
@@ -192,6 +199,8 @@ def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], p
                     if channel_voice(channel) else
                     "There is NO voice-over: the text on screen is the whole story, read silently over real archive footage"),
         archives=", ".join(dict.fromkeys(h.get("archive", "NASA") for h in heroes)),
+        screen_title_rule=SCREEN_TITLE_RULE if looks.title_bar(channel.style) != "off" else "",
+        screen_title_field='"screen_title": "...", ' if looks.title_bar(channel.style) != "off" else "",
     )
 
 
@@ -246,12 +255,13 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     tags = [t.strip().lstrip("#") for t in data.get("tags") or [] if t.strip()]
     cur = conn.execute(
         """INSERT INTO shorts (channel, format_id, hero_scene_id, topic, hook, title, description,
-                               tags, status, duration, mood)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?, ?)""",
+                               tags, status, duration, mood, screen_title)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?, ?, ?)""",
         (channel.id, fmt_id, hero["scene_id"], data.get("topic"), blocks[0]["text"],
          (data.get("title") or "")[:100], data.get("description") or "", json.dumps(tags),
          sum(b["seconds"] for b in blocks),
-         data.get("mood") if data.get("mood") in MOODS else None),
+         data.get("mood") if data.get("mood") in MOODS else None,
+         clean_screen_title(data.get("screen_title")) if looks.title_bar(channel.style) != "off" else None),
     )
     short_id = cur.lastrowid
     conn.executemany(
@@ -269,6 +279,23 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     from . import voice
     voice.assign(conn, channel, short_id)
     return short_id
+
+
+def clean_screen_title(text) -> str | None:
+    """One line of plain words (the bar wraps it to 2 lines itself); None when empty."""
+    text = " ".join(str(text or "").replace("\n", " ").split()).strip()
+    if not text:
+        return None
+    if len(text.replace("*", "")) > SCREEN_TITLE_CHARS:  # cut at a word, keep highlight marks paired
+        words, out = text.split(), []
+        for w in words:
+            if len(" ".join(out + [w]).replace("*", "")) > SCREEN_TITLE_CHARS:
+                break
+            out.append(w)
+        text = " ".join(out)
+        if text.count("*") % 2:
+            text = text.replace("*", "")
+    return text or None
 
 
 def past_topics(conn: sqlite3.Connection, channel: str) -> list[str]:
@@ -302,7 +329,8 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
         progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
         prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id),
-                              winners_note(conn, channel.id) + rejects_note(conn, channel.id),
+                              inspiration.prompt_note(conn, channel.id)
+                              + winners_note(conn, channel.id) + rejects_note(conn, channel.id),
                               other_topics(conn, channel.id), format_use(conn, channel.id))
         try:
             replies = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude script")

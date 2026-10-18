@@ -13,8 +13,10 @@
 {% if f.source_url %}<br><a href="{{ f.source_url }}" target="_blank" rel="noopener">source</a>{% endif %}</td></tr>{% endfor %}
 </table></div>
 <div class="card"><h3>Script{% if s.edited %} <span class="muted" style="font-size:13px">edited by hand</span>{% endif %}</h3>
-{% if s.youtube_id %}<ol>{% for b in blocks %}<li>{{ b.text }} <span class="muted">({{ b.seconds }}s · {{ b.visual }})</span></li>{% endfor %}</ol>
+{% if s.youtube_id %}{% if s.screen_title %}<p class="muted">Title at the top: {{ s.screen_title }}</p>{% endif %}<ol>{% for b in blocks %}<li>{{ b.text }} <span class="muted">({{ b.seconds }}s · {{ b.visual }})</span></li>{% endfor %}</ol>
 {% else %}<form method="post" action="/short/{{ s.id }}/blocks">
+<label style="margin:4px 0"><span class="muted" style="font-size:12px">Title at the top (empty = none)</span>
+<input type="text" name="screen_title" value="{{ s.screen_title or '' }}" maxlength="60"></label>
 {% for b in blocks %}<label style="margin:4px 0"><span class="muted" style="font-size:12px">{{ loop.index }} · {{ b.seconds }}s · {{ b.visual }}</span>
 <input type="text" name="block_{{ b.idx }}" value="{{ b.text }}"></label>{% endfor %}
 <p class="muted" style="font-size:12px">*word* = highlighted. Keep blocks short (8 words); the fact check is not run again.</p>
