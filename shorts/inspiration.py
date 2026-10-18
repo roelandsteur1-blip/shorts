@@ -1,11 +1,13 @@
-"""Competitor research: learn which topics, hooks and titles work in a channel's niche from the
-most-viewed Shorts of 2-3 similar channels (the channel's `inspiration` list), refreshed weekly.
+"""Competitor research: learn how the most-viewed Shorts of 2-3 similar channels (the channel's
+`inspiration` list) win reach, refreshed weekly: hook patterns, title patterns and format traits
+(length, pacing, structure, ending). Never their topics: the channel's own niche alone decides what
+a Short is about, so inspiration channels can be shared between channels without pulling them
+off-niche or making them alike.
 
 The YouTube Data API reads public uploads cheaply (playlistItems + videos: 1 quota unit per 50
-videos), so this never eats into the upload budget. Claude turns the list into an idea bank:
-topics with the footage that shows them, hook patterns and title patterns. The bank steers hero
-picking (shorts/hero.py), restock searches (shorts/library.py) and the script prompt
-(shorts/script.py). It learns patterns only: their titles and clips are never copied."""
+videos), so this never eats into the upload budget. Claude turns the list into a pattern bank
+that goes into the script prompt (shorts/script.py) only; hero picking and footage downloads
+ignore it. It learns patterns only: their titles and clips are never copied."""
 from __future__ import annotations
 
 import json
@@ -24,7 +26,6 @@ REFRESH_DAYS = 7
 PAGES = 4               # x 50 recent Shorts per inspiration channel (1 quota unit each)
 PER_CHANNEL = 15        # most-viewed Shorts per inspiration channel shown to Claude
 MAX_SECONDS = 180       # Shorts can be up to 3 minutes
-TOPICS_IN_PROMPT = 10   # proven topics shown to the script writer
 SUGGEST_COST = 100      # quota units of one search (suggest_channels)
 
 _ID = re.compile(r"^UC[\w-]{22}$")
@@ -154,28 +155,25 @@ def suggest_channels(yt, channel: Channel, k: int = 8) -> list[dict]:
     return sorted(found.values(), key=lambda c: -c["views"])[:k]
 
 
-# ---------- the idea bank ----------
+# ---------- the pattern bank ----------
 
-PROMPT = """You help the YouTube Shorts channel "{name}" ({niche}) learn what works in its niche.
-Below are the most-viewed recent Shorts of {n} successful channels in this niche. Views include
-replays, so compare them within one channel: "x median" says how far a Short beat that channel's
-usual Short.
+PROMPT = """You help the YouTube Shorts channel "{name}" learn how successful Shorts get reach.
+Below are the most-viewed recent Shorts of {n} successful channels. Views include replays, so
+compare them within one channel: "x median" says how far a Short beat that channel's usual Short.
 
 Our Shorts are different from theirs: each one is built around real public-domain archive footage
-({footage}), with {voice}, and teaches one true, sourced thing. So learn the patterns that pull
-views (subjects, angles, emotions, questions, how hooks and titles are built) that we can use with
-our own footage and our own facts. Never copy a title, a hook or a clip.
+({footage}), with {voice}, and teaches one true, sourced thing about our own niche ({niche}).
+Their subjects don't matter to us and may be from another niche: our niche alone decides what our
+Shorts are about. Learn only HOW they pull views: how hooks are built, how titles are built, and
+format traits (length, pacing, structure, how they open and end, what makes people rewatch).
+Write every pattern so it works for any subject, with [blanks] instead of their subjects.
+Never copy a title, a hook or a clip.
 
 Answer with only JSON:
-{{"topics": [{{"topic": "a subject or question that pulls views here, broad enough for many Shorts",
-              "angle": "the angle that works for it (danger, scale, mystery, record, ...)",
-              "visual": "3-8 plain words: what archive footage for it shows, for image search",
-              "search": "2-4 words to search footage archives for it",
-              "evidence": "which Shorts above show this, with their views"}}],
-  "hooks": ["5-8 hook patterns that work here, as templates with [blanks]"],
+{{"hooks": ["5-8 hook patterns that work here, as templates with [blanks]"],
   "titles": ["4-6 title patterns that work here, as templates with [blanks]"],
+  "format": ["4-8 format traits that work here: length, pacing, structure, opening, ending, ..."],
   "avoid": ["2-4 things that do badly here"]}}
-Give 8 to 15 topics, most promising first, and only topics archive footage can show.
 
 {videos}
 """
@@ -206,7 +204,7 @@ def _video_lines(conn: sqlite3.Connection, channel: str) -> tuple[str, int, int]
 
 
 def refresh(conn: sqlite3.Connection, settings: Settings, channel: Channel, yt=None) -> dict:
-    """Fetch the inspiration channels' recent Shorts and have Claude build the idea bank."""
+    """Fetch the inspiration channels' recent Shorts and have Claude build the pattern bank."""
     if not channel.inspiration:
         raise ResearchError(f"'{channel.id}' has no inspiration channels: add 2-3 on its Settings page")
     yt = yt or reader(settings, channel)
@@ -241,39 +239,40 @@ def refresh(conn: sqlite3.Connection, settings: Settings, channel: Channel, yt=N
                            else "text on screen and music (no voice-over)", videos=videos)
     data = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude research")
     bank = clean_bank(data)
-    if not bank["topics"]:
-        raise ResearchError("Claude gave no topics")
+    if not (bank["hooks"] or bank["titles"]):
+        raise ResearchError("Claude gave no hook or title patterns")
     conn.execute("INSERT OR REPLACE INTO idea_banks (channel, data, videos, made_at) VALUES (?,?,?,?)",
                  (channel.id, json.dumps(bank, ensure_ascii=False), shown, now))
     conn.commit()
-    log.info("%s: idea bank with %d topics from %d Shorts on %d channels", channel.id, len(bank["topics"]), shown, n)
-    return {"topics": len(bank["topics"]), "shorts": shown, "channels": n, "failed": failed}
+    log.info("%s: pattern bank with %d patterns from %d Shorts on %d channels", channel.id, patterns(bank), shown, n)
+    return {"patterns": patterns(bank), "shorts": shown, "channels": n, "failed": failed}
 
 
 def clean_bank(data) -> dict:
+    """Patterns only: a 'topics' list in the reply (or in a bank from before) is dropped."""
     data = data if isinstance(data, dict) else {}
-    topics = []
-    for t in data.get("topics") or []:
-        if isinstance(t, dict) and str(t.get("topic") or "").strip():
-            topics.append({k: " ".join(str(t.get(k) or "").split())[:200]
-                           for k in ("topic", "angle", "visual", "search", "evidence")})
     strs = lambda key, n: [" ".join(str(x).split())[:160] for x in data.get(key) or [] if str(x).strip()][:n]  # noqa: E731
-    return {"topics": topics[:15], "hooks": strs("hooks", 8), "titles": strs("titles", 6), "avoid": strs("avoid", 4)}
+    return {"hooks": strs("hooks", 8), "titles": strs("titles", 6), "format": strs("format", 8),
+            "avoid": strs("avoid", 4)}
+
+
+def patterns(b: dict) -> int:
+    return sum(len(b.get(k) or []) for k in ("hooks", "titles", "format"))
 
 
 def bank(conn: sqlite3.Connection, channel: str) -> dict | None:
     r = conn.execute("SELECT * FROM idea_banks WHERE channel=?", (channel,)).fetchone()
     if not r:
         return None
-    return json.loads(r["data"]) | {"made_at": r["made_at"], "videos": r["videos"]}
+    return clean_bank(json.loads(r["data"])) | {"made_at": r["made_at"], "videos": r["videos"]}
 
 
 def stale(conn: sqlite3.Connection, channel: Channel, days: int = REFRESH_DAYS) -> bool:
-    """True when the channel has inspiration channels and no idea bank younger than `days`."""
+    """True when the channel has inspiration channels and no pattern bank (with format traits) younger than `days`."""
     if not channel.inspiration:
         return False
-    r = conn.execute("SELECT made_at FROM idea_banks WHERE channel=?", (channel.id,)).fetchone()
-    if not r:
+    r = conn.execute("SELECT made_at, data FROM idea_banks WHERE channel=?", (channel.id,)).fetchone()
+    if not r or "format" not in json.loads(r[1] or "{}"):  # none yet, or an old bank with topics
         return True
     made = datetime.fromisoformat(r[0]).replace(tzinfo=timezone.utc)
     return datetime.now(timezone.utc) - made > timedelta(days=days)
@@ -291,7 +290,7 @@ def refresh_stale(settings: Settings, channels: list[Channel]) -> dict[str, str]
                 continue
             try:
                 r = refresh(c, settings, ch)
-                out[ch.id] = f"{r['topics']} topics from {r['shorts']} Shorts"
+                out[ch.id] = f"{r['patterns']} patterns from {r['shorts']} Shorts"
             except Exception as e:  # noqa: BLE001
                 log.warning("%s: competitor research not refreshed: %s", ch.id, e)
                 out[ch.id] = f"not refreshed: {e}"
@@ -300,32 +299,22 @@ def refresh_stale(settings: Settings, channels: list[Channel]) -> dict[str, str]
     return out
 
 
-# ---------- used by hero picking, restock and the script writer ----------
-
-def hero_queries(conn: sqlite3.Connection, channel: str) -> list[str]:
-    """What footage of the proven topics looks like, for CLIP."""
-    b = bank(conn, channel)
-    return [t["visual"] for t in (b or {}).get("topics", [])[:TOPICS_IN_PROMPT] if t.get("visual")]
-
-
-def search_terms(conn: sqlite3.Connection, channel: str) -> list[str]:
-    b = bank(conn, channel)
-    return [t["search"] for t in (b or {}).get("topics", []) if t.get("search")]
-
+# ---------- used by the script writer ----------
 
 def prompt_note(conn: sqlite3.Connection, channel: str) -> str:
+    """How to build the hook, title and pacing. Says nothing about what a Short is about."""
     b = bank(conn, channel)
-    if not b or not b.get("topics"):
+    if not b or not patterns(b):
         return ""
-    topics = "\n".join(f'- {t["topic"]}' + (f' ({t["angle"]})' if t.get("angle") else "")
-                       for t in b["topics"][:TOPICS_IN_PROMPT])
-    out = ("Proven in this niche (from the most-viewed Shorts of similar channels). When a hero shot "
-           "truly fits one of these topics, build the Short around that angle; never force a topic onto "
-           "footage that doesn't show it, and never copy anyone's title or hook:\n" + topics + "\n")
+    out = ("What gets reach on similar channels (from their most-viewed Shorts). Use these only for HOW "
+           "you write the hook, title and pacing; the Short's subject still comes from the hero shot and "
+           "this channel's niche alone. Never copy anyone's title or hook:\n")
     if b.get("hooks"):
-        out += "Hook patterns that work there: " + " | ".join(b["hooks"]) + "\n"
+        out += "Hook patterns: " + " | ".join(b["hooks"]) + "\n"
     if b.get("titles"):
-        out += "Title patterns that work there: " + " | ".join(b["titles"]) + "\n"
+        out += "Title patterns: " + " | ".join(b["titles"]) + "\n"
+    if b.get("format"):
+        out += "Format traits: " + "; ".join(b["format"]) + "\n"
     if b.get("avoid"):
-        out += "Does badly there: " + "; ".join(b["avoid"]) + "\n"
+        out += "Does badly: " + "; ".join(b["avoid"]) + "\n"
     return out + "\n"

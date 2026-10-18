@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS claims (
 );
 
 -- Competitor research (shorts/inspiration.py): recent Shorts of a channel's inspiration channels,
--- and the idea bank Claude made from them.
+-- and the pattern bank Claude made from them (hooks, titles, format; never topics).
 CREATE TABLE IF NOT EXISTS inspiration_videos (
     channel        TEXT NOT NULL,             -- our channel
     video_id       TEXT NOT NULL,
@@ -225,7 +225,7 @@ CREATE TABLE IF NOT EXISTS inspiration_videos (
 
 CREATE TABLE IF NOT EXISTS idea_banks (
     channel   TEXT PRIMARY KEY,
-    data      TEXT NOT NULL,                  -- JSON: topics, hooks, titles, avoid
+    data      TEXT NOT NULL,                  -- JSON: hooks, titles, format, avoid
     videos    INTEGER,                        -- Shorts it was made from
     made_at   TEXT NOT NULL
 );

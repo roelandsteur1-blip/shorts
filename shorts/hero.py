@@ -14,7 +14,6 @@ HERO_QUERY = "a stunning dramatic space image, rocket launch fire, glowing plane
 # Simple frames with one clear subject hold attention better than busy ones (Wals et al. 2026).
 SIMPLE_QUERY = "one clear subject filling the frame, close-up, simple uncluttered background"
 SIMPLE_WEIGHT = 0.10
-TOPIC_WEIGHT = 0.20  # footage that shows a topic proven in the niche (shorts/inspiration.py)
 MIN_HERO_SECONDS = 4.0  # the hook block is usually 3-4 s; a shorter shot would freeze
 
 
@@ -93,14 +92,12 @@ def _eligible(conn: sqlite3.Connection, settings: Settings, channel: str, use_cl
 
 def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: int,
                use_clip: bool = True, categories: list[str] | None = None,
-               query: str | None = None, topics: list[str] | None = None) -> list[int]:
+               query: str | None = None) -> list[int]:
     """Return up to n hero scene ids, at most one per source video in one batch (siblings from a
     long video come in later batches, so their script knows what the earlier Shorts said).
     A video can open several Shorts over time, see budget(). Footage flagged for a rights check is
     skipped, and so is stock B-roll (Pexels etc.: fine between blocks, no story to tell as a hero).
-    categories: only scenes sorted into one of these (the channel's); none = any scene.
-    topics: what footage of the niche's proven topics looks like (the idea bank); a scene that
-    looks like any one of them scores higher."""
+    categories: only scenes sorted into one of these (the channel's); none = any scene."""
     rows = _eligible(conn, settings, channel, use_clip, categories)
     # Scenes not embedded yet (run 'embed') would switch CLIP scoring off for all: leave them out.
     if use_clip and any(r["embedding"] is not None for r in rows):
@@ -120,10 +117,6 @@ def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: in
             sims = mat @ vec
             span = sims.max() - sims.min()
             score = score + weight * ((sims - sims.min()) / span if span > 0 else 0)
-        if topics:
-            sims = (mat @ embed.get_encoder(settings).texts(topics).T).max(axis=1)
-            span = sims.max() - sims.min()
-            score = score + TOPIC_WEIGHT * ((sims - sims.min()) / span if span > 0 else 0)
 
     score = score + learned_bonus(conn, channel, [r["asset_id"] for r in rows])
 

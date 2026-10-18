@@ -31,8 +31,8 @@
 </div>
 
 <div class="card"><h3 style="margin-top:0">Competitor research</h3>
-<label>Inspiration channels: 2-3 successful Shorts channels in this niche, one per line (@handle or channel link)<textarea name="inspiration" id="inspiration" rows="3" placeholder="@somechannel">{{ (d.inspiration or [])|join('\n') }}</textarea></label>
-<p class="muted">Every week their most-viewed Shorts are read (free, hardly any API quota) and Claude turns them into proven topics, hook patterns and title patterns. Those steer which footage opens a Short, what to download, and how scripts are written. Their titles and clips are never copied.</p>
+<label>Inspiration channels: 2-3 successful Shorts channels, one per line; any niche works, since only their hooks, titles and format are used (@handle or channel link)<textarea name="inspiration" id="inspiration" rows="3" placeholder="@somechannel">{{ (d.inspiration or [])|join('\n') }}</textarea></label>
+<p class="muted">Every week their most-viewed Shorts are read (free, hardly any API quota) and Claude turns them into hook patterns, title patterns and format traits (length, pacing, structure, ending) that the scripts use. Their topics are never used: this channel's niche alone decides what a Short is about, and footage picking and downloads ignore the research. Their titles and clips are never copied.</p>
 {% if not new %}<p><button type="button" id="suggest">Suggest channels</button> <span class="muted" id="suggestmsg">searches YouTube for the niche's most-viewed Shorts (uses 100 of the daily API quota)</span></p><div id="suggestions"></div>{% endif %}
 </div>
 
@@ -80,9 +80,9 @@
 {% elif d.youtube_channel_id %}<form method="post" action="/channels/{{ d.id }}/connect"><input type="hidden" name="fresh" value="1"><button>Connect again</button></form>{% endif %}
 </div>
 <div class="card"><h3 style="margin-top:0">Competitor research</h3>
-{% if bank %}<p class="muted">{{ bank.topics|length }} proven topics from {{ bank.videos }} Shorts, made {{ bank.made_at[:10] }} (refreshed weekly by Make and the daily run).</p>
-<ol style="padding-left:18px;margin:4px 0">{% for t in bank.topics[:8] %}<li>{{ t.topic }}{% if t.angle %} <span class="muted">· {{ t.angle }}</span>{% endif %}</li>{% endfor %}</ol>
-{% if bank.hooks %}<details><summary>Hook and title patterns</summary><p class="muted" style="font-size:13px">{{ bank.hooks|join(' · ') }}</p><p class="muted" style="font-size:13px">{{ bank.titles|join(' · ') }}</p>{% if bank.avoid %}<p class="muted" style="font-size:13px">Does badly: {{ bank.avoid|join(' · ') }}</p>{% endif %}</details>{% endif %}
+{% if bank %}<p class="muted">Patterns from {{ bank.videos }} Shorts, made {{ bank.made_at[:10] }} (refreshed weekly by Make and the daily run). Used for hooks, titles and pacing only, never for topics.</p>
+{% if bank.hooks %}<p style="margin:4px 0"><b>Hooks</b></p><ul style="padding-left:18px;margin:4px 0">{% for h in bank.hooks %}<li>{{ h }}</li>{% endfor %}</ul>{% endif %}
+{% if bank.titles or bank.format or bank.avoid %}<details><summary>Title patterns and format</summary>{% if bank.titles %}<p class="muted" style="font-size:13px">Titles: {{ bank.titles|join(' · ') }}</p>{% endif %}{% if bank.format %}<p class="muted" style="font-size:13px">Format: {{ bank.format|join(' · ') }}</p>{% endif %}{% if bank.avoid %}<p class="muted" style="font-size:13px">Does badly: {{ bank.avoid|join(' · ') }}</p>{% endif %}</details>{% endif %}
 {% elif d.inspiration %}<p class="muted">Not run yet: runs by itself on the next Make, or now:</p>
 {% else %}<p class="muted">Add inspiration channels on the left and save.</p>{% endif %}
 {% if research_job and research_job.status in ('queued', 'running') %}<p class="muted">Research running… <a href="/jobs/{{ research_job.id }}">details</a></p>

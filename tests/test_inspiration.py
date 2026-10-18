@@ -71,11 +71,11 @@ class FakeYouTube:
         return V()
 
 
+# Claude may still send topics: they must never reach scripts, footage picking or downloads.
 BANK = {"topics": [{"topic": "Rocket launches that went wrong", "angle": "danger", "visual": "rocket launch at night",
-                    "search": "rocket failure", "evidence": "6000 views"},
-                   {"topic": "The Moon moving away", "angle": "mystery", "visual": "full moon close up",
-                    "search": "moon surface", "evidence": "90000 views"}],
-        "hooks": ["This [thing] almost [disaster]"], "titles": ["The [adjective] [thing] ever"], "avoid": ["lists"]}
+                    "search": "rocket failure", "evidence": "6000 views"}],
+        "hooks": ["This [thing] almost [disaster]"], "titles": ["The [adjective] [thing] ever"],
+        "format": ["under 30 seconds", "answer the hook in the last line"], "avoid": ["lists"]}
 
 
 def _fake_research_claude(monkeypatch, prompts):
@@ -101,15 +101,17 @@ def test_refresh_builds_idea_bank(conn, settings, channel, monkeypatch):
     ch = replace(channel, inspiration=["@rockets", "https://www.youtube.com/channel/" + FakeYouTube.B, "@missing"])
     assert inspiration.stale(conn, ch)
     r = inspiration.refresh(conn, settings, ch, yt=yt)
-    assert r == {"topics": 2, "shorts": 7, "channels": 2, "failed": ["@missing"]}
+    assert r == {"patterns": 4, "shorts": 7, "channels": 2, "failed": ["@missing"]}
     # Shorts playlist used when there is one; without it, uploads minus long videos.
     titles = {row[0] for row in conn.execute("SELECT title FROM inspiration_videos WHERE channel='space'")}
     assert "Full lecture" not in titles and "Why the Moon is drifting away" in titles
     assert '6,000 views (1.7x median)' in prompts[0] and "Never copy a title" in prompts[0]
+    assert '"topics"' not in prompts[0] and "our niche alone decides" in prompts[0]
     assert not inspiration.stale(conn, ch)
-    assert inspiration.hero_queries(conn, "space") == ["rocket launch at night", "full moon close up"]
+    assert "topics" not in inspiration.bank(conn, "space")
     note = inspiration.prompt_note(conn, "space")
-    assert "Rocket launches that went wrong (danger)" in note and "This [thing] almost [disaster]" in note
+    assert "This [thing] almost [disaster]" in note and "under 30 seconds" in note
+    assert "Rocket" not in note and "niche alone" in note
     # Taking a channel off the list drops its Shorts on the next refresh.
     inspiration.refresh(conn, settings, replace(ch, inspiration=["@rockets"]), yt=yt)
     assert conn.execute("SELECT COUNT(*) FROM inspiration_videos WHERE source_channel=?", (FakeYouTube.B,)).fetchone()[0] == 0
@@ -121,43 +123,25 @@ def test_refresh_stale_never_raises(settings, channel, monkeypatch):
     assert list(out) == ["space"] and out["space"].startswith("not refreshed")
 
 
-def test_bank_steers_scripts_restock_and_heroes(library, settings, channel, monkeypatch):
+def test_bank_steers_scripts_only_never_topics(library, settings, channel, monkeypatch):
     conn = library
-    conn.execute("INSERT INTO idea_banks (channel, data, videos, made_at) VALUES ('space', ?, 7, datetime('now'))",
-                 (json.dumps(BANK),))
-    conn.commit()
     ch = replace(channel, inspiration=["@rockets"])
-    # Script prompt carries the proven topics.
+    # An old bank (topics, no format traits) is redone on the next Make.
+    old = {k: v for k, v in BANK.items() if k != "format"}
+    conn.execute("INSERT INTO idea_banks (channel, data, videos, made_at) VALUES ('space', ?, 7, datetime('now'))",
+                 (json.dumps(old),))
+    assert inspiration.stale(conn, ch)
+    conn.execute("UPDATE idea_banks SET data=? WHERE channel='space'", (json.dumps(BANK),))
+    conn.commit()
+    assert not inspiration.stale(conn, ch)
+    # Script prompt carries hook, title and format patterns, but not their topics.
     heroes = [script.hero_context(conn, s) for s in hero.candidates(conn, settings, "space", 1)]
     prompt = script.build_prompt(ch, ch.enabled_formats, heroes, [], inspiration.prompt_note(conn, "space"))
-    assert "Proven in this niche" in prompt and "The Moon moving away (mystery)" in prompt
-    # Restock also searches for the proven topics.
-    plan = lib.restock_plan(conn, settings, ch, need=10 ** 6)
-    assert any("rocket failure" in qs for _, qs in plan)
-    # A topic query moves hero picking towards scenes that look like it.
-    rows = hero._eligible(conn, settings, "space", True, None)
-    base = hero.candidates(conn, settings, "space", len(rows))
-    target = base[-1]
-    from shorts import embed
-    enc = embed.get_encoder(settings)
-    emb = conn.execute("SELECT embedding FROM scenes WHERE id=?", (target,)).fetchone()[0]
-
-    class Steer:
-        dim = enc.dim
-
-        def texts(self, texts):
-            import numpy as np
-            v = np.frombuffer(emb, dtype=np.float32)
-            return np.stack([v if t == "proven topic" else enc.texts([t])[0] for t in texts])
-
-        def images(self, paths):
-            return enc.images(paths)
-    embed.set_encoder(Steer())
-    try:
-        steered = hero.candidates(conn, settings, "space", len(rows), topics=["proven topic"])
-    finally:
-        embed.set_encoder(enc)
-    assert steered.index(target) < base.index(target)
+    assert "Hook patterns: This [thing] almost [disaster]" in prompt and "Rocket launches" not in prompt
+    # Restock searches only the channel's own terms.
+    without = lib.restock_plan(conn, settings, channel, need=10 ** 6)
+    assert lib.restock_plan(conn, settings, ch, need=10 ** 6) == without
+    assert not any("rocket failure" in qs for _, qs in without)
 
 
 def test_make_waits_for_stale_research(library, settings, channel, monkeypatch):

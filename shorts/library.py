@@ -61,7 +61,7 @@ def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     """(source, search queries) to run: for each of the channel's categories that is running low,
     the category's search hints per source the channel uses. The channel's own search_terms are
     added for its first category (they describe its niche)."""
-    from . import inspiration, sources
+    from . import sources
     from .categorize import load_categories
 
     cats = {c.id: c for c in load_categories(settings)}
@@ -78,7 +78,7 @@ def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         for c in low:
             queries = cats[c].queries(src) if c else []
             if c == wanted[0]:
-                queries = queries + channel.search_terms + inspiration.search_terms(conn, channel.id)
+                queries = queries + channel.search_terms
             plan[src] = list(dict.fromkeys(plan.get(src, []) + queries))
     return [(src, qs) for src, qs in plan.items() if qs]
 

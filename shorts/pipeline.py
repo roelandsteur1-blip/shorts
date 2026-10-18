@@ -34,7 +34,7 @@ class Lane:
     channel: Channel
     fmt_id: str | None
     count: int
-    research: threading.Event | None = None  # set when this week's idea bank is done (or failed)
+    research: threading.Event | None = None  # set when this week's pattern bank is done (or failed)
 
 
 def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: int,
@@ -113,7 +113,7 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
 
 
 def _start_research(settings: Settings, channels: list[Channel]) -> dict[str, threading.Event]:
-    """Refresh idea banks older than a week in the background, in lane order; each channel's
+    """Refresh pattern banks older than a week in the background, in lane order; each channel's
     scripts wait for its own (shorts/inspiration.py). Channels without inspiration: nothing."""
     c = db.connect(settings.db_path)
     try:
@@ -175,10 +175,8 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
     the scripts of the channels before it are saved and one-channel-per-video still holds."""
     ch = lane.channel
     if lane.research and not lane.research.wait(RESEARCH_WAIT):
-        log.info("%s: competitor research still running; writing with the old idea bank", ch.id)
-    topics = inspiration.hero_queries(c, ch.id)
-    pending = hero.candidates(c, settings, ch.id, lane.count, categories=ch.categories, query=ch.hero_query,
-                              topics=topics)
+        log.info("%s: competitor research still running; writing with the old pattern bank", ch.id)
+    pending = hero.candidates(c, settings, ch.id, lane.count, categories=ch.categories, query=ch.hero_query)
     total[0] -= lane.count - len(pending)
     if not pending:
         log.warning("%s: no unused hero shots left: run 'shorts ingest' to grow the library", ch.id)
@@ -190,8 +188,7 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
         if not missing or llm.limit_reached():
             break
         # New hero shots for ones that gave no script (off-niche videos are now excluded).
-        pending = hero.candidates(c, settings, ch.id, missing, categories=ch.categories, query=ch.hero_query,
-                                  topics=topics)
+        pending = hero.candidates(c, settings, ch.id, missing, categories=ch.categories, query=ch.hero_query)
         if not pending:
             break
         log.info("%s: picked %d more hero shots for the ones skipped", ch.id, len(pending))

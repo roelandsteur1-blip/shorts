@@ -105,9 +105,9 @@ def main(argv: list[str] | None = None) -> int:
     pb.add_argument("--renders", type=int, default=2, help="Shorts to render per setting")
     pb.add_argument("--scenes", type=int, default=2, help="videos to cut with each scene detector")
 
-    prr2 = sub.add_parser("research", help="learn topics, hooks and titles from the channel's inspiration channels")
+    prr2 = sub.add_parser("research", help="learn hook, title and format patterns (never topics) from the channel's inspiration channels")
     prr2.add_argument("--all", action="store_true", help="every channel with inspiration channels")
-    prr2.add_argument("--stale", action="store_true", help="only idea banks older than a week")
+    prr2.add_argument("--stale", action="store_true", help="only pattern banks older than a week")
     prr2.add_argument("--suggest", action="store_true",
                       help="list channels with the most-viewed Shorts for the niche (one search, 100 quota units)")
 
@@ -303,7 +303,7 @@ def _research(conn, settings, channel, args) -> int:
              if args.all else [channel])
     chans = [ch for ch in chans if ch.inspiration and (not args.stale or inspiration.stale(conn, ch))]
     if not chans:
-        print("no channel with inspiration channels" + (" and an old idea bank" if args.stale else "")
+        print("no channel with inspiration channels" + (" and an old pattern bank" if args.stale else "")
               + ": add 2-3 on a channel's Settings page")
         return 0 if args.all else 1
     failed = 0
@@ -312,7 +312,7 @@ def _research(conn, settings, channel, args) -> int:
         progress.report(i, len(chans), f"research {ch.id}")
         try:
             r = inspiration.refresh(conn, settings, ch)
-            print(f"{ch.id}: {r['topics']} topics from {r['shorts']} Shorts on {r['channels']} channels"
+            print(f"{ch.id}: {r['patterns']} patterns from {r['shorts']} Shorts on {r['channels']} channels"
                   + (f" (not found: {', '.join(r['failed'])})" if r["failed"] else ""))
         except Exception as e:  # noqa: BLE001 - one channel's problem must not stop the others
             failed += 1
