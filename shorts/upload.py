@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sqlite3
+import sys
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -63,10 +65,23 @@ def credentials(settings: Settings, channel: Channel, interactive: bool = True):
                                "on its Settings page")
         flow = InstalledAppFlow.from_client_secrets_file(str(_client_secret(settings)), SCOPES)
         print(f"Log in with the Google account that owns the '{channel.name}' channel.")
-        creds = flow.run_local_server(port=0)
+        if _headless():
+            # Server without a browser: Google sends the login back to localhost:8765 on the server,
+            # so open the printed link on the laptop while `ssh -L 8765:localhost:8765 <server>` runs.
+            # Or connect on the laptop and copy secrets/token-<channel>.json to the server.
+            print("No browser here. On your laptop run: ssh -L 8765:localhost:8765 <server>, then open "
+                  "the link below in the laptop's browser.", flush=True)
+            creds = flow.run_local_server(port=8765, open_browser=False)
+        else:
+            creds = flow.run_local_server(port=0)
     token.write_text(creds.to_json(), encoding="utf-8")
     expired.unlink(missing_ok=True)
     return creds
+
+
+def _headless() -> bool:
+    """A Linux server: no desktop to open a browser on."""
+    return sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
 def youtube(settings: Settings, channel: Channel, interactive: bool = True):

@@ -25,7 +25,7 @@
 <div class="card"><h3 style="margin-top:0">Daily auto-run</h3>
 <p class="muted">Every day: make Shorts for each channel with auto-run on and schedule the ones you approved.
 Nothing is published without your approval. Channels with auto-run on: {{ daily.channels|join(', ') or 'none' }}.</p>
-<p>Windows task: {% if daily.task is none %}<span class="muted">can't check here ({{ daily.note }})</span>{% elif daily.task %}<span class="ok">on</span> ({{ daily.time }}){% else %}<span class="muted">off</span>{% endif %}</p>
+<p>Daily task: {% if daily.task is none %}<span class="muted">can't check here ({{ daily.note }})</span>{% elif daily.task %}<span class="ok">on</span> ({{ daily.time }}){% else %}<span class="muted">off</span>{% endif %}</p>
 <form method="post" action="/schedule/daily" class="inline"><label style="display:inline">Time <input type="text" name="time" value="{{ daily.time or '09:00' }}" style="width:80px"></label>
 <button name="on" value="1" class="primary">{{ 'Update' if daily.task else 'Turn on' }}</button>{% if daily.task %} <button name="on" value="0">Turn off</button>{% endif %}</form>
 </div>

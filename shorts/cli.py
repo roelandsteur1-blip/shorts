@@ -68,6 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     pcl.add_argument("--dry-run", action="store_true", help="only show what would be deleted")
     sub.add_parser("move-footage", help="move downloaded videos to footage_dir (after changing it)")
 
+    prb = sub.add_parser("rebase-paths", help="after copying the data to another computer: point stored "
+                         "file paths at the new folders (OLD=NEW, e.g. 'D:\\shorts-footage=/srv/footage')")
+    prb.add_argument("pairs", nargs="+", metavar="OLD=NEW")
+
+    pbk = sub.add_parser("backup", help="consistent copy of the database (default: data_dir/backups, keeps 7)")
+    pbk.add_argument("--to", help="file to write instead")
+
     prr = sub.add_parser("rerender", help="render Shorts again (e.g. after adding music); keeps script and footage")
     prr.add_argument("ids", nargs="*", type=int, help="short ids; default: all waiting for review")
 
@@ -131,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
         config.CONFIG_DIR = Path(args.config_dir).resolve()
     settings = load_settings(data_dir=args.data_dir)
     settings.ensure_dirs()
+    from .server import load_env
+    load_env(settings)
     channel = load_channel(args.channel or settings.default_channel)
     conn = db.connect(settings.db_path)
 
@@ -206,6 +215,19 @@ def main(argv: list[str] | None = None) -> int:
         from .library import move_footage
         n, gb = move_footage(conn, settings)
         print(f"moved {n} videos ({gb:.1f} GB) to {settings.footage_dir}")
+    elif args.cmd == "rebase-paths":
+        from .server import rebase_paths
+        pairs = []
+        for p in args.pairs:
+            old, sep, new = p.partition("=")
+            if not sep or not old or not new:
+                raise SystemExit(f"expected OLD=NEW, got {p!r}")
+            pairs.append((old, new))
+        for col, n in rebase_paths(conn, pairs).items():
+            print(f"{col}: {n} paths changed")
+    elif args.cmd == "backup":
+        from .server import backup
+        print(f"backup: {backup(conn, settings, Path(args.to) if args.to else None)}")
     elif args.cmd == "voice-test":
         from . import voice
         voices = [v.strip() for v in (args.voices or ",".join(voice.VOICES)).split(",") if v.strip()]

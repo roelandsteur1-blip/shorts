@@ -1,0 +1,20 @@
+# Installed by setup.sh (placeholders filled in). The dashboard and the jobs it runs, always on.
+[Unit]
+Description=Shorts dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=@USER@
+WorkingDirectory=@REPO@
+Environment=PATH=@PATH@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@REPO@/.venv/bin/python -m shorts dashboard
+Restart=always
+RestartSec=10
+# Stopping the service stops the jobs too (they show as 'interrupted' after a restart).
+KillMode=control-group
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
