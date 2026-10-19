@@ -74,13 +74,13 @@ def test_script_prompt_learns_from_winners_and_rejects(conn, channel):
     from shorts import script
     assert script.winners_note(conn, "space") == "" and script.rejects_note(conn, "space") == ""
     for v in range(1, 9):
-        _age(conn, add_short(conn, status="scheduled", hook=f"hook {v}", title=f"title {v}"), 3, v * 100)
+        _age(conn, add_short(conn, status="scheduled", hook=f"hook {v}", title=f"title {v}"), 3, 900 - v * 100, v * 10)
     _age(conn, add_short(conn, status="scheduled", hook="other channel"), 3, 99999)
     conn.execute("UPDATE shorts SET channel='other' WHERE hook='other channel'")
     add_short(conn, status="rejected", hook="Did you know rocks", reject_reason="weak hook: too vague")
     add_short(conn, status="rejected", hook="pretty clip", reject_reason="bad footage")  # not about the writing
     lessons = script.winners_note(conn, "space") + script.rejects_note(conn, "space")
-    assert "first 3 days" in lessons and "800 views. Hook: \"hook 8\"" in lessons and "100 views" in lessons
+    assert "first 3 days" in lessons and "80 engaged views (100 views). Hook: \"hook 8\"" in lessons and "10 engaged views (800 views)" in lessons
     assert lessons.index("hook 8") < lessons.index("Worst") < lessons.index("hook 1")
     assert "hook 5" not in lessons and "other channel" not in lessons
     assert "Reason: weak hook: too vague" in lessons and "pretty clip" not in lessons

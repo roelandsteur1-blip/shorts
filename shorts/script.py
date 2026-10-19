@@ -127,18 +127,22 @@ NOT_SCRIPT = ("bad footage", "rights doubt")  # reject reasons that say nothing 
 
 
 def winners_note(conn: sqlite3.Connection, channel: str) -> str:
-    """The channel's best and worst Shorts by views at the same age (longest age with enough Shorts)."""
+    """The channel's best and worst Shorts by engaged views at the same age (longest age with enough
+    Shorts). Engaged, not plain views: since 2025 a view counts the moment a Short starts playing."""
     for days in (7, 3, 1):
         rows = conn.execute(
-            """SELECT s.hook, s.title, a.views FROM stats_age a JOIN shorts s ON s.id = a.short_id
-                WHERE s.channel = ? AND a.days = ? AND NOT s.stats_hidden ORDER BY a.views DESC""", (channel, days)).fetchall()
+            """SELECT s.hook, s.title, a.views, a.engaged_views FROM stats_age a JOIN shorts s ON s.id = a.short_id
+                WHERE s.channel = ? AND a.days = ? AND NOT s.stats_hidden
+                ORDER BY a.engaged_views DESC, a.views DESC""", (channel, days)).fetchall()
         if len(rows) >= MIN_RANKED:
             break
     else:
         return ""
     n = min(SHOWN, len(rows) // 2)
-    line = lambda r: f'- {r["views"] or 0:,} views. Hook: "{r["hook"]}" Title: "{r["title"]}"'  # noqa: E731
-    return (f"What worked on this channel so far (views in a Short's first {days} day{'s' if days > 1 else ''}). "
+    line = lambda r: (f'- {r["engaged_views"] or 0:,} engaged views ({r["views"] or 0:,} views). '  # noqa: E731
+                      f'Hook: "{r["hook"]}" Title: "{r["title"]}"')
+    return (f"What worked on this channel so far (engaged views in a Short's first {days} day{'s' if days > 1 else ''}, "
+            "people who kept watching instead of swiping away). "
             "Learn from the pattern in hooks and titles, don't copy them:\nBest:\n"
             + "\n".join(line(r) for r in rows[:n]) + "\nWorst:\n" + "\n".join(line(r) for r in rows[-n:]) + "\n\n")
 
