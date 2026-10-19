@@ -352,7 +352,11 @@ def _migrate(conn: sqlite3.Connection) -> None:
     changed = False
     for table, col, typ in ADDED_COLUMNS:
         if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as e:  # another process added it at the same moment
+                if "duplicate column" not in str(e):
+                    raise
             changed = True
     # Script-writer rejections from before channel_fit existed stay rejected.
     if conn.execute("SELECT 1 FROM off_niche LIMIT 1").fetchone():

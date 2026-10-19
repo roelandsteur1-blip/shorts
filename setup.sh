@@ -65,7 +65,10 @@ command -v tailscale >/dev/null || curl -fsSL https://tailscale.com/install.sh |
 
 echo "== Lock down SSH and the firewall (keys only, no root login; only SSH and Tailscale get in)"
 if [ -s "$HOME/.ssh/authorized_keys" ]; then
-  sudo tee /etc/ssh/sshd_config.d/10-shorts.conf >/dev/null <<SSHD
+  # sshd takes the first value it reads, and files load alphabetically: sort before any other file
+  # (e.g. a hoster's 00-*.conf that allows root login).
+  sudo rm -f /etc/ssh/sshd_config.d/10-shorts.conf
+  sudo tee /etc/ssh/sshd_config.d/00-aa-shorts.conf >/dev/null <<SSHD
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
