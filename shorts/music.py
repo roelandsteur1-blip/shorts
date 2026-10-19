@@ -425,9 +425,40 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> N
 
 # ---------- picking ----------
 
+POPULAR_BONUS = 4   # a track whose Shorts get twice the channel's usual engaged views counts as
+                    # this many uses fewer when picking, so it comes back more often (and a flop less)
+SCORE_PRIOR = 2     # pretend every track has this many average Shorts: one lucky Short isn't a hit
+SCORE_LIMIT = 2.0   # log2 cap either way (4x better or worse)
+
+
+def track_scores(conn: sqlite3.Connection) -> dict[str, dict]:
+    """{track path: {'score', 'shorts'}}: how the Shorts with each track did, as log2 of their
+    engaged views over the median of their own channel at the same age (3 days, else 1), shrunk
+    toward 0 while few Shorts have numbers. Channels are compared with themselves, so a track
+    isn't 'popular' just because a big channel used it."""
+    rows = conn.execute(
+        """SELECT s.id, s.channel, s.music, a.days, a.engaged_views FROM stats_age a JOIN shorts s ON s.id = a.short_id
+            WHERE s.music IS NOT NULL AND a.engaged_views IS NOT NULL AND NOT s.stats_hidden
+              AND a.days IN (1, 3) ORDER BY a.days DESC""").fetchall()
+    usual: dict[tuple[str, int], list[int]] = {}
+    for r in rows:
+        usual.setdefault((r["channel"], r["days"]), []).append(r["engaged_views"])
+    logs: dict[str, list[float]] = {}
+    done: set[int] = set()
+    for r in rows:  # 3 days first: each Short counts once, at the longest age it has
+        vals = usual[(r["channel"], r["days"])]
+        if r["id"] in done or len(vals) < 3:  # too few Shorts on the channel to know its usual
+            continue
+        done.add(r["id"])
+        ratio = (r["engaged_views"] + 1) / (float(np.median(vals)) + 1)
+        logs.setdefault(r["music"], []).append(float(np.clip(np.log2(ratio), -SCORE_LIMIT, SCORE_LIMIT)))
+    return {path: {"score": sum(v) / (len(v) + SCORE_PRIOR), "shorts": len(v)} for path, v in logs.items()}
+
+
 def pick(conn: sqlite3.Connection, settings: Settings, short_id: int, channel: Channel | None) -> sqlite3.Row | None:
     """The least-used track (over all channels) in the Short's mood (any mood when none fits),
-    never the track the channel's previous Short got."""
+    never the track the channel's previous Short got. Tracks whose Shorts did well count as used
+    less (track_scores), so music from the best Shorts comes back more often."""
     sync(conn, settings)
     tracks = [t for t in usable(conn) if Path(t["path"]).exists()]
     if not tracks:
@@ -443,8 +474,11 @@ def pick(conn: sqlite3.Connection, settings: Settings, short_id: int, channel: C
             tracks = [t for t in tracks if t["path"] != prev["music"]] or tracks
     uses = dict(conn.execute("""SELECT music, COUNT(*) FROM shorts WHERE music IS NOT NULL AND id != ?
                                  AND status != 'rejected' GROUP BY music""", (short_id,)).fetchall())
-    least = min(uses.get(t["path"], 0) for t in tracks)
-    return random.Random(short_id).choice([t for t in tracks if uses.get(t["path"], 0) == least])
+    scores = track_scores(conn)
+    weight = {t["path"]: round(uses.get(t["path"], 0) - POPULAR_BONUS * scores.get(t["path"], {}).get("score", 0.0), 3)
+              for t in tracks}
+    least = min(weight.values())
+    return random.Random(short_id).choice([t for t in tracks if weight[t["path"]] == least])
 
 
 # ---------- claims ----------

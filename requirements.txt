@@ -1,6 +1,6 @@
 requests>=2.31
 numpy>=1.26
-opencv-python-headless>=4.9
+opencv-python-headless>=4.9,<5   # 5.x dropped the face detector shorts/framing.py uses
 scenedetect>=0.6.4
 open_clip_torch>=2.24
 transformers>=4.40     # CLAP: music moods (shorts/music.py)

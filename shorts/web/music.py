@@ -28,6 +28,7 @@ def index():
     rejected = c.execute("""SELECT note, COUNT(*) AS n FROM tracks WHERE status='rejected'
                              GROUP BY note ORDER BY n DESC LIMIT 5""").fetchall()
     return render_template("music.html", channels=chans, ch=ch, tracks=tracks, uses=uses,
+                           scores=music.track_scores(c),
                            summary=music.summary(c), folder=music.folder(settings()),
                            moods=list(music.MOODS), rejected=rejected,
                            sources=music.music_sources(settings()),

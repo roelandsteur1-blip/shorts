@@ -1,4 +1,5 @@
-"""Assemble a 1080x1920 Short with ffmpeg: crop to 9:16, gentle motion, animated text (ASS/libass),
+"""Assemble a 1080x1920 Short with ffmpeg: crop to 9:16 around the subject (shorts/framing.py),
+slow zooms and punch-ins (plan_motion), animated text (ASS/libass),
 background music (shorts/music.py) at -14 LUFS. Original footage audio is never used."""
 from __future__ import annotations
 
@@ -93,13 +94,76 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 # ---------- video ----------
 
-def _segment_filter(idx: int, seconds: float, crop_x: float, width: int, height: int,
-                    mode: str, drift: float, hold: float = 0.0) -> str:
-    """Scale/crop one input to 1080x1920 with a slow pan or zoom so the frame never feels static.
+# Motion per block (shorts/render.py plan_motion): zoom factors relative to the 9:16 window.
+KEN_BURNS = 0.06   # slow zoom in or out on an ordinary block
+HOOK_PUSH = 0.10   # the hook pushes in a little faster
+PUNCH = 0.12       # a quick punch-in on a block with a highlighted word...
+PUNCH_SECONDS = 0.2
+PUNCH_GAP = 2      # ...at most every other block, and at most MAX_PUNCHES per Short
+MAX_PUNCHES = 3
+PAYOFF_PUSH = 0.07  # the last block pushes in slowly toward the payoff
+MAX_ZOOM = 1.25
+
+
+def plan_motion(blocks: list[dict]) -> list[dict]:
+    """{'kind', 'z0', 'z1'} per block: the hook pushes in, highlighted words get a punch-in (not
+    two in a row, at most three), the last block pushes in toward the payoff, the rest slowly
+    zoom in or out in turn. A block that continues the previous block's shot carries on from its
+    zoom, so the cut between them doesn't jump."""
+    plans: list[dict] = []
+    punches, last_punch = 0, -PUNCH_GAP
+    for i, b in enumerate(blocks):
+        prev = plans[-1] if plans else None
+        same = prev is not None and b.get("scene_id") == blocks[i - 1].get("scene_id")
+        z0 = prev["z1"] if same else 1.0
+        if i == 0:
+            kind, z1 = "push", 1.0 + HOOK_PUSH
+        elif "*" in (b.get("text") or "") and i - last_punch >= PUNCH_GAP and punches < MAX_PUNCHES:
+            kind, z1 = "punch", min(z0 + PUNCH, MAX_ZOOM)
+            punches, last_punch = punches + 1, i
+        elif i == len(blocks) - 1:
+            kind, z1 = "push", min(z0 + PAYOFF_PUSH, MAX_ZOOM)
+        else:
+            if same:  # keep going the way the shot was going; turn around at the limits
+                zoom_in = prev["kind"] == "in"
+                if zoom_in and z0 + KEN_BURNS > MAX_ZOOM:
+                    zoom_in = False
+                if not zoom_in and z0 - KEN_BURNS < 1.0:
+                    zoom_in = True
+            else:
+                zoom_in = i % 2 == 1
+                if not zoom_in:
+                    z0 = 1.0 + KEN_BURNS
+            kind = "in" if zoom_in else "out"
+            z1 = z0 + KEN_BURNS if zoom_in else z0 - KEN_BURNS
+        if kind == "punch" and z1 - z0 < 0.02:  # no room left to punch in: zoom back out instead
+            kind, z1 = "out", max(1.0, z0 - KEN_BURNS)
+        plans.append({"kind": kind, "z0": round(z0, 4), "z1": round(z1, 4)})
+    return plans
+
+
+def _zoom_expr(plan: dict, frames: int) -> str:
+    """zoompan's zoom for output frame `on`."""
+    z0, z1 = plan["z0"], plan["z1"]
+    u = f"min(on/{max(frames - 1, 1)},1)"
+    if plan["kind"] == "punch":
+        p = max(1, round(PUNCH_SECONDS * FPS))
+        jump = (z1 - z0) * 0.85  # most of it in the first fifth of a second, the rest slowly
+        return f"{z0:.4f}+{jump:.4f}*(1-pow(1-min(on/{p},1),3))+{z1 - z0 - jump:.4f}*{u}"
+    if plan["kind"] == "push":
+        return f"{z0:.4f}+{z1 - z0:.4f}*(1-pow(1-{u},2))"
+    return f"{z0:.4f}+{z1 - z0:.4f}*(0.5-0.5*cos(PI*{u}))"
+
+
+def _segment_filter(idx: int, seconds: float, frame: dict, width: int, height: int,
+                    mode: str, plan: dict | None = None, hold: float = 0.0) -> str:
+    """Scale/crop one input to 1080x1920. frame: shorts/framing.py's subject path (where the 9:16
+    window sits at the start and end of the block); plan: plan_motion's zoom.
     hold > 0: the scene is shorter than the block, so its last frame is held instead of running
     on past the cut into the next shot of the source video."""
     frames = max(1, round(seconds * FPS))
     src = f"[{idx}:v]fps={FPS}" + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0 else "")
+    tail = f"trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
     if mode == "blur":
         # Scale the source once to the output width; the blurred background is made from a
         # quarter-size copy of that (blur hides the detail anyway) and scaled up: far cheaper.
@@ -107,27 +171,38 @@ def _segment_filter(idx: int, seconds: float, crop_x: float, width: int, height:
             f"{src},scale={W}:-2:flags=bicubic,split=2[bg{idx}][fgs{idx}];"
             f"[bg{idx}]scale={W // 4}:{H // 4}:force_original_aspect_ratio=increase,crop={W // 4}:{H // 4},"
             f"boxblur=6:2,eq=brightness=-0.08,scale={W}:{H}[bgb{idx}];"
-            f"[bgb{idx}][fgs{idx}]overlay=(W-w)/2:(H-h)/2,trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
+            f"[bgb{idx}][fgs{idx}]overlay=(W-w)/2:(H-h)/2,{tail}"
         )
-    # Cover 1080x1920 with 8% headroom, then pan slowly around crop_x.
-    dur = max(seconds, 0.1)
-    pan = drift * W * 0.06
-    x = f"max(0,min(iw-ow,{crop_x:.3f}*iw-ow/2+({pan:.1f})*t/{dur:.3f}))"
-    return (
-        f"{src},scale={int(W * 1.08)}:{int(H * 1.08)}:force_original_aspect_ratio=increase:"
-        f"force_divisible_by=2:flags=bicubic,crop={W}:{H}:x='{x}':y='(ih-oh)/2',"
-        f"trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
-    )
+    from .framing import window_fraction
+    fw, fh = window_fraction(width, height)
+    # The window's left/top edge (fractions of the source) at the start and end of the block.
+    l0, l1 = frame["x0"] - fw / 2, frame["x1"] - fw / 2
+    t0, t1 = frame["y0"] - fh / 2, frame["y1"] - fh / 2
+    # 1) Cut the band the window moves through out of the source, so only that part is scaled.
+    bl, br = max(0.0, min(l0, l1)), min(1.0, max(l0, l1) + fw)
+    bt, bb = max(0.0, min(t0, t1)), min(1.0, max(t0, t1) + fh)
+    bw = max(W, round((br - bl) / fw * W / 2) * 2)
+    bh = max(H, round((bb - bt) / fh * H / 2) * 2)
+    band = (f"crop=w='iw*{br - bl:.5f}':h='ih*{bb - bt:.5f}':x='iw*{bl:.5f}':y='ih*{bt:.5f}',"
+            f"scale={bw}:{bh}:flags=bicubic")
+    # 2) Pan through it at output resolution (smooth), easing in and out.
+    u = f"(0.5-0.5*cos(PI*min(n/{max(frames - 1, 1)},1)))"
+    sx, sy = W / fw, H / fh  # output pixels per source-frame fraction
+    x = f"max(0,min(iw-ow,{(l0 - bl) * sx:.2f}+{(l1 - l0) * sx:.2f}*{u}))"
+    y = f"max(0,min(ih-oh,{(t0 - bt) * sy:.2f}+{(t1 - t0) * sy:.2f}*{u}))"
+    out = f"{src},{band},crop={W}:{H}:x='{x}':y='{y}'"
+    # 3) Zoom around the subject (fy: how high it sits in the window).
+    if plan and (plan["z0"] != 1.0 or plan["z1"] != 1.0):
+        fy = min(max(frame.get("fy", 0.5), 0.3), 0.7)
+        out += (f",zoompan=z='{_zoom_expr(plan, frames)}':x='0.5*(iw-iw/zoom)':y='{fy:.3f}*(ih-ih/zoom)'"
+                f":d=1:s={W}x{H}:fps={FPS}")
+    return f"{out},{tail}"
 
 
-def choose_mode(width: int, height: int, crop_x: float) -> str:
-    """Centre crop by default; blurred background only when the subject would be cut off."""
-    aspect = width / max(height, 1)
-    if aspect < 1.0:
-        return "crop"  # already portrait
-    if crop_x < 0.18 or crop_x > 0.82:
-        return "blur"
-    return "crop"
+def choose_mode(width: int, height: int) -> str:
+    """Crop to 9:16 (the window follows the subject, shorts/framing.py); a blurred background only
+    for very wide pictures (panoramas, cinemascope), where a crop would keep too little of them."""
+    return "blur" if width / max(height, 1) > 2.2 else "crop"
 
 
 def pick_music(conn: sqlite3.Connection, settings: Settings, short_id: int,
@@ -186,23 +261,31 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     # filters. 1080p is cheap on the CPU and keeps GPU memory free for parallel renders.
     gpu_decode = (settings.render_gpu_decode and settings.encoder != "libx264"
                   and any((b["height"] or 0) > 1080 for b in blocks) and media.nvdec_works())
-    for i, b in enumerate(blocks):
+    for b in blocks:
         # Consecutive blocks on the same scene continue where the previous one stopped.
         off = offsets.get(b["scene_id"], 0.0)
         start = b["start"] + off
         if start + b["seconds"] > b["end"] + 0.05:
             start = max(b["start"], b["end"] - b["seconds"])
         offsets[b["scene_id"]] = off + b["seconds"]
+        b["src_start"] = start
         # Never read past the scene's end: that is a cut to another shot (or a title card).
-        avail = max(b["end"] - start, 0.1)
+        b["avail"] = max(b["end"] - start, 0.1)
+
+    plans = plan_motion(blocks) if settings.render_zoom else [None] * len(blocks)
+    frames = _subject_paths(work, blocks)
+    for i, b in enumerate(blocks):
+        if i and b["scene_id"] == blocks[i - 1]["scene_id"]:
+            # Same shot as the block before: start where its window ended (no jump on the cut).
+            frames[i] = {**frames[i], "x0": frames[i - 1]["x1"], "y0": frames[i - 1]["y1"]}
+        avail = b["avail"]
         hold = b["seconds"] + 0.2 - avail if avail < b["seconds"] + 0.2 else 0.0
         if gpu_decode and (b["height"] or 0) > 1080:
             inputs += ["-hwaccel", "cuda"]
-        inputs += ["-ss", f"{start:.3f}", "-t", f"{min(b['seconds'] + 0.2, avail):.3f}", "-i", b["path"]]
-        mode = choose_mode(b["width"] or W, b["height"] or H, b["crop_x"] if b["crop_x"] is not None else 0.5)
-        drift = 1 if i % 2 == 0 else -1
-        filters.append(_segment_filter(i, b["seconds"], b["crop_x"] if b["crop_x"] is not None else 0.5,
-                                       b["width"] or W, b["height"] or H, mode, drift, hold))
+        inputs += ["-ss", f"{b['src_start']:.3f}", "-t", f"{min(b['seconds'] + 0.2, avail):.3f}", "-i", b["path"]]
+        mode = choose_mode(b["width"] or W, b["height"] or H)
+        filters.append(_segment_filter(i, b["seconds"], frames[i], b["width"] or W, b["height"] or H,
+                                       mode, plans[i], hold))
 
     n = len(blocks)
     total = sum(b["seconds"] for b in blocks)
@@ -252,6 +335,24 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         "-movflags", "+faststart", out_name,
     ]
     return work, args, total, music
+
+
+def _subject_paths(work: Path, blocks: list[dict]) -> list[dict]:
+    """shorts/framing.py's subject path for every block (a few at once: each is one small ffmpeg
+    read), cached in the render folder so a re-render or 'bench' doesn't read them again."""
+    from concurrent.futures import ThreadPoolExecutor
+    from . import framing
+    cache = framing.load_cache(work)
+
+    def one(b: dict) -> dict:
+        return framing.subject_path(b["path"], b["src_start"], min(b["seconds"], b["avail"]),
+                                    b["width"] or W, b["height"] or H,
+                                    b["crop_x"] if b["crop_x"] is not None else 0.5, cache)
+
+    with ThreadPoolExecutor(max_workers=max(1, min(4, len(blocks), os.cpu_count() or 1))) as pool:
+        out = list(pool.map(one, blocks))
+    framing.save_cache(work, cache)
+    return out
 
 
 # Links in a Shorts description are not clickable, so sources are named, not linked.

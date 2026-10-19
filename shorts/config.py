@@ -23,6 +23,7 @@ class Settings:
     claude_cmd: str = "claude"
     encoder: str = "auto"
     x264_preset: str = "veryfast"     # CPU encoding speed when NVENC is unavailable (medium = old, slower)
+    render_zoom: bool = True          # render: slow zooms, hook push-in, punch-ins on highlighted words
     render_gpu_decode: bool = True    # render: decode sources above 1080p on the GPU (NVDEC) when it works
     scene_detector: str = "fast"      # "fast" = one ffmpeg pass per video; "pyscenedetect" = the old way
     scene_fps: float = 10.0           # frames per second the fast scene detector looks at

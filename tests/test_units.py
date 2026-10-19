@@ -52,8 +52,41 @@ def test_ass_highlight_and_timing():
 
 
 def test_choose_mode():
-    assert render.choose_mode(1920, 1080, 0.5) == "crop"
-    assert render.choose_mode(1920, 1080, 0.05) == "blur"
+    assert render.choose_mode(1920, 1080) == "crop"
+    assert render.choose_mode(1080, 1920) == "crop"
+    assert render.choose_mode(2560, 1080) == "blur"
+
+
+def test_framing_finds_the_subject():
+    import numpy as np
+    from shorts import framing
+    frames = []
+    for i in range(4):  # a bright moving square on the left of a grey, slightly noisy frame
+        f = np.full((216, 384, 3), 90, np.uint8)
+        f += np.random.default_rng(i).integers(0, 6, f.shape, dtype=np.uint8)
+        x = 40 + i * 6
+        f[90:130, x:x + 40] = 240
+        frames.append(f)
+    res = framing.analyse(frames, 1920, 1080)
+    fw, _ = framing.window_fraction(1920, 1080)
+    assert res["x0"] < 0.3 and res["x1"] >= res["x0"]
+    assert res["x0"] - fw / 2 <= 40 / 384  # the square is inside the window
+    flat = framing.analyse([np.full((216, 384, 3), 90, np.uint8)] * 3, 1920, 1080)
+    assert flat["x0"] == flat["x1"] == 0.5  # nothing stands out: keep the middle
+
+
+def test_plan_motion():
+    blocks = [{"text": "Hook", "scene_id": 1}, {"text": "same shot", "scene_id": 1},
+              {"text": "a *big* word", "scene_id": 2}, {"text": "another *one*", "scene_id": 3},
+              {"text": "plain", "scene_id": 4}, {"text": "*third*", "scene_id": 5},
+              {"text": "payoff", "scene_id": 6}]
+    plans = render.plan_motion(blocks)
+    kinds = [p["kind"] for p in plans]
+    assert kinds[0] == "push" and plans[0]["z1"] > 1.0
+    assert plans[1]["z0"] == plans[0]["z1"]  # same shot carries on from the hook's zoom
+    assert kinds[2] == "punch" and kinds[3] != "punch"  # never two punch-ins in a row
+    assert kinds[5] == "punch" and kinds[6] == "push"
+    assert all(1.0 <= p["z0"] <= render.MAX_ZOOM and 1.0 <= p["z1"] <= render.MAX_ZOOM for p in plans)
 
 
 def test_next_slots_respects_per_day(conn, channel):

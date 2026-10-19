@@ -49,6 +49,29 @@ def test_pick_mood_least_used_and_not_previous(conn, settings, channel):
     assert music.pick(conn, settings, sid, channel)["title"] in ("b", "c")
 
 
+def test_music_from_popular_shorts_comes_back(conn, settings, channel):
+    d = settings.music_dir
+    paths = [str(tone(d / f"{n}.mp3", seconds=3, freq=200 + i * 50)) for i, n in enumerate(["hit", "flop", "new"])]
+    music.sync(conn, settings)
+    # Six Shorts on one channel: the two with "hit" got 4x the usual engaged views at 3 days.
+    for path, views in [(paths[0], 4000), (paths[0], 4000), (paths[1], 1000), (paths[1], 1000),
+                        (paths[1], 1000), (paths[1], 900)]:
+        sid = short(conn, music_path=path, status="uploaded")
+        conn.execute("INSERT INTO stats_age (short_id, days, views, engaged_views) VALUES (?, 3, ?, ?)",
+                     (sid, views * 2, views))
+    conn.commit()
+    scores = music.track_scores(conn)
+    assert scores[paths[0]]["shorts"] == 2 and scores[paths[0]]["score"] > 0.9
+    assert scores[paths[1]]["score"] < 0 and paths[2] not in scores
+    short(conn, music_path=paths[2])  # the previous Short had "new"
+    sid = short(conn)
+    # "hit" is used twice, "flop" four times; least-used alone would give "hit" anyway, so make it
+    # the most used one: it still wins on how its Shorts did.
+    for _ in range(3):
+        short(conn, music_path=paths[0], status="approved")
+    assert music.pick(conn, settings, sid, channel)["title"] == "hit"
+
+
 def test_fetch_keeps_only_cc0_music(conn, settings, channel, tmp_path):
     files = {"good": tone(tmp_path / "src" / "good.mp3"), "short": tone(tmp_path / "src" / "short.mp3", seconds=10)}
 
