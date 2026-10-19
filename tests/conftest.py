@@ -122,6 +122,9 @@ def fake_claude(monkeypatch):
                 {"claim": "Cassini reached Saturn in 2004", "verdict": "supported", "note": ""},
                 {"claim": "Saturn's rings are mostly water ice", "verdict": "unclear", "note": "not in source"},
             ]} for i in ids])
+        if "You screen archive videos" in prompt:
+            import re
+            return json.dumps([{"n": int(i), "fits": True, "why": ""} for i in re.findall(r"^(\d+)\. ", prompt, re.M)])
         n = prompt.count("\nHero ")
         return "```json\n" + json.dumps([{
             "hero": i + 1, "topic": f"topic {i}",

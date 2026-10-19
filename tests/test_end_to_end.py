@@ -64,7 +64,7 @@ def test_make_replaces_off_niche_heroes(library, settings, channel, monkeypatch)
 
     def ask(prompt, *a, **k):
         out = real(prompt, *a, **k)
-        if "fact checker" not in prompt:
+        if "fact checker" not in prompt and "You screen archive videos" not in prompt:
             calls.append(prompt)
             if len(calls) == 1:  # first batch: the first hero is off-niche
                 data = json.loads(out.strip("`\njson"))

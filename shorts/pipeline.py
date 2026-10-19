@@ -15,13 +15,13 @@ import threading
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
-from . import db, factcheck, hero, inspiration, llm, progress, render, script, shots, speed, voice
+from . import db, factcheck, inspiration, llm, niche, progress, render, script, shots, speed, voice
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
 
 _DONE = None  # end-of-stream marker on the queues
-REFILL_ROUNDS = 3  # times Make picks new hero shots for ones Claude skipped as off-niche
+REFILL_ROUNDS = 3  # times Make picks new hero shots for ones the script writer still skipped as off-niche
 # Shorts that count as "waiting" when Make for every channel tops channels up (failed ones are
 # retried by every run, so they don't count).
 WAITING = ("scripted", "checked", "rendered", "approved")
@@ -176,7 +176,7 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
     ch = lane.channel
     if lane.research and not lane.research.wait(RESEARCH_WAIT):
         log.info("%s: competitor research still running; writing with the old pattern bank", ch.id)
-    pending = hero.candidates(c, settings, ch.id, lane.count, categories=ch.categories, query=ch.hero_query)
+    pending = niche.pick_heroes(c, settings, ch, lane.count)
     total[0] -= lane.count - len(pending)
     if not pending:
         log.warning("%s: no unused hero shots left: run 'shorts ingest' to grow the library", ch.id)
@@ -188,7 +188,7 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
         if not missing or llm.limit_reached():
             break
         # New hero shots for ones that gave no script (off-niche videos are now excluded).
-        pending = hero.candidates(c, settings, ch.id, missing, categories=ch.categories, query=ch.hero_query)
+        pending = niche.pick_heroes(c, settings, ch, missing)
         if not pending:
             break
         log.info("%s: picked %d more hero shots for the ones skipped", ch.id, len(pending))

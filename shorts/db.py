@@ -248,7 +248,6 @@ CREATE TABLE IF NOT EXISTS tracks (
     UNIQUE (source, source_id)
 );
 
--- Videos the script writer said don't fit a channel's niche: never picked as a hero there again.
 -- Copyright (Content ID) claims on our Shorts. Claimed footage is never used again: public-domain
 -- clips can't be in Content ID, but broadcasters whose programmes contain them do claim them.
 CREATE TABLE IF NOT EXISTS claims (
@@ -284,11 +283,22 @@ CREATE TABLE IF NOT EXISTS idea_banks (
     made_at   TEXT NOT NULL
 );
 
+-- Videos found not to fit a channel's niche (by the niche screen or the script writer): never
+-- picked as a hero there again.
 CREATE TABLE IF NOT EXISTS off_niche (
     channel   TEXT NOT NULL,
     asset_id  INTEGER NOT NULL,
     reason    TEXT,
     at        TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (channel, asset_id)
+);
+
+-- Videos the niche screen passed for a channel, with the niche it was checked against (a changed
+-- niche checks them again).
+CREATE TABLE IF NOT EXISTS niche_ok (
+    channel   TEXT NOT NULL,
+    asset_id  INTEGER NOT NULL,
+    niche     TEXT NOT NULL,
     PRIMARY KEY (channel, asset_id)
 );
 """

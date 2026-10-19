@@ -1,5 +1,6 @@
 """Fixes from the code review of 16 Oct 2026."""
 import json
+import re
 
 import numpy as np
 import pytest
@@ -119,3 +120,31 @@ def test_off_niche_hero_is_skipped_and_remembered(library, settings, channel, mo
                            (channel.id, skipped)).fetchone()[0] == "a steel mill, not space"
     again = hero.candidates(library, settings, channel.id, 10)
     assert skipped not in {library.execute("SELECT asset_id FROM scenes WHERE id=?", (h,)).fetchone()[0] for h in again}
+
+
+def test_niche_screen_drops_off_niche_videos_before_scripts(library, settings, channel, monkeypatch):
+    """One screening call rejects a video; no script is ever asked for it, and both answers stick."""
+    from shorts import niche
+    pool = hero.candidates(library, settings, channel.id, 10)
+    assets = [library.execute("SELECT asset_id FROM scenes WHERE id=?", (h,)).fetchone()[0] for h in pool]
+    bad = assets[0]
+    calls = []
+
+    def ask(prompt, *a, **k):
+        calls.append(prompt)
+        assert "You screen archive videos" in prompt
+        n = len(re.findall(r"^\d+\. ", prompt, re.M))
+        return json.dumps([{"n": i + 1, "fits": i != 0, "why": "a flood newsreel"} for i in range(n)])
+    monkeypatch.setattr(llm, "ask", ask)
+    picked = niche.pick_heroes(library, settings, channel, 1)
+    assert len(calls) == 1 and len(picked) == 1
+    assert library.execute("SELECT asset_id FROM scenes WHERE id=?", (picked[0],)).fetchone()[0] != bad
+    assert library.execute("SELECT reason FROM off_niche WHERE channel=? AND asset_id=?",
+                           (channel.id, bad)).fetchone()[0] == "a flood newsreel"
+    # Passed videos are remembered: picking again asks nothing.
+    niche.pick_heroes(library, settings, channel, 1)
+    assert len(calls) == 1
+    # A changed niche screens them again.
+    monkeypatch.setattr(channel, "niche", "something else")
+    niche.pick_heroes(library, settings, channel, 1)
+    assert len(calls) == 2
