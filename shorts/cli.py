@@ -410,6 +410,8 @@ def _check(settings) -> int:
     import subprocess
 
     ok = True
+    win = sys.platform == "win32"
+    setup = "setup.ps1" if win else "setup.sh"
 
     def line(good: bool, what: str, hint: str = "") -> None:
         nonlocal ok
@@ -417,7 +419,8 @@ def _check(settings) -> int:
         print(f"[{'OK' if good else '!!'}] {what}" + (f"  -> {hint}" if not good and hint else ""))
 
     line(sys.version_info >= (3, 11), f"Python {sys.version.split()[0]}", "install Python 3.11+")
-    line(shutil.which("ffmpeg") is not None, "ffmpeg", "winget install Gyan.FFmpeg, then open a new terminal")
+    line(shutil.which("ffmpeg") is not None, "ffmpeg", "winget install Gyan.FFmpeg, then open a new terminal"
+         if win else "sudo apt install ffmpeg")
     if shutil.which("ffmpeg"):
         from .media import _nvenc_works
         line(_nvenc_works(), "NVENC (GPU video encoding)", "update the NVIDIA driver; falls back to CPU encoding")
@@ -426,12 +429,13 @@ def _check(settings) -> int:
     try:
         import torch
         line(torch.cuda.is_available(), f"PyTorch CUDA ({torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no GPU'})",
-             "re-run setup.ps1 (installs the CUDA build of PyTorch)")
+             "re-run setup.ps1 (installs the CUDA build of PyTorch)" if win else "no NVIDIA GPU: CPU is used")
     except ImportError:
-        line(False, "PyTorch", "run setup.ps1")
+        line(False, "PyTorch", f"run {setup}")
     from .llm import find_claude
     claude = find_claude(settings.claude_cmd)
-    line(claude is not None, "Claude Code CLI", "irm https://claude.ai/install.ps1 | iex, then run 'claude' once to log in")
+    line(claude is not None, "Claude Code CLI", "irm https://claude.ai/install.ps1 | iex, then run 'claude' once to log in"
+         if win else "curl -fsSL https://claude.ai/install.sh | bash; add ~/.local/bin to PATH")
     if claude:
         v = subprocess.run([claude, "--version"], capture_output=True, text=True)
         print(f"     {v.stdout.strip()}")
