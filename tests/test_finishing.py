@@ -25,7 +25,19 @@ class _FakeAnalytics:
         self.kw = kw
         return self
 
+    def videos(self):  # youtube v3 videos().list(...): live counts
+        return self
+
+    def list(self, **kw):
+        self.kw = kw
+        return self
+
     def execute(self):
+        if "id" in self.kw:
+            return {"items": [{"id": v, "statistics": {"viewCount": "1234", "likeCount": "5"}}
+                              for v in self.kw["id"].split(",")]}
+        if self.kw["filters"] in getattr(self, "no_rows", ()):
+            return {}
         days = (date.fromisoformat(self.kw["endDate"]) - date.fromisoformat(self.kw["startDate"])).days + 1
         return {"rows": [[days * 100, days * 50, 60.0, 20.0, days, 0, days]]}
 
@@ -170,3 +182,16 @@ def test_stats_hidden_shorts(client, conn, settings, channel, analytics):
     _age(conn, hidden, 3, 9999)
     page = client.get("/stats?days=3").data.decode()
     assert "New upload" in page and "Old upload" not in page and "9,999" not in page
+
+
+def test_stats_before_analytics(client, conn, settings, channel, analytics):
+    """Analytics lags days: a new Short shows live views and '–' instead of 0 and 0%; Shorts that
+    aren't public yet are skipped."""
+    analytics.no_rows = {"video==y1"}
+    add_short(conn, status="scheduled", title="Fresh", youtube_id="y1", publish_at="2026-10-17T00:00:00Z")
+    add_short(conn, status="scheduled", title="Later", youtube_id="y2", publish_at="2999-01-01T15:00:00Z")
+    assert upload.fetch_stats(conn, settings, channel) == 1
+    row = conn.execute("SELECT views, engaged_views, avg_view_pct, live_views, live_likes FROM stats").fetchone()
+    assert tuple(row) == (None, None, None, 1234, 5)
+    page = client.get("/stats").data.decode()
+    assert "Fresh" in page and "1,234" in page and ">0%<" not in page and "not in YouTube Analytics yet" in page

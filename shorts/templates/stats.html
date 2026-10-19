@@ -19,10 +19,10 @@ so a channel that started earlier doesn't look better. Small numbers: change fro
 {% if not rows %}<p class="muted">No stats yet: they come in after Shorts are published (press Fetch stats, or run <code>python -m shorts stats</code>).</p>{% endif %}
 {% if totals %}<h3>Lifetime totals</h3><div class="cards">{% for t in totals %}<div class="card"><h3 style="margin-top:0">{{ t.channel }}</h3>
 <span class="stat"><b>{{ t.shorts }}</b>Shorts</span><span class="stat"><b>{{ '{:,}'.format(t.views or 0) }}</b>views</span>
-<span class="stat"><b>{{ '%.0f'|format((t.engaged or 0) * 100) }}%</b>engaged</span><span class="stat"><b>{{ '%.0f'|format(t.pct or 0) }}%</b>avg viewed</span>
-<span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span></div>{% endfor %}</div>
+<span class="stat"><b>{{ '%.0f%%'|format(t.engaged * 100) if t.engaged is not none else '–' }}</b>engaged</span><span class="stat"><b>{{ '%.0f%%'|format(t.pct) if t.pct is not none else '–' }}</b>avg viewed</span>
+<span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span>{% if t.analysed < t.shorts %}<br><small class="muted">{{ t.shorts - t.analysed }} not in YouTube Analytics yet</small>{% endif %}</div>{% endfor %}</div>
 <h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>
-{% for f in by_format %}<tr><td>{{ f.channel }}</td><td>{{ f.format_id }}</td><td>{{ f.shorts }}</td><td>{{ '%.0f'|format(f.views or 0) }}</td><td>{{ '%.0f'|format(f.pct or 0) }}%</td></tr>{% endfor %}</table>{% endif %}
+{% for f in by_format %}<tr><td>{{ f.channel }}</td><td>{{ f.format_id }}</td><td>{{ f.shorts }}</td><td>{{ '%.0f'|format(f.views or 0) }}</td><td>{{ '%.0f%%'|format(f.pct) if f.pct is not none else '–' }}</td></tr>{% endfor %}</table>{% endif %}
 {% if reviews %}<h3>Review <span class="muted" style="font-size:14px">Shorts made in the last 30 days</span></h3>
 <p class="muted">Rejected Shorts and their reasons also go into the script prompt, so the writer avoids the same mistakes.</p>
 <table><tr><th>Channel</th><th>Reviewed</th><th>Rejected</th><th>Top reasons</th></tr>
@@ -41,12 +41,13 @@ On a channel the voiced Shorts are usually the newer ones, so a channel that is 
 {% else %}<p class="muted">Not enough yet: this needs channels with both voiced and text-only Shorts that are {{ days + 3 }} days old.</p>{% endif %}
 {% if rows %}<h3>Per Short</h3>
 <p class="muted">Sort: {% for k in ['views', 'retention', 'engaged', 'newest'] %}<a href="?sort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == sort }}">{{ k }}</a> {% endfor %}
-· engaged = engaged views / views, the closest public signal to "viewed vs swiped away". Since March 2025 views count every start and replay, so judge Shorts by engaged and avg viewed, not views</p>
+· engaged = engaged views / views, the closest public signal to "viewed vs swiped away". Since March 2025 views count every start and replay, so judge Shorts by engaged and avg viewed, not views.
+Views and likes are live; engaged, avg viewed and subs come from YouTube Analytics, which is 1-3 days behind (– = not in yet).</p>
 <table><tr><th>#</th><th>Title</th><th>Published</th><th>Views</th><th>Engaged</th><th>Avg viewed</th><th>Likes</th><th>Subs</th></tr>
 {% for r in rows %}<tr><td><a href="/short/{{ r.id }}">{{ r.id }}</a></td><td><a href="https://youtu.be/{{ r.youtube_id }}" target="_blank" rel="noopener">{{ r.title }}</a></td>
 <td class="muted">{{ (r.publish_at or '')[:10] }}</td><td>{{ '{:,}'.format(r.views or 0) }}</td>
-<td>{{ '%.0f'|format(100 * (r.engaged_views or 0) / r.views) if r.views else '–' }}%</td><td>{{ '%.0f'|format(r.avg_view_pct or 0) }}%</td>
-<td>{{ r.likes or 0 }}</td><td>{{ r.subs_gained or 0 }}</td></tr>{% endfor %}</table>{% endif %}
+<td>{{ '%.0f%%'|format(100 * r.engaged_views / r.a_views) if r.a_views and r.engaged_views is not none else '–' }}</td><td>{{ '%.0f%%'|format(r.avg_view_pct) if r.avg_view_pct is not none else '–' }}</td>
+<td>{{ r.likes or 0 }}</td><td>{{ r.subs_gained if r.subs_gained is not none else '–' }}</td></tr>{% endfor %}</table>{% endif %}
 <h3>Pipeline speed <span class="muted" style="font-size:14px">last 7 days</span></h3>
 {% if timings %}<table><tr><th>Step</th><th>Runs</th><th>Items</th><th>Total</th><th>Per item</th></tr>
 {% for t in timings %}<tr><td>{{ t.stage }}</td><td>{{ t.runs }}</td><td>{{ t.items }}</td><td>{{ '%.0f'|format(t.seconds / 60) }} min</td><td>{{ '%.1f'|format(t.per_item) }} s</td></tr>{% endfor %}</table>

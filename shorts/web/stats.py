@@ -12,12 +12,16 @@ from .common import channels, conn
 
 bp = Blueprint("stats", __name__)
 
-LATEST = """SELECT s.id, s.channel, s.title, s.voice, s.youtube_id, s.publish_at, s.format_id, st.views, st.engaged_views,
-                   st.avg_view_pct, st.avg_view_dur, st.likes, st.shares, st.subs_gained, st.fetched_at
+# views/likes: live from the Data API when there; a_views: Analytics views, the base for engaged (same days).
+# Analytics columns are NULL until YouTube has the numbers (1-3 days after publishing).
+LATEST = """SELECT s.id, s.channel, s.title, s.voice, s.youtube_id, s.publish_at, s.format_id,
+                   COALESCE(st.live_views, st.views) AS views, st.views AS a_views, st.engaged_views,
+                   st.avg_view_pct, st.avg_view_dur, COALESCE(st.live_likes, st.likes) AS likes, st.shares,
+                   st.subs_gained, st.fetched_at
               FROM shorts s JOIN stats st ON st.short_id = s.id
              WHERE st.rowid = (SELECT MAX(rowid) FROM stats WHERE short_id = s.id) AND NOT s.stats_hidden"""
 
-SORTS = {"views": "views DESC", "retention": "avg_view_pct DESC", "engaged": "engaged_views * 1.0 / NULLIF(views, 0) DESC",
+SORTS = {"views": "views DESC", "retention": "avg_view_pct DESC", "engaged": "engaged_views * 1.0 / NULLIF(a_views, 0) DESC",
          "newest": "publish_at DESC"}
 
 
@@ -119,10 +123,12 @@ def index():
     csort = request.args.get("csort", "views")
     sort = request.args.get("sort", "engaged")  # views count every replay since Mar 2025: judge by engaged
     selected = request.args.get("channel") or None
-    rows = c.execute(f"SELECT * FROM ({LATEST}) WHERE (? IS NULL OR channel = ?) ORDER BY {SORTS.get(sort, SORTS['views'])}",
+    rows = c.execute(f"SELECT * FROM ({LATEST}) WHERE (? IS NULL OR channel = ?) ORDER BY {SORTS.get(sort, SORTS['views'])} NULLS LAST",
                      (selected, selected)).fetchall()
     totals = c.execute(f"""SELECT channel, COUNT(*) AS shorts, SUM(views) AS views, SUM(subs_gained) AS subs,
-                                  AVG(avg_view_pct) AS pct, SUM(engaged_views) * 1.0 / NULLIF(SUM(views), 0) AS engaged
+                                  AVG(avg_view_pct) AS pct,
+                                  SUM(engaged_views) * 1.0 / NULLIF(SUM(CASE WHEN engaged_views IS NOT NULL THEN a_views END), 0) AS engaged,
+                                  COUNT(engaged_views) AS analysed
                              FROM ({LATEST}) GROUP BY channel""").fetchall()
     by_format = c.execute(f"""SELECT channel, format_id, COUNT(*) AS shorts, AVG(views) AS views, AVG(avg_view_pct) AS pct
                                 FROM ({LATEST}) GROUP BY channel, format_id ORDER BY channel, views DESC""").fetchall()

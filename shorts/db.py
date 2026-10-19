@@ -266,6 +266,8 @@ ADDED_COLUMNS = [
     ("shorts", "stats_hidden", "INTEGER NOT NULL DEFAULT 0"),  # 1 = left out of Stats; still blocks reuse
     ("assets", "claimed", "TEXT"),                         # who claimed it (claims table); never used again
     ("shorts", "screen_title", "TEXT"),                    # title bar at the top of the video (render.py)
+    ("stats", "live_views", "INTEGER"),                    # Data API view count at fetch time (Analytics lags days)
+    ("stats", "live_likes", "INTEGER"),
 ]
 
 
