@@ -106,6 +106,52 @@ CREATE TABLE IF NOT EXISTS stats (
     subs_gained    INTEGER
 );
 
+-- Every video on each channel as YouTube reports it (ytstats.py), updated in place on every fetch.
+-- state: live (public/unlisted), scheduled, private, processing, failed, gone (no longer on YouTube).
+-- views/likes/comments are live (Data API); an_views..subs_gained come from Analytics, which lags
+-- 1-3 days: NULL = not in Analytics yet. short_id is NULL for videos the pipeline didn't make.
+CREATE TABLE IF NOT EXISTS yt_videos (
+    youtube_id     TEXT PRIMARY KEY,
+    channel        TEXT NOT NULL,
+    short_id       INTEGER,
+    title          TEXT,
+    state          TEXT NOT NULL,
+    privacy        TEXT,
+    publish_at     TEXT,
+    duration_s     REAL,
+    is_short       INTEGER NOT NULL DEFAULT 1,     -- 3 minutes or less
+    views          INTEGER,
+    likes          INTEGER,
+    comments       INTEGER,
+    an_views       INTEGER,
+    engaged_views  INTEGER,
+    avg_view_pct   REAL,
+    avg_view_dur   REAL,
+    shares         INTEGER,
+    subs_gained    INTEGER,
+    hidden         INTEGER NOT NULL DEFAULT 0,     -- Hide button on Stats
+    first_seen     TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen      TEXT
+);
+
+-- Live views per video per day (the last fetch of that day), for growth without waiting for Analytics.
+CREATE TABLE IF NOT EXISTS yt_daily (
+    youtube_id  TEXT NOT NULL,
+    day         TEXT NOT NULL,
+    views       INTEGER,
+    PRIMARY KEY (youtube_id, day)
+);
+
+-- Last stats fetch per channel: when it last worked, the last error, and how far Analytics has data.
+CREATE TABLE IF NOT EXISTS yt_sync (
+    channel            TEXT PRIMARY KEY,
+    ok_at              TEXT,
+    error              TEXT,
+    error_at           TEXT,
+    analytics_through  TEXT,
+    yt_channel_id      TEXT
+);
+
 -- Each Short's first 1, 3 and 7 days (YouTube Analytics, fetched once the days are final), so
 -- channels and Shorts are compared at the same age instead of by lifetime totals.
 CREATE TABLE IF NOT EXISTS stats_age (
@@ -250,8 +296,14 @@ def connect(path: Path | str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")  # safe with WAL; far fewer disk flushes
     conn.execute("PRAGMA busy_timeout = 30000")  # dashboard, renders and Claude threads write at once
+    first_sync = not conn.execute("SELECT 1 FROM sqlite_master WHERE name='yt_videos'").fetchone()
     conn.executescript(SCHEMA)
     _migrate(conn)
+    if first_sync:
+        # Stats now follow YouTube: whatever is live on a channel counts, so the old "hidden" marks go.
+        # They never stopped footage or topics being reused: a Short blocks reuse just by existing.
+        conn.execute("UPDATE shorts SET stats_hidden = 0 WHERE youtube_id IS NOT NULL")
+        conn.commit()
     return conn
 
 

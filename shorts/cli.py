@@ -284,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{cid}: {result}")
         else:
             from .upload import fetch_stats
-            print(f"stats for {fetch_stats(conn, settings, channel)} Shorts")
+            print(f"stats for {fetch_stats(conn, settings, channel)} live Shorts")
     elif args.cmd == "research":
         return _research(conn, settings, channel, args)
     elif args.cmd == "status":

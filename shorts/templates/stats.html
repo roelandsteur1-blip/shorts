@@ -16,12 +16,16 @@ so a channel that started earlier doesn't look better. Small numbers: change fro
 <td>{{ '%.0f'|format(r.viewed) }}%{{ delta(r, 'viewed', '%.0f') }}</td>
 <td>{{ '%.1f'|format(r.subs) }}{{ delta(r, 'subs', '%.1f') }}</td></tr>{% endfor %}</table>
 {% else %}<p class="muted">Nothing yet: a Short's first {{ days }} day{{ 's' if days > 1 }} count once they are about {{ days + 3 }} days old (Fetch stats picks them up, also for older Shorts).</p>{% endif %}
-{% if not rows %}<p class="muted">No stats yet: they come in after Shorts are published (press Fetch stats, or run <code>python -m shorts stats</code>).</p>{% endif %}
-{% if totals %}<h3>Lifetime totals</h3><div class="cards">{% for t in totals %}<div class="card"><h3 style="margin-top:0">{{ t.channel }}</h3>
-<span class="stat"><b>{{ t.shorts }}</b>Shorts</span><span class="stat"><b>{{ '{:,}'.format(t.views or 0) }}</b>views</span>
+<h3>Channels <span class="muted" style="font-size:14px">what is on YouTube now</span></h3>
+{% if not cards %}<p class="muted">No stats yet: press Fetch stats (it also runs after every Daily upload).</p>{% endif %}
+<div class="cards">{% for t in cards %}<div class="card"><h3 style="margin-top:0">{{ t.name }}</h3>
+<span class="stat"><b>{{ t.live or 0 }}</b>live</span><span class="stat"><b>{{ t.scheduled or 0 }}</b>scheduled</span>
+<span class="stat"><b>{{ '{:,}'.format(t.views or 0) }}</b>views</span>
 <span class="stat"><b>{{ '%.0f%%'|format(t.engaged * 100) if t.engaged is not none else '–' }}</b>engaged</span><span class="stat"><b>{{ '%.0f%%'|format(t.pct) if t.pct is not none else '–' }}</b>avg viewed</span>
-<span class="stat"><b>{{ t.subs or 0 }}</b>subscribers</span>{% if t.analysed < t.shorts %}<br><small class="muted">{{ t.shorts - t.analysed }} not in YouTube Analytics yet</small>{% endif %}</div>{% endfor %}</div>
-<h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>
+<span class="stat"><b>{{ t.subs if t.subs is not none else '–' }}</b>subscribers</span>
+<br><small class="muted">{% if t.next_at %}Next goes live {{ t.next_at[:16]|replace('T', ' ') }} UTC · {% endif %}{% if t.gone %}{{ t.gone }} deleted · {% endif %}{% if t.waiting %}{{ t.waiting }} not in Analytics yet · {% endif %}{% if t.through %}Analytics up to {{ t.through }} · {% endif %}updated {{ t.ok }}</small>
+{% if t.error %}<br><small class="bad">Last fetch failed ({{ t.error_at }}): {{ t.error }}</small>{% endif %}</div>{% endfor %}</div>
+{% if by_format %}<h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>
 {% for f in by_format %}<tr><td>{{ f.channel }}</td><td>{{ f.format_id }}</td><td>{{ f.shorts }}</td><td>{{ '%.0f'|format(f.views or 0) }}</td><td>{{ '%.0f%%'|format(f.pct) if f.pct is not none else '–' }}</td></tr>{% endfor %}</table>{% endif %}
 {% if reviews %}<h3>Review <span class="muted" style="font-size:14px">Shorts made in the last 30 days</span></h3>
 <p class="muted">Rejected Shorts and their reasons also go into the script prompt, so the writer avoids the same mistakes.</p>
@@ -39,15 +43,25 @@ On a channel the voiced Shorts are usually the newer ones, so a channel that is 
 {% for r in voice.channels %}<tr><td>{{ r.channel }}</td><td>{{ r.voiced }}</td><td>{{ '{:,.0f}'.format(r.voiced_views) }}</td>
 <td>{{ r.plain }}</td><td>{{ '{:,.0f}'.format(r.plain_views) }}</td></tr>{% endfor %}</table>
 {% else %}<p class="muted">Not enough yet: this needs channels with both voiced and text-only Shorts that are {{ days + 3 }} days old.</p>{% endif %}
-{% if rows %}<h3>Per Short</h3>
+{% if rows %}<h3>Live Shorts</h3>
 <p class="muted">Sort: {% for k in ['views', 'retention', 'engaged', 'newest'] %}<a href="?sort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == sort }}">{{ k }}</a> {% endfor %}
 · engaged = engaged views / views, the closest public signal to "viewed vs swiped away". Since March 2025 views count every start and replay, so judge Shorts by engaged and avg viewed, not views.
 Views and likes are live; engaged, avg viewed and subs come from YouTube Analytics, which is 1-3 days behind (– = not in yet).</p>
-<table><tr><th>#</th><th>Title</th><th>Published</th><th>Views</th><th>Engaged</th><th>Avg viewed</th><th>Likes</th><th>Subs</th></tr>
-{% for r in rows %}<tr><td><a href="/short/{{ r.id }}">{{ r.id }}</a></td><td><a href="https://youtu.be/{{ r.youtube_id }}" target="_blank" rel="noopener">{{ r.title }}</a></td>
-<td class="muted">{{ (r.publish_at or '')[:10] }}</td><td>{{ '{:,}'.format(r.views or 0) }}</td>
-<td>{{ '%.0f%%'|format(100 * r.engaged_views / r.a_views) if r.a_views and r.engaged_views is not none else '–' }}</td><td>{{ '%.0f%%'|format(r.avg_view_pct) if r.avg_view_pct is not none else '–' }}</td>
-<td>{{ r.likes or 0 }}</td><td>{{ r.subs_gained if r.subs_gained is not none else '–' }}</td></tr>{% endfor %}</table>{% endif %}
+<table><tr><th>#</th><th>Title</th><th>Channel</th><th>Published</th><th>Views</th><th>Engaged</th><th>Avg viewed</th><th>Likes</th><th>Subs</th><th></th></tr>
+{% for r in rows %}<tr><td>{% if r.short_id %}<a href="/short/{{ r.short_id }}">{{ r.short_id }}</a>{% endif %}</td>
+<td><a href="https://youtu.be/{{ r.youtube_id }}" target="_blank" rel="noopener">{{ r.title }}</a>{% if not r.short_id %} <small class="muted">not from pipeline</small>{% endif %}</td>
+<td class="muted">{{ r.channel }}</td><td class="muted">{{ (r.publish_at or '')[:10] }}</td><td>{{ '{:,}'.format(r.views or 0) }}</td>
+<td>{{ '%.0f%%'|format(100 * r.engaged_views / r.an_views) if r.an_views and r.engaged_views is not none else '–' }}</td><td>{{ '%.0f%%'|format(r.avg_view_pct) if r.avg_view_pct is not none else '–' }}</td>
+<td>{{ r.likes or 0 }}</td><td>{{ r.subs_gained if r.subs_gained is not none else '–' }}</td>
+<td><form method="post" action="/stats/hide/{{ r.youtube_id }}" class="inline"><button title="Leave out of Stats">Hide</button></form></td></tr>{% endfor %}</table>{% endif %}
+{% if not_live %}<h3>Not live</h3><p class="muted">Scheduled Shorts get numbers once they go live.</p>
+<table><tr><th>#</th><th>Title</th><th>Channel</th><th>State</th><th>When</th></tr>
+{% for r in not_live %}<tr><td>{% if r.short_id %}<a href="/short/{{ r.short_id }}">{{ r.short_id }}</a>{% endif %}</td><td>{{ r.title }}{% if not r.short_id %} <small class="muted">not from pipeline</small>{% endif %}</td>
+<td class="muted">{{ r.channel }}</td><td class="{{ 'bad' if r.state in ('failed', 'gone') else 'muted' }}">{{ not_live_names.get(r.state, r.state) }}</td>
+<td class="muted">{{ (r.publish_at or '')[:16]|replace('T', ' ') }}</td></tr>{% endfor %}</table>{% endif %}
+{% if hidden %}<h3>Hidden</h3><table><tr><th>Title</th><th>Channel</th><th>State</th><th></th></tr>
+{% for r in hidden %}<tr><td>{{ r.title }}</td><td class="muted">{{ r.channel }}</td><td class="muted">{{ not_live_names.get(r.state, 'Live') }}</td>
+<td><form method="post" action="/stats/hide/{{ r.youtube_id }}" class="inline"><input type="hidden" name="hidden" value="0"><button>Show again</button></form></td></tr>{% endfor %}</table>{% endif %}
 <h3>Pipeline speed <span class="muted" style="font-size:14px">last 7 days</span></h3>
 {% if timings %}<table><tr><th>Step</th><th>Runs</th><th>Items</th><th>Total</th><th>Per item</th></tr>
 {% for t in timings %}<tr><td>{{ t.stage }}</td><td>{{ t.runs }}</td><td>{{ t.items }}</td><td>{{ '%.0f'|format(t.seconds / 60) }} min</td><td>{{ '%.1f'|format(t.per_item) }} s</td></tr>{% endfor %}</table>

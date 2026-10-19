@@ -121,20 +121,6 @@ def test_daily_task_outside_windows(settings, client, monkeypatch):
     assert client.post("/schedule/daily", data={"on": "1", "time": "8.30"}).status_code == 400
 
 
-def test_stats_page(client, conn):
-    a = add_short(conn, status="scheduled", title="Big one", youtube_id="y1", publish_at="2026-10-01T15:00:00Z")
-    b = add_short(conn, status="scheduled", title="Small one", youtube_id="y2", publish_at="2026-10-02T15:00:00Z")
-    conn.executemany("INSERT INTO stats (short_id, views, engaged_views, avg_view_pct, likes, subs_gained) VALUES (?,?,?,?,?,?)",
-                     [(a, 100, 50, 60.0, 1, 0), (a, 5000, 3000, 70.0, 40, 5), (b, 300, 60, 40.0, 2, 1)])
-    conn.commit()
-    page = client.get("/stats").data.decode()
-    assert "5,000" in page and "100</td>" not in page  # only the latest fetch per Short counts
-    assert page.index("Big one") < page.index("Small one")
-    page = client.get("/stats?sort=newest").data.decode()
-    assert page.index("Small one") < page.index("Big one")
-    assert "Fetch stats" in page and "Per format" in page
-
-
 class _FakeYouTube:
     """videos().insert(...).next_chunk(): ok `ok` times, then YouTube's uploadLimitExceeded."""
 

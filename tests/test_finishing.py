@@ -11,59 +11,6 @@ from shorts.web import stats as stats_page
 from test_schedule_stats import add_short, cfg, client  # noqa: F401 - fixtures
 
 
-class _FakeAnalytics:
-    """youtubeAnalytics reports().query(...).execute(): views = days in the period x 100."""
-
-    def __init__(self):
-        self.queries = []
-
-    def reports(self):
-        return self
-
-    def query(self, **kw):
-        self.queries.append(kw)
-        self.kw = kw
-        return self
-
-    def videos(self):  # youtube v3 videos().list(...): live counts
-        return self
-
-    def list(self, **kw):
-        self.kw = kw
-        return self
-
-    def execute(self):
-        if "id" in self.kw:
-            return {"items": [{"id": v, "statistics": {"viewCount": "1234", "likeCount": "5"}}
-                              for v in self.kw["id"].split(",")]}
-        if self.kw["filters"] in getattr(self, "no_rows", ()):
-            return {}
-        days = (date.fromisoformat(self.kw["endDate"]) - date.fromisoformat(self.kw["startDate"])).days + 1
-        return {"rows": [[days * 100, days * 50, 60.0, 20.0, days, 0, days]]}
-
-
-@pytest.fixture
-def analytics(monkeypatch):
-    import googleapiclient.discovery
-    fake = _FakeAnalytics()
-    monkeypatch.setattr(upload, "credentials", lambda *a, **k: None)
-    monkeypatch.setattr(googleapiclient.discovery, "build", lambda *a, **k: fake)
-    return fake
-
-
-def test_stats_at_age(conn, settings, channel, analytics):
-    old = add_short(conn, status="scheduled", youtube_id="y1", publish_at="2026-10-01T15:00:00Z")
-    new = add_short(conn, status="scheduled", youtube_id="y2", publish_at="2026-10-12T15:00:00Z")
-    assert upload.fetch_stats(conn, settings, channel, today=date(2026, 10, 17)) == 2
-    ages = {(r[0], r[1]): r[2] for r in conn.execute("SELECT short_id, days, views FROM stats_age")}
-    # The old Short gets all three; the new one only day 1 and day 3 (ends 14 Oct, final from 17 Oct); day 7 is not final yet.
-    assert ages == {(old, 1): 100, (old, 3): 300, (old, 7): 700, (new, 1): 100, (new, 3): 300}
-    n = len(analytics.queries)
-    upload.fetch_stats(conn, settings, channel, today=date(2026, 10, 17))
-    assert len(analytics.queries) == n + 2  # only the two lifetime queries again
-    assert conn.execute("SELECT COUNT(*) FROM stats").fetchone()[0] == 4
-
-
 def _age(conn, sid, days, views, engaged=0, pct=50.0, subs=0):
     conn.execute("INSERT INTO stats_age (short_id, days, views, engaged_views, avg_view_pct, subs_gained) VALUES (?,?,?,?,?,?)",
                  (sid, days, views, engaged, pct, subs))
@@ -169,29 +116,3 @@ def test_home_warnings(client, conn, settings):
     assert f"nothing scheduled on {empty}" in page
     conn.execute("DELETE FROM blocks"); conn.execute("DELETE FROM shorts"); conn.commit()
     assert "nothing scheduled in the next 7 days" in client.get("/").data.decode()
-
-
-def test_stats_hidden_shorts(client, conn, settings, channel, analytics):
-    """Old uploads kept as a record (their footage and topics stay used) are left out of Stats."""
-    from shorts import db
-    hidden = add_short(conn, status="scheduled", title="Old upload", youtube_id="y1", publish_at="2026-10-01T15:00:00Z")
-    shown = add_short(conn, status="scheduled", title="New upload", youtube_id="y2", publish_at="2026-10-01T15:00:00Z")
-    db.set_short(conn, hidden, stats_hidden=1)
-    assert upload.fetch_stats(conn, settings, channel, today=date(2026, 10, 17)) == 1
-    assert {r[0] for r in conn.execute("SELECT short_id FROM stats")} == {shown}
-    _age(conn, hidden, 3, 9999)
-    page = client.get("/stats?days=3").data.decode()
-    assert "New upload" in page and "Old upload" not in page and "9,999" not in page
-
-
-def test_stats_before_analytics(client, conn, settings, channel, analytics):
-    """Analytics lags days: a new Short shows live views and '–' instead of 0 and 0%; Shorts that
-    aren't public yet are skipped."""
-    analytics.no_rows = {"video==y1"}
-    add_short(conn, status="scheduled", title="Fresh", youtube_id="y1", publish_at="2026-10-17T00:00:00Z")
-    add_short(conn, status="scheduled", title="Later", youtube_id="y2", publish_at="2999-01-01T15:00:00Z")
-    assert upload.fetch_stats(conn, settings, channel) == 1
-    row = conn.execute("SELECT views, engaged_views, avg_view_pct, live_views, live_likes FROM stats").fetchone()
-    assert tuple(row) == (None, None, None, 1234, 5)
-    page = client.get("/stats").data.decode()
-    assert "Fresh" in page and "1,234" in page and ">0%<" not in page and "not in YouTube Analytics yet" in page

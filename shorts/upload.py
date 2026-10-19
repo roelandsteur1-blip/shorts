@@ -7,7 +7,7 @@ import logging
 import os
 import sqlite3
 import sys
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 
 from . import db
@@ -376,74 +376,14 @@ def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
     return out
 
 
-AGES = (1, 3, 7)  # stats_age: views etc. in a Short's first 1, 3 and 7 days
-LAG_DAYS = 3      # YouTube Analytics numbers for a day are final about this many days later
-METRICS = "views,engagedViews,averageViewPercentage,averageViewDuration,likes,shares,subscribersGained"
+from .ytstats import AGES, LAG_DAYS  # noqa: E402,F401 - Stats page imports them from here
 
 
-def _video_report(yta, youtube_id: str, start: str, end: str, empty: float | None = 0) -> list:
-    """Analytics for one video. No rows means YouTube has no numbers for those days yet (they come in
-    1-3 days late) or none exist; `empty` is what to store then (None = not known yet)."""
-    res = yta.reports().query(ids="channel==MINE", startDate=start, endDate=end, metrics=METRICS,
-                              filters=f"video=={youtube_id}").execute()
-    return (res.get("rows") or [[empty] * len(METRICS.split(","))])[0]
-
-
-def _live_counts(yt, youtube_ids: list[str]) -> dict[str, tuple[int, int]]:
-    """Views and likes right now from the YouTube Data API (no delay, unlike Analytics)."""
-    out = {}
-    for i in range(0, len(youtube_ids), 50):
-        res = yt.videos().list(part="statistics", id=",".join(youtube_ids[i:i + 50]), maxResults=50).execute()
-        for item in res.get("items", []):
-            st = item.get("statistics", {})
-            out[item["id"]] = (int(st.get("viewCount", 0)), int(st.get("likeCount", 0)))
-    return out
-
-
-def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel, interactive: bool = True,
-                today: date | None = None) -> int:
-    """Step 8: pull per-video analytics. 'Viewed vs swiped' isn't in the API; engagedViews/views
-    is the closest signal. Analytics lags 1-3 days, so views and likes also come live from the Data
-    API (live_views, live_likes) and analytics columns stay NULL until YouTube has them. Also stores each Short's first 1, 3 and 7 days once they are final
-    (stats_age), so Shorts and channels can be compared at the same age."""
-    from googleapiclient.discovery import build
-
-    creds = credentials(settings, channel, interactive)
-    yta = build("youtubeAnalytics", "v2", credentials=creds, cache_discovery=False)
-    yt = build("youtube", "v3", credentials=creds, cache_discovery=False)
-    now = datetime.now(timezone.utc) if today is None else datetime.combine(today, time.max, timezone.utc)
-    today = now.date()
-
-    def public(r) -> bool:  # scheduled Shorts that aren't public yet have nothing to count
-        when = r["publish_at"] or r["created_at"]
-        return datetime.fromisoformat(when.replace("Z", "+00:00").replace(" ", "T")[:19]).replace(
-            tzinfo=timezone.utc) <= now
-
-    rows = [r for r in conn.execute(
-        """SELECT id, youtube_id, publish_at, created_at FROM shorts
-            WHERE channel=? AND youtube_id IS NOT NULL AND NOT stats_hidden""",
-        (channel.id,)).fetchall() if public(r)]
-    live = _live_counts(yt, [r["youtube_id"] for r in rows])
-    n = 0
-    for r in rows:
-        start = date.fromisoformat((r["publish_at"] or r["created_at"])[:10])
-        vals = _video_report(yta, r["youtube_id"], start.isoformat(), today.isoformat(), empty=None)
-        conn.execute(
-            """INSERT INTO stats (short_id, views, engaged_views, avg_view_pct, avg_view_dur, likes, shares, subs_gained,
-                                  live_views, live_likes) VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (r["id"], *vals, *live.get(r["youtube_id"], (None, None))))
-        have = {x[0] for x in conn.execute("SELECT days FROM stats_age WHERE short_id=?", (r["id"],))}
-        for days in AGES:
-            end = start + timedelta(days=days - 1)
-            if days in have or end + timedelta(days=LAG_DAYS) > today:
-                continue
-            vals = _video_report(yta, r["youtube_id"], start.isoformat(), end.isoformat())
-            conn.execute(
-                """INSERT INTO stats_age (short_id, days, views, engaged_views, avg_view_pct, avg_view_dur, likes,
-                                          shares, subs_gained) VALUES (?,?,?,?,?,?,?,?,?)""", (r["id"], days, *vals))
-        n += 1
-    conn.commit()
-    return n
+def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel, interactive: bool = True) -> int:
+    """Step 8: every video on the channel from YouTube, with live views and Analytics (ytstats.py).
+    Returns the number of live Shorts."""
+    from .ytstats import sync_channel
+    return sync_channel(conn, settings, channel, interactive)
 
 
 def fetch_stats_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
