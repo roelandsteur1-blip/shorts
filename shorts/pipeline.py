@@ -75,7 +75,7 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     from .embed import embed_pending
     embed_pending(conn, settings)
     sort_pending(conn, settings)
-    fit.sort_pending(conn, settings)
+    fit.sort_pending(conn, settings, extra=[ch for ch, _, _ in orders])
 
     from . import library
     prefetched = None

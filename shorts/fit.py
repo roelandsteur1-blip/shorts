@@ -95,10 +95,13 @@ def pending(conn: sqlite3.Connection, channels: list[Channel]) -> dict[int, list
     return out
 
 
-def sort_pending(conn: sqlite3.Connection, settings: Settings, channels: list[Channel] | None = None) -> int:
-    """Sort every usable video that a channel hasn't judged yet. channels: default every channel.
-    Returns videos sorted. A failed call leaves the rest for the next run."""
+def sort_pending(conn: sqlite3.Connection, settings: Settings, channels: list[Channel] | None = None,
+                 extra: list[Channel] = ()) -> int:
+    """Sort every usable video that a channel hasn't judged yet. channels: default every channel;
+    extra: these too (the ones a run is about to make Shorts for, as loaded for it). Returns
+    videos sorted. A failed call leaves the rest for the next run."""
     channels = channels if channels is not None else all_channels(settings)
+    channels = list({c.id: c for c in [*channels, *extra]}.values())
     todo = pending(conn, channels)
     if not todo:
         return 0

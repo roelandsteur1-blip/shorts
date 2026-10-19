@@ -126,18 +126,23 @@ def test_hand_sorted_scenes_teach_clip(conn, settings):
     assert p[0, ids.index("transport")] >= 0.5
 
 
-def test_channel_only_uses_its_categories(library, settings, channel, monkeypatch):
-    """A space channel never opens with or cuts to a war scene, even a striking one."""
+def test_channel_only_uses_videos_that_fit(library, settings, channel, monkeypatch):
+    """A video sorted as not fitting the channel never opens a Short there or shows up as B-roll,
+    even a striking one; categories alone still narrow hero picks when asked."""
+    from shorts import fit
     war_scene = library.execute("SELECT id FROM scenes WHERE rejected=0 ORDER BY id DESC LIMIT 1").fetchone()[0]
+    war_video = library.execute("SELECT asset_id FROM scenes WHERE id=?", (war_scene,)).fetchone()[0]
     library.execute("DELETE FROM scene_categories WHERE scene_id=?", (war_scene,))
     library.execute("INSERT INTO scene_categories VALUES (?, 'war', 1, 'manual')", (war_scene,))
     library.commit()
-    assert war_scene not in hero.candidates(library, settings, channel.id, 50, categories=["space"])
     assert hero.candidates(library, settings, channel.id, 50, categories=["war"]) == [war_scene]
+    fit.mark(library, channel, war_video, False, "a warship", method="claude")
+    war_scenes = {r[0] for r in library.execute("SELECT id FROM scenes WHERE asset_id=?", (war_video,))}
+    assert not war_scenes & set(hero.candidates(library, settings, channel.id, 50, fits=channel))
     fake_claude(monkeypatch)
     sid = pipeline.make(library, settings, channel, count=1)[0]
     used = {r[0] for r in library.execute("SELECT scene_id FROM blocks WHERE short_id=?", (sid,))}
-    assert war_scene not in used
+    assert not war_scenes & used
 
 
 def test_credit_lines_for_other_archives(conn, channel):
