@@ -63,6 +63,25 @@ command -v claude >/dev/null || curl -fsSL https://claude.ai/install.sh | bash
 echo "== Tailscale (private access to the dashboard)"
 command -v tailscale >/dev/null || curl -fsSL https://tailscale.com/install.sh | sh
 
+echo "== Lock down SSH and the firewall (keys only, no root login; only SSH and Tailscale get in)"
+if [ -s "$HOME/.ssh/authorized_keys" ]; then
+  sudo tee /etc/ssh/sshd_config.d/10-shorts.conf >/dev/null <<SSHD
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+SSHD
+  sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
+else
+  echo "!! no SSH key for $USER yet: password login stays on until you add one and run setup.sh again"
+fi
+sudo apt-get install -y -q ufw fail2ban unattended-upgrades
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow OpenSSH
+sudo ufw allow in on tailscale0
+sudo ufw --force enable
+sudo systemctl enable --now fail2ban
+
 echo "== Dashboard as an always-on service"
 sed -e "s|@USER@|$USER|g" -e "s|@REPO@|$REPO|g" -e "s|@PATH@|$HOME/.local/bin:$PATH|g" \
   deploy/shorts-dashboard.service | sudo tee /etc/systemd/system/shorts-dashboard.service >/dev/null

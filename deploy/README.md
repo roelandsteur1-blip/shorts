@@ -21,7 +21,9 @@ chown -R shorts:shorts /home/shorts/.ssh
 ```
 
 (Add your laptop's public key to `/home/shorts/.ssh/authorized_keys` if it isn't there yet.) Then
-`SERVER` below is `shorts@<IP>`.
+`SERVER` below is `shorts@<IP>`. `setup.sh` then turns password and root login off and enables a
+firewall (only SSH and Tailscale), fail2ban and automatic security updates: a fresh VPS with
+password login on gets broken into within hours. Use a long random root password at the provider anyway.
 
 ```bash
 ssh -i KEY SERVER
