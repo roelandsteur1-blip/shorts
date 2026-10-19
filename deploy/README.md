@@ -5,8 +5,8 @@ The dashboard and all its jobs run 24/7 on a small server (target: Contabo Cloud
 CLIP / CLAP / Kokoro run on the CPU. The dashboard stays on 127.0.0.1; Tailscale makes it reachable
 from your own devices only.
 
-In the commands below `SERVER` is `ubuntu@<public IP>` and `KEY` is the private key file you
-downloaded from Oracle (e.g. `C:\Users\roela\.ssh\oracle-shorts.key`).
+In the commands below `KEY` is your SSH private key on the laptop (e.g. `C:\Users\roela\.ssh\contabo`,
+made with `ssh-keygen -t ed25519 -f $HOME\.ssh\contabo`).
 
 ## 1. Install (on the server)
 
