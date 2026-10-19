@@ -7,7 +7,7 @@ import math
 import re
 import sqlite3
 
-from . import formats as fmtlib, inspiration, llm, looks, progress
+from . import formats as fmtlib, inspiration, learn, llm, looks, progress
 from .config import Channel, Settings
 from .music import MOODS
 from .voice import channel_voice
@@ -36,7 +36,9 @@ footage (YouTube does not recommend or pay for templated, mass-produced Shorts):
 - Block 2 hints at the payoff so the viewer wants to stay ("but that's not the strange part").
 - The middle blocks build: link them with "but" / "so" / "then", each adding something new.
 - The LAST block is the payoff: the most surprising fact or the answer to the hook. Nothing after
-  it: no summary, no "comment below", no "follow for more".
+  it: no summary, no "comment below", no "follow for more". When it fits naturally, word it so it
+  runs straight on into the hook when the Short replays (a loop: "...and that is why" -> hook),
+  and give it the visual "hero" so the picture returns to the opening shot. Never force it.
 - Never write as a person or an expert ("As an engineer...", "I").
 
 Rules:
@@ -160,21 +162,40 @@ def rejects_note(conn: sqlite3.Connection, channel: str) -> str:
                          for r in rows) + "\n\n")
 
 
-def format_section(fmts: list[dict], used: dict[str, int] | None = None) -> tuple[str, str]:
-    """(prompt text, extra JSON field) for one fixed format or a choice of several."""
+FORMAT_MIN_RATED = 3  # Shorts with numbers a format needs before its result is shown
+
+
+def format_section(fmts: list[dict], used: dict[str, int] | None = None,
+                   results: dict | None = None) -> tuple[str, str]:
+    """(prompt text, extra JSON field) for one fixed format or a choice of several.
+    results: shorts/learn.py group scores per format: how each did on this channel."""
     if len(fmts) == 1:
         return f'Format: "{fmts[0]["title"]}"\n{fmts[0]["brief"].strip()}', ""
+    from .learn import percent
     used = used or {}
-    lines = "\n".join(f'- "{f["id"]}" ({f["title"]}, used {used.get(f["id"], 0)}x lately): {" ".join(f["brief"].split())}'
-                      for f in fmts)
+    rated = {k: v for k, v in (results or {}).items() if v["shorts"] >= FORMAT_MIN_RATED}
+
+    def note(f):
+        r = rated.get(f["id"])
+        res = f', does {percent(r["score"])} vs the channel\'s usual over {r["shorts"]} Shorts' if r else ""
+        return f'used {used.get(f["id"], 0)}x lately{res}'
+    lines = "\n".join(f'- "{f["id"]}" ({f["title"]}, {note(f)}): {" ".join(f["brief"].split())}' for f in fmts)
+    rule = ("preferring formats used least lately" if not rated else
+            "giving the formats that do better more Shorts, but every format at least one in five so "
+            "it keeps being tested, and among equals the one used least lately")
     return ("Formats (series) of this channel. For each hero shot pick the one that fits it best; over the\n"
-            "batch use different ones, preferring formats used least lately:\n" + lines,
+            f"batch use different ones, {rule}:\n" + lines,
             '"format": "<format id>", ')
+
+
+def format_results(conn: sqlite3.Connection, channel: str) -> dict:
+    from . import learn
+    return learn.group_scores(learn.short_scores(conn, channel), lambda s: s["format_id"])
 
 
 def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], past_topics: list[str],
                  lessons: str = "", other_topics: list[str] | None = None,
-                 format_use: dict[str, int] | None = None) -> str:
+                 format_use: dict[str, int] | None = None, format_results: dict | None = None) -> str:
     max_blocks = max(3, math.floor(channel.max_seconds / 2.6))
     min_blocks = max(3, math.ceil(channel.min_seconds / 3.0))
     hero_text = "\n\n".join(
@@ -191,7 +212,7 @@ def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], p
     return PROMPT.format(
         channel_name=channel.name, niche=channel.niche,
         language_name=LANGS.get(channel.language, channel.language),
-        format_section=(sections := format_section(fmt if isinstance(fmt, list) else [fmt], format_use))[0],
+        format_section=(sections := format_section(fmt if isinstance(fmt, list) else [fmt], format_use, format_results))[0],
         format_field=sections[1],
         other_topics=(f"Topics our other channels covered (pick a different angle or fact): "
                       f"{'; '.join(other_topics[-60:])}\n" if other_topics else ""),
@@ -334,8 +355,10 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
         prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id),
                               inspiration.prompt_note(conn, channel.id)
-                              + winners_note(conn, channel.id) + rejects_note(conn, channel.id),
-                              other_topics(conn, channel.id), format_use(conn, channel.id))
+                              + winners_note(conn, channel.id) + rejects_note(conn, channel.id)
+                              + learn.retention_note(conn, channel.id) + learn.patterns_note(conn, channel.id),
+                              other_topics(conn, channel.id), format_use(conn, channel.id),
+                              format_results(conn, channel.id))
         try:
             replies = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude script")
         except llm.LLMLimitError:

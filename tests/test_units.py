@@ -120,3 +120,12 @@ def test_jobs_run_under_console_python(tmp_path, monkeypatch):
     (tmp_path / "pythonw.exe").write_bytes(b"")
     monkeypatch.setattr(jobs.sys, "executable", str(tmp_path / "pythonw.exe"))
     assert jobs.console_python() == str(tmp_path / "python.exe")
+
+
+def test_format_results_in_the_prompt():
+    from shorts import script
+    fmts = [{"id": "a", "title": "A", "brief": "x"}, {"id": "b", "title": "B", "brief": "y"}]
+    text, _ = script.format_section(fmts, {"a": 2}, {"a": {"score": 1.0, "shorts": 5}, "b": {"score": 0.1, "shorts": 1}})
+    assert "does +100% vs the channel's usual over 5 Shorts" in text
+    assert "at least one in five" in text and "over 1 Shorts" not in text  # b has too few Shorts
+    assert "least lately" in script.format_section(fmts)[0]

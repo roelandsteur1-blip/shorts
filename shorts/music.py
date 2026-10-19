@@ -423,36 +423,89 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> N
         log.exception("music restock failed; Shorts use the tracks there are")
 
 
+# ---------- beats ----------
+
+BEAT_SR = 11025
+HOP = 256
+
+
+def beats(path: Path | str, start: float, seconds: float) -> np.ndarray:
+    """Beat times (seconds from `start`, the track looped like the render loops it) for cutting on
+    the beat. Onset strength from spectral flux, tempo from its autocorrelation (60-180 BPM), then
+    the beat grid at that tempo that lands on the most onsets. Empty when there is no clear beat."""
+    try:
+        raw = subprocess.run(["ffmpeg", "-v", "error", "-stream_loop", "-1", "-ss", f"{start:.2f}", "-i", str(path),
+                              "-t", f"{seconds + 1:.2f}", "-ac", "1", "-ar", str(BEAT_SR), "-f", "f32le", "-"],
+                             capture_output=True, check=True, timeout=60).stdout
+    except (subprocess.SubprocessError, OSError):
+        return np.zeros(0)
+    wave = np.frombuffer(raw, dtype=np.float32)
+    n = (len(wave) - 1024) // HOP
+    if n < 64:
+        return np.zeros(0)
+    frames = np.lib.stride_tricks.sliding_window_view(wave, 1024)[::HOP][:n] * np.hanning(1024)
+    mag = np.log1p(np.abs(np.fft.rfft(frames, axis=1)))
+    flux = np.maximum(np.diff(mag, axis=0), 0).sum(axis=1)
+    flux = flux - np.convolve(flux, np.ones(16) / 16, mode="same")  # local average out
+    flux = np.maximum(flux, 0)
+    if flux.max() <= 0:
+        return np.zeros(0)
+    fps = BEAT_SR / HOP
+    soft = np.convolve(flux, np.hanning(7), mode="same")  # a beat between two frames still lines up
+    lags = np.arange(int(fps * 60 / 180), int(fps * 60 / 60) + 1)
+    ac = np.array([np.dot(soft[:-lag], soft[lag:]) / (len(soft) - lag) for lag in lags])
+    if ac.max() <= 0:
+        return np.zeros(0)
+    # The shortest lag almost as strong as the best: 120 BPM, not its half 60 BPM.
+    k = int(np.argmax(ac >= 0.85 * ac.max()))
+    # Clear beat: the tempo's autocorrelation clearly above the average lag.
+    if ac[k] < 1.3 * ac.mean():
+        return np.zeros(0)
+    period = float(lags[k])
+    if 0 < k < len(ac) - 1:  # between two frames: parabola through the neighbours
+        d = ac[k - 1] - 2 * ac[k] + ac[k + 1]
+        if d < 0:
+            period += 0.5 * (ac[k - 1] - ac[k + 1]) / d
+    grid = lambda p: np.round(np.arange(p, len(soft) - 1, period)).astype(int)  # noqa: E731
+    phase = max(np.arange(0, period, 0.5), key=lambda p: soft[grid(p)].mean())
+    t = (grid(phase) + 1) / fps + 512 / BEAT_SR  # window centre
+    return t[t <= seconds]
+
+
+def snap_to_beats(seconds: list[float], beat_times: np.ndarray, reach: float = 0.15,
+                  min_block: float = 0.8) -> list[float]:
+    """Block lengths with each cut moved to the nearest beat within `reach` seconds. The total stays
+    the same (the last block takes up the difference) and no block gets shorter than min_block."""
+    if len(beat_times) == 0 or len(seconds) < 2:
+        return list(seconds)
+    cuts, t = [], 0.0
+    for s in seconds[:-1]:
+        t += s
+        cuts.append(t)
+    total, out, prev = sum(seconds), [], 0.0
+    for c in cuts:
+        b = beat_times[int(np.argmin(np.abs(beat_times - c)))]
+        new = float(b) if abs(b - c) <= reach and b - prev >= min_block else c
+        out.append(round(new - prev, 3))
+        prev = new
+    out.append(round(total - prev, 3))
+    if out[-1] < min_block:  # the last cut moved too late: leave it where it was
+        out[-2] += out[-1] - (seconds[-1])
+        out[-1] = seconds[-1]
+    return out
+
+
 # ---------- picking ----------
 
 POPULAR_BONUS = 4   # a track whose Shorts get twice the channel's usual engaged views counts as
                     # this many uses fewer when picking, so it comes back more often (and a flop less)
-SCORE_PRIOR = 2     # pretend every track has this many average Shorts: one lucky Short isn't a hit
-SCORE_LIMIT = 2.0   # log2 cap either way (4x better or worse)
 
 
 def track_scores(conn: sqlite3.Connection) -> dict[str, dict]:
-    """{track path: {'score', 'shorts'}}: how the Shorts with each track did, as log2 of their
-    engaged views over the median of their own channel at the same age (3 days, else 1), shrunk
-    toward 0 while few Shorts have numbers. Channels are compared with themselves, so a track
-    isn't 'popular' just because a big channel used it."""
-    rows = conn.execute(
-        """SELECT s.id, s.channel, s.music, a.days, a.engaged_views FROM stats_age a JOIN shorts s ON s.id = a.short_id
-            WHERE s.music IS NOT NULL AND a.engaged_views IS NOT NULL AND NOT s.stats_hidden
-              AND a.days IN (1, 3) ORDER BY a.days DESC""").fetchall()
-    usual: dict[tuple[str, int], list[int]] = {}
-    for r in rows:
-        usual.setdefault((r["channel"], r["days"]), []).append(r["engaged_views"])
-    logs: dict[str, list[float]] = {}
-    done: set[int] = set()
-    for r in rows:  # 3 days first: each Short counts once, at the longest age it has
-        vals = usual[(r["channel"], r["days"])]
-        if r["id"] in done or len(vals) < 3:  # too few Shorts on the channel to know its usual
-            continue
-        done.add(r["id"])
-        ratio = (r["engaged_views"] + 1) / (float(np.median(vals)) + 1)
-        logs.setdefault(r["music"], []).append(float(np.clip(np.log2(ratio), -SCORE_LIMIT, SCORE_LIMIT)))
-    return {path: {"score": sum(v) / (len(v) + SCORE_PRIOR), "shorts": len(v)} for path, v in logs.items()}
+    """{track path: {'score', 'shorts'}}: how the Shorts with each track did against their own
+    channel's usual (shorts/learn.py), so a track isn't 'popular' just because a big channel used it."""
+    from . import learn
+    return learn.group_scores(learn.short_scores(conn), lambda s: s["music"])
 
 
 def pick(conn: sqlite3.Connection, settings: Settings, short_id: int, channel: Channel | None) -> sqlite3.Row | None:

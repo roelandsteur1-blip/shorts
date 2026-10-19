@@ -1,3 +1,4 @@
+import json
 """Stats straight from YouTube (ytstats.py): every video on the channel, its state, live numbers,
 Analytics once it has them, and the Stats page built from that."""
 from datetime import date, datetime, timezone
@@ -63,6 +64,8 @@ class FakeYouTube:
         self.calls.append(kw)
         if kw.get("dimensions") == "day":
             return _Req(lambda: {"rows": [[self.through, 5]]})
+        if kw.get("dimensions") == "elapsedVideoTimeRatio":
+            return _Req(lambda: {"rows": [[k / 100, 1.0 - k / 200] for k in range(1, 101)]})
         if kw.get("dimensions") == "video":
             assert kw["sort"] == "-views" and kw["maxResults"] <= 200
             return _Req(lambda: {"rows": [[v, *m] for v, m in self.analytics.items()]})
@@ -174,6 +177,8 @@ def test_stats_at_age_once_final(conn, settings, channel, yt):
     ages = {(r[0], r[1]): r[2] for r in conn.execute("SELECT short_id, days, views FROM stats_age")}
     # The new Short's day 7 (ends 18 Oct) isn't final yet.
     assert ages == {(old, 1): 100, (old, 3): 300, (old, 7): 700, (new, 1): 100, (new, 3): 300}
+    curves = dict(conn.execute("SELECT short_id, curve FROM retention").fetchall())
+    assert set(curves) == {old, new} and json.loads(curves[old])[0] == [0.01, 0.995]
     n = sum("filters" in c for c in yt.calls)
     sync(conn, settings, channel, now)
     assert sum("filters" in c for c in yt.calls) == n  # nothing asked twice

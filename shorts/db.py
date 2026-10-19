@@ -168,6 +168,14 @@ CREATE TABLE IF NOT EXISTS stats_age (
     PRIMARY KEY (short_id, days)
 );
 
+-- Audience retention over a Short's first 3 days (YouTube Analytics audienceWatchRatio per
+-- elapsedVideoTimeRatio): JSON [[time share 0..1, share still watching], ...]. Fetched once.
+CREATE TABLE IF NOT EXISTS retention (
+    short_id    INTEGER PRIMARY KEY REFERENCES shorts(id),
+    curve       TEXT NOT NULL,
+    fetched_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Footage categories per scene (shorts/categorize.py). confidence 0 + method 'manual' means
 -- "not this category" (a correction by hand that a re-sort keeps).
 CREATE TABLE IF NOT EXISTS scene_categories (

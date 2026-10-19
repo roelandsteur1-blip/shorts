@@ -230,11 +230,21 @@ def prepare(conn: sqlite3.Connection, settings: Settings, channel: Channel, shor
             conn.commit()
             return None
     parts: list[np.ndarray] = [np.zeros(0, dtype=np.float32)] * len(blocks)
+    # Per block: when each of its words is said, seconds from the start of the block (for the
+    # spoken-word highlight in the captions); None without usable word timings.
+    timings: list[list | None] = [None] * len(blocks)
     for g, (audio, words) in zip(groups, spoken):
         # Cut the sentence at the block boundaries: the audio itself runs on without a gap.
         cuts = [int(round(c * SR)) for c in block_cuts([texts[i] for i in g], len(audio) / SR, words)]
         edges = [0, *cuts, len(audio)]
+        matched = words if words and len(words) == sum(len(texts[i].split()) for i in g) else None
+        n = 0
         for k, i in enumerate(g):
+            count = len(texts[i].split())
+            if matched:
+                off = edges[k] / SR
+                timings[i] = [[round(max(w[1] - off, 0), 3), round(w[2] - off, 3)] for w in matched[n:n + count]]
+            n += count
             piece = audio[edges[k]:edges[k + 1]]
             tail = GAP if k == len(g) - 1 else max(0.0, MIN_BLOCK - len(piece) / SR)
             if i == len(blocks) - 1:
@@ -254,11 +264,19 @@ def prepare(conn: sqlite3.Connection, settings: Settings, channel: Channel, shor
         log.info("short %d: voice speaks %.0f words a minute in %d sentence(s)", short_id, 60 * words / spoken_s, len(groups))
     work.mkdir(parents=True, exist_ok=True)
     write_wav(wav, np.concatenate(parts))
-    meta.write_text(json.dumps({"key": key, "seconds": seconds}), encoding="utf-8")
+    meta.write_text(json.dumps({"key": key, "seconds": seconds, "words": timings}), encoding="utf-8")
     conn.executemany("UPDATE blocks SET seconds=? WHERE id=?", [(x, b["id"]) for x, b in zip(seconds, blocks)])
     conn.execute("UPDATE shorts SET duration=? WHERE id=?", (sum(seconds), short_id))
     conn.commit()
     return wav
+
+
+def word_timings(work: Path) -> list | None:
+    """voice.json's per-block word timings, or None (text-only Short, older voice.json)."""
+    try:
+        return json.loads((work / "voice.json").read_text(encoding="utf-8")).get("words")
+    except (OSError, ValueError):
+        return None
 
 
 def samples(conn: sqlite3.Connection, settings: Settings, voices: list[str], shorts: int = 3) -> Path:

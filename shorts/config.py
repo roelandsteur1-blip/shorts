@@ -24,6 +24,11 @@ class Settings:
     encoder: str = "auto"
     x264_preset: str = "veryfast"     # CPU encoding speed when NVENC is unavailable (medium = old, slower)
     render_zoom: bool = True          # render: slow zooms, hook push-in, punch-ins on highlighted words
+    render_beat_cuts: bool = True     # render: move cuts up to 0.15 s to land on the music's beat
+    render_word_highlight: bool = True  # voiced Shorts: the word being said lights up in the caption
+    render_sfx: bool = True           # render: soft whoosh on cuts, low hit on punch-ins (made by ffmpeg)
+    render_grade: bool = True         # render: light colour grade per channel, cleanup of old SD film
+    render_speed_ramps: bool = True   # render: nearly still shots without people play at 1.2x
     render_gpu_decode: bool = True    # render: decode sources above 1080p on the GPU (NVDEC) when it works
     scene_detector: str = "fast"      # "fast" = one ffmpeg pass per video; "pyscenedetect" = the old way
     scene_fps: float = 10.0           # frames per second the fast scene detector looks at

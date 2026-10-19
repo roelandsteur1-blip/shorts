@@ -31,7 +31,50 @@ MAX_PAN = 0.6           # never pan further than this many window widths in one 
 _local = threading.local()  # one face detector per thread: OpenCV's isn't safe to share
 
 
-def _faces(gray: np.ndarray) -> list[tuple[int, int, int, int]]:
+YUNET_URL = ("https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/"
+             "face_detection_yunet_2023mar.onnx")
+MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+_yunet_path: Path | None | bool = None  # None = not looked for yet, False = not available
+_yunet_lock = threading.Lock()
+
+
+def _yunet_model() -> Path | None:
+    """YuNet (OpenCV's small face model, 230 KB, MIT): far better than Haar at side-on and small
+    faces. Fetched into models/ the first time; without it (offline) Haar is used."""
+    global _yunet_path
+    with _yunet_lock:
+        if _yunet_path is None:
+            path = MODELS_DIR / YUNET_URL.rsplit("/", 1)[1]
+            if not path.exists() and hasattr(cv2, "FaceDetectorYN"):
+                try:
+                    import urllib.request
+                    MODELS_DIR.mkdir(exist_ok=True)
+                    tmp = path.with_suffix(".part")
+                    with urllib.request.urlopen(YUNET_URL, timeout=20) as r:
+                        tmp.write_bytes(r.read())
+                    tmp.replace(path)
+                except Exception as e:  # noqa: BLE001 - offline: Haar does the job
+                    log.info("YuNet face model not available (%s): using Haar", e)
+            _yunet_path = path if path.exists() and hasattr(cv2, "FaceDetectorYN") else False
+        return _yunet_path or None
+
+
+def _faces(frame: np.ndarray) -> list[tuple[int, int, int, int]]:
+    """Faces as (x, y, w, h) in a BGR frame: YuNet when it is there, else Haar."""
+    h, w = frame.shape[:2]
+    model = _yunet_model()
+    if model:
+        global _yunet_path
+        try:
+            det = getattr(_local, "yunet", None)
+            if det is None:
+                det = _local.yunet = cv2.FaceDetectorYN.create(str(model), "", (w, h), 0.7, 0.3, 50)
+            det.setInputSize((w, h))
+            _, found = det.detect(frame)
+            return [tuple(int(v) for v in f[:4]) for f in found] if found is not None else []
+        except cv2.error as e:  # a broken model file or an OpenCV without it: Haar from now on
+            log.warning("YuNet failed (%s): using Haar", e)
+            _yunet_path = False
     cascade = getattr(_local, "cascade", None)
     if cascade is None:
         if not hasattr(cv2, "CascadeClassifier"):  # OpenCV 5 dropped it: no faces, the rest still works
@@ -41,7 +84,8 @@ def _faces(gray: np.ndarray) -> list[tuple[int, int, int, int]]:
         _local.cascade = cascade
     if not cascade or cascade.empty():
         return []
-    found = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(16, 16))
+    found = cascade.detectMultiScale(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), scaleFactor=1.1,
+                                     minNeighbors=6, minSize=(16, 16))
     return [tuple(int(v) for v in f) for f in found] if len(found) else []
 
 
@@ -61,7 +105,7 @@ def spectral_residual(gray: np.ndarray) -> np.ndarray:
     return _norm(cv2.GaussianBlur(sal.astype(np.float32), (0, 0), 2.5))
 
 
-def saliency_map(frame: np.ndarray, prev: np.ndarray | None) -> np.ndarray:
+def saliency_map(frame: np.ndarray, prev: np.ndarray | None, faces: list | None = None) -> np.ndarray:
     """One map per frame (MAP_W wide): stand-out detail, motion against the background, faces."""
     h, w = frame.shape[:2]
     mh = max(2, round(MAP_W * h / w))
@@ -80,7 +124,7 @@ def saliency_map(frame: np.ndarray, prev: np.ndarray | None) -> np.ndarray:
     # Logos and burnt-in captions sit at the top and bottom: worth less than the middle.
     ys = np.linspace(0, 1, mh)[:, None]
     sal = sal * np.where((ys < 0.1) | (ys > 0.72), 0.4, 1.0)
-    for (x, y, fw, fh) in _faces(gray):
+    for (x, y, fw, fh) in (_faces(frame) if faces is None else faces):
         cx, cy, r = (x + fw / 2) * MAP_W / w, (y + fh / 2) * mh / h, max(fw * MAP_W / w, 1.0)
         yy, xx = np.mgrid[0:mh, 0:MAP_W]
         sal = sal + FACE_WEIGHT * np.exp(-(((xx - cx) ** 2 + (yy - cy) ** 2) / (2 * r * r)))
@@ -116,10 +160,15 @@ def analyse(frames: list[np.ndarray], width: int, height: int) -> dict:
     """{'x0', 'x1', 'y0', 'y1'}: subject centre (fractions of the source frame) at the start
     and end of the block, plus 'fx', 'fy' (where the subject sits for zooming) and 'fit'."""
     fw, fh = window_fraction(width, height)
-    centres, ys, fits = [], [], []
+    centres, ys, fits, moves = [], [], [], []
+    faces = 0
     prev = None
     for fr in frames:
-        sal = saliency_map(fr, prev)
+        if prev is not None:
+            moves.append(float(np.mean(np.abs(fr.astype(np.float32) - prev.astype(np.float32)))) / 255)
+        found = _faces(fr)
+        faces += len(found)
+        sal = saliency_map(fr, prev, found)
         prev = fr
         cx, fit_x = best_window(sal.sum(axis=0), fw)
         cy, fit_y = best_window(sal.sum(axis=1), fh)
@@ -132,7 +181,7 @@ def analyse(frames: list[np.ndarray], width: int, height: int) -> dict:
         ys.append(sy)
         fits.append(min(fit_x, fit_y))
     if not centres:
-        return {"x0": 0.5, "x1": 0.5, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0}
+        return {"x0": 0.5, "x1": 0.5, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0, "motion": None, "faces": 0}
     c = np.array(centres)
     t = np.linspace(0, 1, len(c))
     path = []
@@ -155,7 +204,8 @@ def analyse(frames: list[np.ndarray], width: int, height: int) -> dict:
         lo, hi = frac / 2, 1 - frac / 2
         path += [float(np.clip(a, lo, hi)), float(np.clip(b, lo, hi))]
     return {"x0": path[0], "x1": path[1], "y0": path[2], "y1": path[3],
-            "fy": float(np.clip(np.median(ys), 0.25, 0.75)), "fit": float(np.mean(fits))}
+            "fy": float(np.clip(np.median(ys), 0.25, 0.75)), "fit": float(np.mean(fits)),
+            "motion": float(np.mean(moves)) if moves else None, "faces": faces}
 
 
 def read_frames(path: str, start: float, seconds: float, width: int, height: int) -> list[np.ndarray]:
@@ -181,7 +231,7 @@ def subject_path(path: str, start: float, seconds: float, width: int, height: in
     if res is None:
         fw, _ = window_fraction(width, height)
         x = float(np.clip(fallback_x, fw / 2, 1 - fw / 2))
-        res = {"x0": x, "x1": x, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0}
+        res = {"x0": x, "x1": x, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0, "motion": None, "faces": 0}
     if cache is not None:
         cache[key] = res
     return res

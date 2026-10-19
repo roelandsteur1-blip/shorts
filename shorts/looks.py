@@ -57,6 +57,25 @@ TITLE_SCALE = 0.8        # title size as a share of the caption size
 TITLE_MIN_SCALE = 0.5    # smallest it shrinks to so it fits in 2 lines
 
 
+# Colour grade: a light curve over the whole Short, one per channel (set as `grade` in [style],
+# else picked from the channel id), so the channels don't share one look. Subtle on purpose.
+GRADES = {
+    "neutral": "eq=contrast=1.04:saturation=1.06",
+    # Tints shift the colour planes directly (a lookup table: cheap), not via RGB (doubles the render).
+    "warm": "eq=contrast=1.05:saturation=1.08,lutyuv=u='val-3':v='val+4'",
+    "cool": "eq=contrast=1.05:saturation=1.05,lutyuv=u='val+4':v='val-2'",
+    "punchy": "eq=contrast=1.08:saturation=1.12",
+    "soft": "eq=contrast=1.02:saturation=1.03:gamma=1.02",
+}
+
+
+def grade(style: dict, channel_id: str) -> str | None:
+    """The ffmpeg filter for the channel's grade; None for grade = "off"."""
+    import zlib
+    name = style.get("grade") or list(GRADES)[zlib.crc32(channel_id.encode()) % len(GRADES)]
+    return GRADES.get(name)
+
+
 def title_bar(style: dict) -> str:
     bar = (style or {}).get("title_bar") or "always"
     return bar if bar in TITLE_BARS else "always"

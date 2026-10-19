@@ -43,9 +43,17 @@ def _ass_text(text: str, highlight: str, primary: str) -> str:
     return re.sub(r"\*(.+?)\*", lambda m: f"{{\\c{highlight}}}{m.group(1)}{{\\c{primary}}}", text).replace("*", "")
 
 
-def build_ass(blocks: list[dict], style: dict, title: str | None = None) -> str:
+def _spoken(token: str, highlight: str) -> str:
+    """The word being said, in the highlight colour (a *key word* already is)."""
+    return token if "*" in token else f"*{token}*"
+
+
+def build_ass(blocks: list[dict], style: dict, title: str | None = None,
+              word_times: list | None = None) -> str:
     """style: the channel's [style]; its look (shorts/looks.py) sets font and outline or box.
-    title: the screen title, shown at the top per the channel's title_bar (always / hook / off)."""
+    title: the screen title, shown at the top per the channel's title_bar (always / hook / off).
+    word_times: per block, when each word is spoken (voice.word_timings): the word being said is
+    highlighted too. The caption stays the whole block; only the colour of one word changes."""
     bar = looks.title_bar(style)
     title_size = looks.title_size(title, style) if title and bar != "off" else 0
     style = looks.resolve(style)
@@ -79,11 +87,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     lines, t = [], 0.0
     for i, b in enumerate(blocks):
         start, end = t, t + b["seconds"]
+        kind = "Hook" if i == 0 else "Body"
         pop = r"{\fad(90,70)\fscx82\fscy82\t(0,140,\fscx100\fscy100)}"
-        lines.append(
-            f"Dialogue: 0,{_ass_time(start)},{_ass_time(end - 0.04)},{'Hook' if i == 0 else 'Body'},,0,0,0,,"
-            f"{pop}{_ass_text(b['text'], highlight, primary)}"
-        )
+        words = (word_times or [None] * len(blocks))[i] if word_times and i < len(word_times) else None
+        tokens = b["text"].split()
+        if words and len(words) == len(tokens) and len(tokens) > 1:
+            # One event per spoken word, all with the same layout: only the colour of the word moves.
+            # The first carries the pop-in, the last the fade-out.
+            marks = [start] + [start + w[0] for w in words[1:]] + [end - 0.04]
+            for k in range(len(tokens)):
+                a, z = marks[k], max(marks[k + 1], marks[k] + 0.04)
+                if a >= end - 0.04:
+                    break
+                text = " ".join(_spoken(tok, highlight) if j == k else tok for j, tok in enumerate(tokens))
+                tag = (r"{\fad(90,0)\fscx82\fscy82\t(0,140,\fscx100\fscy100)}" if k == 0 else
+                       r"{\fad(0,70)}" if k == len(tokens) - 1 else "")
+                lines.append(f"Dialogue: 0,{_ass_time(a)},{_ass_time(min(z, end - 0.04))},{kind},,0,0,0,,"
+                             f"{tag}{_ass_text(text, highlight, primary)}")
+        else:
+            lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end - 0.04)},{kind},,0,0,0,,"
+                         f"{pop}{_ass_text(b['text'], highlight, primary)}")
         t = end
     if title_size:
         until = t if bar == "always" else blocks[0]["seconds"]
@@ -155,14 +178,41 @@ def _zoom_expr(plan: dict, frames: int) -> str:
     return f"{z0:.4f}+{z1 - z0:.4f}*(0.5-0.5*cos(PI*{u}))"
 
 
+OLD_FILM_SOURCES = {"prelinger", "internet_archive", "europeana", "openbeelden", "loc"}
+OLD_FILM_CLEAN = "hqdn3d=3:2:4:4,unsharp=5:5:0.5"  # grain and flicker down, then a little bite back
+
+
+STILL_MOTION = 0.012  # mean frame change (0-1) below which a shot counts as nearly still...
+SPEED_UP = 1.2        # ...and plays this much faster, unless there are people in it
+
+
+def speed_for(frame: dict, seconds: float, avail: float) -> float:
+    """Nearly still footage without faces (a rocket on the pad, a landscape) plays a little faster
+    so it feels alive; anything with people in it stays at normal speed. Only when the scene has
+    enough footage left for it."""
+    motion = frame.get("motion")
+    if motion is None or motion >= STILL_MOTION or frame.get("faces"):
+        return 1.0
+    return SPEED_UP if avail >= seconds * SPEED_UP + 0.2 else 1.0
+
+
+def old_film(source: str | None, height: int) -> bool:
+    """Archive film at SD size: worth a denoise before it is scaled up (cheap at that size)."""
+    return (source or "") in OLD_FILM_SOURCES and 0 < (height or 0) <= 576
+
+
 def _segment_filter(idx: int, seconds: float, frame: dict, width: int, height: int,
-                    mode: str, plan: dict | None = None, hold: float = 0.0) -> str:
+                    mode: str, plan: dict | None = None, hold: float = 0.0, clean: bool = False,
+                    speed: float = 1.0) -> str:
     """Scale/crop one input to 1080x1920. frame: shorts/framing.py's subject path (where the 9:16
     window sits at the start and end of the block); plan: plan_motion's zoom.
     hold > 0: the scene is shorter than the block, so its last frame is held instead of running
     on past the cut into the next shot of the source video."""
     frames = max(1, round(seconds * FPS))
-    src = f"[{idx}:v]fps={FPS}" + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0 else "")
+    src = (f"[{idx}:v]" + (f"setpts=PTS/{speed:.3f}," if speed != 1.0 else "") + f"fps={FPS}"
+           + (f",tpad=stop_mode=clone:stop_duration={hold:.3f}" if hold > 0 else ""))
+    if clean:
+        src += "," + OLD_FILM_CLEAN
     tail = f"trim=end_frame={frames},setpts=PTS-STARTPTS,setsar=1,format=yuv420p[v{idx}]"
     if mode == "blur":
         # Scale the source once to the output width; the blurred background is made from a
@@ -245,7 +295,7 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     'bench' can render with other settings. Returns (work folder, args, seconds, music)."""
     media.require_ffmpeg()
     blocks = [dict(r) for r in conn.execute(
-        """SELECT b.idx, b.text, b.seconds, b.scene_id, sc.start, sc.end, sc.crop_x, a.path, a.width, a.height
+        """SELECT b.idx, b.text, b.seconds, b.scene_id, sc.start, sc.end, sc.crop_x, a.path, a.width, a.height, a.source
              FROM blocks b JOIN scenes sc ON sc.id = b.scene_id JOIN assets a ON a.id = sc.asset_id
             WHERE b.short_id = ? ORDER BY b.idx""", (short_id,))]
     if not blocks:
@@ -254,7 +304,20 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     work = work_dir(settings, channel, short_id)
     work.mkdir(parents=True, exist_ok=True)
     title = conn.execute("SELECT screen_title FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
-    (work / "subs.ass").write_text(build_ass(blocks, channel.style, title), encoding="utf-8")
+    picked = pick_music(conn, settings, short_id, channel)
+    music = picked[0] if picked else None
+    if picked and settings.render_beat_cuts:
+        # Cuts on the music's beat (moved by at most 0.15 s; only in this render, the stored block
+        # lengths stay as they are). Captions move with the cuts.
+        from . import music as musiclib
+        snapped = musiclib.snap_to_beats([b["seconds"] for b in blocks],
+                                         musiclib.beats(music, picked[1], sum(b["seconds"] for b in blocks)))
+        for b, secs in zip(blocks, snapped):
+            b["seconds"] = secs
+    from . import voice as voicelib
+    voiced_row = conn.execute("SELECT voice FROM shorts WHERE id=?", (short_id,)).fetchone()
+    words = voicelib.word_timings(work) if voiced_row and voiced_row["voice"] and settings.render_word_highlight else None
+    (work / "subs.ass").write_text(build_ass(blocks, channel.style, title, words), encoding="utf-8")
 
     inputs, filters, offsets = [], [], {}
     # 4K sources: the GPU's video decoder does the heavy decoding, frames come back for the CPU
@@ -279,28 +342,34 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
             # Same shot as the block before: start where its window ended (no jump on the cut).
             frames[i] = {**frames[i], "x0": frames[i - 1]["x1"], "y0": frames[i - 1]["y1"]}
         avail = b["avail"]
-        hold = b["seconds"] + 0.2 - avail if avail < b["seconds"] + 0.2 else 0.0
+        # Not on a shot that the next or previous block continues: that one starts where this
+        # block would have stopped at normal speed.
+        shared = (i and blocks[i - 1]["scene_id"] == b["scene_id"]) or \
+            (i + 1 < len(blocks) and blocks[i + 1]["scene_id"] == b["scene_id"])
+        speed = speed_for(frames[i], b["seconds"], avail) if settings.render_speed_ramps and not shared else 1.0
+        need = b["seconds"] * speed + 0.2
+        hold = (need - avail) / speed if avail < need else 0.0
         if gpu_decode and (b["height"] or 0) > 1080:
             inputs += ["-hwaccel", "cuda"]
-        inputs += ["-ss", f"{b['src_start']:.3f}", "-t", f"{min(b['seconds'] + 0.2, avail):.3f}", "-i", b["path"]]
+        inputs += ["-ss", f"{b['src_start']:.3f}", "-t", f"{min(need, avail):.3f}", "-i", b["path"]]
         mode = choose_mode(b["width"] or W, b["height"] or H)
         filters.append(_segment_filter(i, b["seconds"], frames[i], b["width"] or W, b["height"] or H,
-                                       mode, plans[i], hold))
+                                       mode, plans[i], hold,
+                                       settings.render_grade and old_film(b["source"], b["height"] or 0), speed))
 
     n = len(blocks)
     total = sum(b["seconds"] for b in blocks)
     concat = "".join(f"[v{i}]" for i in range(n)) + f"concat=n={n}:v=1:a=0[vcat]"
     fontsdir = _fontsdir(work) if FONTS_DIR.exists() else None
     subs = "ass=subs.ass" + (f":fontsdir='{fontsdir}'" if fontsdir else "")
-    filters += [concat, f"[vcat]{subs}[vout]"]
+    graded = looks.grade(channel.style, channel.id) if settings.render_grade else None
+    filters += [concat, f"[vcat]{graded + ',' if graded else ''}{subs}[vout]"]
 
     row = conn.execute("SELECT voice FROM shorts WHERE id=?", (short_id,)).fetchone()
     voice_wav = work / "voice.wav"
     voiced = bool(row and row["voice"]) and voice_wav.exists()
     stereo = "aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo"
     idx = n
-    picked = pick_music(conn, settings, short_id, channel)
-    music = picked[0] if picked else None
     if picked:
         # Looped, so a track shorter than the Short (or a late start) never runs out. Under a
         # voice it sits well below the speech and is ducked further while someone talks.
@@ -327,6 +396,13 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         inputs += ["-f", "lavfi", "-t", f"{total:.3f}", "-i", "anullsrc=r=48000:cl=stereo"]
         filters.append(f"[{idx}:a]anull[aout]")
 
+    if settings.render_sfx:
+        sfx = sound_effects(blocks, plans)
+        if sfx:
+            # The last filter wrote [aout]: rename it and mix the effects in underneath.
+            filters[-1] = filters[-1][: filters[-1].rindex("[aout]")] + "[amain]"
+            filters += sfx + ["[amain][sfx]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]"]
+
     args = inputs + [
         "-filter_complex", ";".join(filters),
         "-map", "[vout]", "-map", "[aout]", "-t", f"{total:.3f}",
@@ -335,6 +411,39 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         "-movflags", "+faststart", out_name,
     ]
     return work, args, total, music
+
+
+SFX_VOLUME = 0.12  # whoosh and hit sit well under the music and voice
+
+
+def sound_effects(blocks: list[dict], plans: list[dict | None]) -> list[str]:
+    """Filters making [sfx]: a soft whoosh into every cut to another shot and a low hit under each
+    punch-in, both made by ffmpeg itself (filtered noise, a decaying low sine): no files, no licence.
+    [] when there is nothing to put a sound on."""
+    whooshes, hits, t = [], [], 0.0
+    for i, b in enumerate(blocks):
+        if i and b["scene_id"] != blocks[i - 1]["scene_id"]:
+            whooshes.append(max(t - 0.22, 0.0))  # the whoosh peaks on the cut
+        if plans[i] and plans[i]["kind"] == "punch":
+            hits.append(t)
+        t += b["seconds"]
+    if not whooshes and not hits:
+        return []
+    # One source per sound: an asplit of one source into delayed copies stalls ffmpeg 6's amix.
+    out, labels = [], []
+    for k, at in enumerate(whooshes):
+        out.append(f"anoisesrc=d=0.35:c=pink:r=48000:a=0.9,highpass=f=400,lowpass=f=4500,"
+                   f"afade=t=in:d=0.22:curve=exp,afade=t=out:st=0.22:d=0.13,adelay={int(at * 1000)}:all=1[wd{k}]")
+        labels.append(f"[wd{k}]")
+    for k, at in enumerate(hits):
+        out.append(f"sine=f=58:d=0.45:r=48000,volume=2.5,afade=t=out:st=0.02:d=0.43:curve=exp,"
+                   f"adelay={int(at * 1000)}:all=1[hd{k}]")
+        labels.append(f"[hd{k}]")
+    total = sum(b["seconds"] for b in blocks)
+    out.append("".join(labels) + f"amix=inputs={len(labels)}:duration=longest:normalize=0,"
+               f"volume={SFX_VOLUME},apad=whole_dur={total:.3f},atrim=0:{total:.3f},aresample=48000,"
+               "aformat=sample_fmts=fltp:channel_layouts=stereo[sfx]")
+    return out
 
 
 def _subject_paths(work: Path, blocks: list[dict]) -> list[dict]:

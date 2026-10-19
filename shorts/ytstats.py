@@ -7,6 +7,7 @@ Analytics lags 1-3 days: a live video missing from the report is "not in Analyti
 shown as '–') while it is younger than LAG_DAYS, and 0 after that."""
 from __future__ import annotations
 
+import json
 import logging
 import re
 import sqlite3
@@ -17,6 +18,7 @@ from .config import Channel, Settings
 log = logging.getLogger(__name__)
 
 AGES = (1, 3, 7)  # stats_age: views etc. in a Short's first 1, 3 and 7 days
+RETENTION_DAYS = 3  # retention curve: over a Short's first this many days
 LAG_DAYS = 3      # YouTube Analytics numbers for a day are final about this many days later
 SHORT_MAX_S = 180  # YouTube Shorts are at most 3 minutes
 METRICS = "views,engagedViews,averageViewPercentage,averageViewDuration,likes,shares,subscribersGained"
@@ -113,6 +115,13 @@ def _video_report(yta, youtube_id: str, start: str, end: str) -> list:
     return (res.get("rows") or [[0] * len(METRICS.split(","))])[0]
 
 
+def _retention(yta, youtube_id: str, start: str, end: str) -> list:
+    """[[time share, share still watching], ...] for one video (empty when Analytics has none)."""
+    res = _exec(yta.reports().query(ids="channel==MINE", startDate=start, endDate=end, metrics="audienceWatchRatio",
+                                    dimensions="elapsedVideoTimeRatio", filters=f"video=={youtube_id}"))
+    return [[float(r[0]), float(r[1])] for r in res.get("rows") or []]
+
+
 def sync_channel(conn: sqlite3.Connection, settings: Settings, channel: Channel, interactive: bool = True,
                  now: datetime | None = None) -> int:
     """Fetch everything for one channel and store it in one go. Returns the number of live Shorts.
@@ -179,7 +188,7 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
                       "subs_gained"), row))
 
     # Each Short's first 1, 3 and 7 days, once they are final (these few per-video queries happen once).
-    ages = []
+    ages, curves = [], []
     for v in live:
         if not v["short_id"] or not v["publish_at"]:
             continue
@@ -189,6 +198,17 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
             end = start + timedelta(days=days - 1)
             if days not in have and end + timedelta(days=LAG_DAYS) <= today:
                 ages.append((v["short_id"], days, *_video_report(yta, v["youtube_id"], start.isoformat(), end.isoformat())))
+        # Where people stop watching, over the first 3 days: fetched once with that age.
+        end3 = start + timedelta(days=RETENTION_DAYS - 1)
+        if end3 + timedelta(days=LAG_DAYS) <= today and not conn.execute(
+                "SELECT 1 FROM retention WHERE short_id=?", (v["short_id"],)).fetchone():
+            try:
+                curve = _retention(yta, v["youtube_id"], start.isoformat(), end3.isoformat())
+            except Exception as e:  # noqa: BLE001 - nice to have: the rest of the sync must not fail on it
+                log.warning("retention for %s: %s", v["youtube_id"], e)
+                curve = []
+            if curve:
+                curves.append((v["short_id"], json.dumps(curve)))
 
     # Everything is fetched: write it all at once.
     seen = _iso(now)
@@ -232,6 +252,7 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
                          (vid, channel.id, ours[vid]["id"], ours[vid]["id"], ours[vid]["publish_at"], seen))
         conn.executemany("""INSERT OR IGNORE INTO stats_age (short_id, days, views, engaged_views, avg_view_pct,
                             avg_view_dur, likes, shares, subs_gained) VALUES (?,?,?,?,?,?,?,?,?)""", ages)
+        conn.executemany("INSERT OR IGNORE INTO retention (short_id, curve) VALUES (?, ?)", curves)
         # rows an older version saved for Shorts that weren't public yet (all zeros)
         conn.execute("""DELETE FROM stats WHERE short_id IN (SELECT id FROM shorts WHERE channel=? AND publish_at IS NOT NULL)
                           AND fetched_at < replace(substr((SELECT publish_at FROM shorts WHERE id=short_id), 1, 19), 'T', ' ')""",
