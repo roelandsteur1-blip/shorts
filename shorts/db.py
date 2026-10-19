@@ -283,8 +283,7 @@ CREATE TABLE IF NOT EXISTS idea_banks (
     made_at   TEXT NOT NULL
 );
 
--- Videos found not to fit a channel's niche (by the niche screen or the script writer): never
--- picked as a hero there again.
+-- Old: videos the script writer said don't fit a channel. Copied into channel_fit, no longer written.
 CREATE TABLE IF NOT EXISTS off_niche (
     channel   TEXT NOT NULL,
     asset_id  INTEGER NOT NULL,
@@ -293,14 +292,21 @@ CREATE TABLE IF NOT EXISTS off_niche (
     PRIMARY KEY (channel, asset_id)
 );
 
--- Videos the niche screen passed for a channel, with the niche it was checked against (a changed
--- niche checks them again).
-CREATE TABLE IF NOT EXISTS niche_ok (
+-- Which videos fit which channel (shorts/fit.py): one Claude call sorts a batch of videos against
+-- every channel's niche. fits 1/0; niche = the niche it was judged against (a changed niche sorts
+-- again), '*' = stays whatever the niche (set by hand). method: claude, script (the script writer
+-- skipped it), manual.
+CREATE TABLE IF NOT EXISTS channel_fit (
     channel   TEXT NOT NULL,
     asset_id  INTEGER NOT NULL,
+    fits      INTEGER NOT NULL,
     niche     TEXT NOT NULL,
+    reason    TEXT,
+    method    TEXT NOT NULL,
+    at        TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (channel, asset_id)
 );
+CREATE INDEX IF NOT EXISTS channel_fit_asset ON channel_fit(asset_id);
 """
 
 
@@ -348,6 +354,12 @@ def _migrate(conn: sqlite3.Connection) -> None:
         if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
             changed = True
+    # Script-writer rejections from before channel_fit existed stay rejected.
+    if conn.execute("SELECT 1 FROM off_niche LIMIT 1").fetchone():
+        conn.execute("""INSERT OR IGNORE INTO channel_fit (channel, asset_id, fits, niche, reason, method, at)
+                        SELECT channel, asset_id, 0, '*', reason, 'script', at FROM off_niche""")
+        conn.execute("DELETE FROM off_niche")
+        changed = True
     if changed:
         conn.commit()
 

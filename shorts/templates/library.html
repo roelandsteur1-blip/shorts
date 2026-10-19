@@ -1,5 +1,18 @@
 {% extends "base.html" %}{% block title %}Library{% endblock %}{% block body %}
 <h1>Footage library</h1>
+<h2>Per channel</h2>
+<p class="muted">Claude sorts every video against each channel's niche (one call per 40 videos, for all channels at once).
+A channel only uses videos that fit it; categories below only decide where new footage is searched.</p>
+<div class="cards">
+{% for p in per_channel %}<div class="card">
+<h3 style="margin:0">{{ p.ch.name }}</h3>
+<p class="muted" style="margin:2px 0">{{ p.ch.niche }}</p>
+<p><a href="/library/channel/{{ p.ch.id }}"><span class="stat"><b>{{ p.fits }}</b>videos fit</span></a>
+<a href="/library/channel/{{ p.ch.id }}?show=no"><span class="stat"><b>{{ p.no }}</b>don't</span></a></p>
+<p class="muted" style="margin:2px 0">footage for {{ p.left }} more Shorts{% if p.waiting %} · <span class="warn">{{ p.waiting }} not sorted yet</span>{% endif %}</p>
+</div>{% endfor %}
+</div>
+<h2>Categories</h2>
 <p class="muted">Every scene is sorted into categories: archive metadata first, then CLIP on the GPU, Claude only when those disagree.
 Sorted by: {% for m, n in methods.items() %}{{ m }} {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
 <p>{% if unsorted %}<span class="warn">{{ unsorted }} scenes not sorted yet.</span> {% endif %}

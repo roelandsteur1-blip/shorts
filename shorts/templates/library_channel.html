@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}{{ ch.name }} footage{% endblock %}{% block body %}
+<h1>{{ ch.name }}: {{ "videos it uses" if show else "videos it doesn't use" }}</h1>
+<p class="muted">Niche: {{ ch.niche }}. Wrong? One click fixes it for good.
+<a href="/library/channel/{{ ch.id }}{{ '?show=no' if show else '' }}">Show the videos it {{ "doesn't use" if show else "uses" }}</a></p>
+<div class="thumbs">
+{% for r in rows %}<div class="card" style="margin:0;padding:8px" id="v{{ r.id }}">
+<a href="{{ r.source_url }}" target="_blank" rel="noopener">{% if r.scene %}<img loading="lazy" src="/keyframe/{{ r.scene }}" alt="">{% endif %}</a>
+<p style="margin:4px 0;font-size:12px">{{ (r.title or '')[:60] }}</p>
+<p class="muted" style="margin:0;font-size:11px">{{ r.source }} · {{ r.method }}{% if r.reason %} · {{ r.reason }}{% endif %}</p>
+<button class="pill" style="padding:2px 8px;margin-top:4px" onclick="setFit({{ r.id }}, {{ 0 if show else 1 }})">{{ "Not for this channel" if show else "Use on this channel" }}</button>
+</div>{% endfor %}
+</div>
+{% if not rows %}<p class="muted">Nothing here.</p>{% endif %}
+<p>{% if page > 0 %}<a href="?show={{ 'yes' if show else 'no' }}&page={{ page - 1 }}">← previous</a> {% endif %}{% if more %}<a href="?show={{ 'yes' if show else 'no' }}&page={{ page + 1 }}">next →</a>{% endif %}</p>
+<script>
+async function setFit(id, fits) {
+  await fetch(`/library/channel/{{ ch.id }}/${id}`, {method: 'POST', headers: {'X-Requested-With': 'fetch'},
+    body: new URLSearchParams({fits: fits})});
+  document.getElementById('v' + id).style.opacity = 0.3;
+}
+</script>
+{% endblock %}

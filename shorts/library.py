@@ -7,7 +7,7 @@ import shutil
 import sqlite3
 from pathlib import Path
 
-from . import hero
+from . import fit, hero
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
@@ -50,25 +50,24 @@ def move_footage(conn: sqlite3.Connection, settings: Settings) -> tuple[int, flo
 
 def shorts_left(conn: sqlite3.Connection, settings: Settings, channel: Channel,
                 category: str | None = None) -> int:
-    """Shorts the library can still open on this channel (in one of its categories, or in
-    `category` only). A long video counts for several, see hero.budget()."""
-    cats = [category] if category else channel.categories
-    return hero.shorts_left(conn, settings, channel.id, cats)[0]
+    """Shorts the library can still open on this channel: from videos that fit it (shorts/fit.py),
+    in `category` only when given. A long video counts for several, see hero.budget()."""
+    return hero.shorts_left(conn, settings, channel.id, [category] if category else None, fits=channel)[0]
 
 
 def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
                  need: int = 0) -> list[tuple[str, list[str]]]:
-    """(source, search queries) to run: for each of the channel's categories that is running low,
-    the category's search hints per source the channel uses. The channel's own search_terms are
-    added for its first category (they describe its niche)."""
+    """(source, search queries) to run when the channel runs low: its own search_terms (they describe
+    its niche) plus the search hints of its categories, per source the channel uses. Low means
+    fitting footage (shorts/fit.py) in total: a category the channel rarely fits stays "low" for it
+    for good, so categories are not counted one by one."""
     from . import sources
     from .categorize import load_categories
 
     cats = {c.id: c for c in load_categories(settings)}
     wanted = [c for c in channel.categories if c in cats] or [None]
     total = shorts_left(conn, settings, channel)
-    low = [c for c in wanted if total < need
-           or shorts_left(conn, settings, channel, c) < settings.restock_below]
+    low = wanted if total < max(need, settings.restock_below) else []
     plan: dict[str, list[str]] = {}
     for src in channel.sources or ["nasa"]:
         ok, why = sources.usable(settings, src)
@@ -78,23 +77,21 @@ def restock_plan(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         for c in low:
             queries = cats[c].queries(src) if c else []
             if c == wanted[0]:
-                queries = queries + channel.search_terms
+                queries = channel.search_terms + queries
             plan[src] = list(dict.fromkeys(plan.get(src, []) + queries))
     return [(src, qs) for src, qs in plan.items() if qs]
 
 
 def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need: int = 0,
             only_if_short: bool = False) -> int:
-    """Download, cut, embed and sort new footage when the channel's categories have fewer than
-    settings.restock_below (or, in total, `need`) Shorts left in the library. One download serves
-    every channel whose categories it lands in. only_if_short: only when fewer than `need` are left
+    """Download, cut, embed and sort new footage when the channel has footage for fewer than
+    settings.restock_below (or `need`) Shorts left in the library. One download serves every
+    channel it fits. only_if_short: only when fewer than `need` are left
     (make uses this before picking, and tops up after rendering). Returns the number of new videos."""
     left = shorts_left(conn, settings, channel)
     if only_if_short and left >= need:
         return 0
-    if left >= max(settings.restock_below, need) and all(
-            shorts_left(conn, settings, channel, c) >= settings.restock_below
-            for c in channel.categories):
+    if left >= max(settings.restock_below, need):
         return 0
     from .categorize import sort_pending
     from .embed import embed_pending
@@ -116,6 +113,7 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, need
     process_all(conn, settings)  # anything that finished after the cutter's last look
     embed_pending(conn, settings)
     sort_pending(conn, settings)
+    fit.sort_pending(conn, settings)
     log.info("added %d videos; footage for %d Shorts now", new, shorts_left(conn, settings, channel))
     return new
 
@@ -165,8 +163,7 @@ def prefetch(conn: sqlite3.Connection, settings: Settings,
     plan: dict[str, list[str]] = {}
     for ch, count in orders:
         left = shorts_left(conn, settings, ch)
-        if max(0, left - count) >= settings.restock_below and all(
-                shorts_left(conn, settings, ch, c) >= settings.restock_below for c in ch.categories):
+        if max(0, left - count) >= settings.restock_below:
             continue
         for src, queries in restock_plan(conn, settings, ch, need=settings.restock_below + count):
             plan[src] = list(dict.fromkeys(plan.get(src, []) + queries))
@@ -187,6 +184,7 @@ def finish_prefetch(conn: sqlite3.Connection, settings: Settings, dl: Downloads)
     process_all(conn, settings)
     embed_pending(conn, settings)
     sort_pending(conn, settings)
+    fit.sort_pending(conn, settings)
     log.info("added %d prefetched videos", new)
     return new
 

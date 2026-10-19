@@ -389,9 +389,8 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
 
 
 def mark_off_niche(conn: sqlite3.Connection, channel: Channel, asset_id: int, reason: str) -> None:
-    conn.execute("INSERT OR REPLACE INTO off_niche (channel, asset_id, reason) VALUES (?,?,?)",
-                 (channel.id, asset_id, reason[:200]))
-    conn.commit()
+    from . import fit
+    fit.mark(conn, channel, asset_id, False, reason, method="script")
     log.info("%s: video %s doesn't fit the niche (%s); not used on this channel", channel.id, asset_id, reason)
 
 

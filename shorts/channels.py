@@ -128,7 +128,7 @@ Footage sources available (id: label): {sources}
 
 Answer with only JSON:
 {{"hashtags": ["#..." 2 specific to the niche, then "#shorts" (YouTube shows 3)],
-  "categories": ["category ids from the list that fit the niche"],
+  "categories": ["category ids from the list where footage for this niche is likely found"],
   "sources": ["source ids from the list that will have this footage; nasa only for space"],
   "search_terms": ["8-15 short search terms for footage archives"],
   "hero_query": "one line describing a scroll-stopping first frame for this niche, for CLIP image search",

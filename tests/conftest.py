@@ -109,6 +109,10 @@ def library(conn, settings, tmp_path):
     embed.embed_pending(conn, settings)
     from shorts.categorize import sort_pending
     sort_pending(conn, settings)
+    # Every test video fits the test channel (what Claude's per-channel sort would say).
+    from shorts import fit
+    for (aid,) in conn.execute("SELECT id FROM assets").fetchall():
+        fit.mark(conn, load_channel("space"), aid, True, method="claude")
     return conn
 
 
@@ -122,9 +126,10 @@ def fake_claude(monkeypatch):
                 {"claim": "Cassini reached Saturn in 2004", "verdict": "supported", "note": ""},
                 {"claim": "Saturn's rings are mostly water ice", "verdict": "unclear", "note": "not in source"},
             ]} for i in ids])
-        if "You screen archive videos" in prompt:
+        if "You sort public-domain archive videos" in prompt:  # every video fits every channel
             import re
-            return json.dumps([{"n": int(i), "fits": True, "why": ""} for i in re.findall(r"^(\d+)\. ", prompt, re.M)])
+            chans = re.findall(r"^(\w+): ", prompt.split("Videos:")[0], re.M)
+            return json.dumps([{"n": int(i), "channels": chans} for i in re.findall(r"^(\d+)\. ", prompt, re.M)])
         n = prompt.count("\nHero ")
         return "```json\n" + json.dumps([{
             "hero": i + 1, "topic": f"topic {i}",

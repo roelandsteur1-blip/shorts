@@ -116,35 +116,51 @@ def test_off_niche_hero_is_skipped_and_remembered(library, settings, channel, mo
     created = script.write_scripts(library, settings, channel, "what_youre_seeing", heroes)
     assert len(created) == 1
     skipped = library.execute("SELECT asset_id FROM scenes WHERE id=?", (heroes[0],)).fetchone()[0]
-    assert library.execute("SELECT reason FROM off_niche WHERE channel=? AND asset_id=?",
+    assert library.execute("SELECT reason FROM channel_fit WHERE fits=0 AND channel=? AND asset_id=?",
                            (channel.id, skipped)).fetchone()[0] == "a steel mill, not space"
     again = hero.candidates(library, settings, channel.id, 10)
     assert skipped not in {library.execute("SELECT asset_id FROM scenes WHERE id=?", (h,)).fetchone()[0] for h in again}
 
 
-def test_niche_screen_drops_off_niche_videos_before_scripts(library, settings, channel, monkeypatch):
-    """One screening call rejects a video; no script is ever asked for it, and both answers stick."""
-    from shorts import niche
-    pool = hero.candidates(library, settings, channel.id, 10)
-    assets = [library.execute("SELECT asset_id FROM scenes WHERE id=?", (h,)).fetchone()[0] for h in pool]
+
+def test_videos_sorted_per_channel_niche(library, settings, channel, monkeypatch):
+    """One call sorts the library for the channel; only fitting videos give hero shots, answers
+    stick, a changed niche sorts again, and a correction by hand wins."""
+    from shorts import fit
+    library.execute("DELETE FROM channel_fit")
+    assets = [r[0] for r in library.execute("SELECT id FROM assets ORDER BY id")]
     bad = assets[0]
     calls = []
 
     def ask(prompt, *a, **k):
         calls.append(prompt)
-        assert "You screen archive videos" in prompt
+        assert "You sort public-domain archive videos" in prompt and "space: " in prompt
         n = len(re.findall(r"^\d+\. ", prompt, re.M))
-        return json.dumps([{"n": i + 1, "fits": i != 0, "why": "a flood newsreel"} for i in range(n)])
+        return json.dumps([{"n": i + 1, "channels": [] if i == 0 else ["space"]} for i in range(n)])
     monkeypatch.setattr(llm, "ask", ask)
-    picked = niche.pick_heroes(library, settings, channel, 1)
-    assert len(calls) == 1 and len(picked) == 1
-    assert library.execute("SELECT asset_id FROM scenes WHERE id=?", (picked[0],)).fetchone()[0] != bad
-    assert library.execute("SELECT reason FROM off_niche WHERE channel=? AND asset_id=?",
-                           (channel.id, bad)).fetchone()[0] == "a flood newsreel"
-    # Passed videos are remembered: picking again asks nothing.
-    niche.pick_heroes(library, settings, channel, 1)
+    assert fit.sort_pending(library, settings, [channel]) == len(assets)
     assert len(calls) == 1
-    # A changed niche screens them again.
+    picked = hero.candidates(library, settings, channel.id, 10, fits=channel)
+    used = {library.execute("SELECT asset_id FROM scenes WHERE id=?", (h,)).fetchone()[0] for h in picked}
+    assert picked and bad not in used
+    assert bad not in {library.execute("SELECT asset_id FROM scenes WHERE id=?", (s,)).fetchone()[0]
+                       for s in fit.allowed_scenes(library, channel)}
+    assert fit.sort_pending(library, settings, [channel]) == 0 and len(calls) == 1
+    # By hand: the rejected video is used after all, also after the niche changes.
+    fit.mark(library, channel, bad, True)
     monkeypatch.setattr(channel, "niche", "something else")
-    niche.pick_heroes(library, settings, channel, 1)
-    assert len(calls) == 2
+    fit.sort_pending(library, settings, [channel])
+    assert len(calls) == 2 and len(re.findall(r"^\d+\. ", calls[1], re.M)) == len(assets) - 1
+    assert library.execute("SELECT fits FROM channel_fit WHERE channel=? AND asset_id=?",
+                           (channel.id, bad)).fetchone()[0] == 1
+
+
+def test_old_off_niche_rows_move_to_channel_fit(tmp_path):
+    from shorts import db
+    c = db.connect(tmp_path / "x.db")
+    c.execute("INSERT INTO off_niche (channel, asset_id, reason) VALUES ('body', 7, 'a flood')")
+    c.commit()
+    c.close()
+    c = db.connect(tmp_path / "x.db")
+    assert c.execute("SELECT fits, niche, method FROM channel_fit WHERE channel='body' AND asset_id=7").fetchone()[:] == (0, "*", "script")
+    assert c.execute("SELECT COUNT(*) FROM off_niche").fetchone()[0] == 0

@@ -70,7 +70,7 @@ def test_4k_sources_decode_on_the_gpu(library, settings, channel, monkeypatch):
     heroes = [r[0] for r in library.execute("SELECT id FROM scenes WHERE rejected=0 ORDER BY id LIMIT 1")]
     sid = script.write_scripts(library, settings, channel, channel.enabled_formats[0]["id"], heroes)[0]
     voice.prepare(library, settings, channel, sid)
-    shots.assign(library, settings, sid, channel.categories)
+    shots.assign(library, settings, sid)
     monkeypatch.setattr(media, "nvdec_works", lambda: True)
     settings.encoder = "auto"
     _, args, _, _ = render.build_render(library, settings, channel, sid, ["-c:v", "libx264"])

@@ -21,7 +21,7 @@
 </div>
 
 <div class="card"><h3 style="margin-top:0">Footage</h3>
-<p class="muted">Categories the Shorts are made from (usable scenes in the library now):</p>
+<p class="muted">Categories to search for new footage (usable scenes in the library now). Which videos the channel actually uses is decided by its niche: Claude sorts every video per channel (Library page).</p>
 <p>{% for c in cats %}<label style="display:inline-block;margin:2px 14px 2px 0"><input type="checkbox" name="categories" value="{{ c.id }}" {{ 'checked' if c.id in (d.categories or []) }}> {{ c.label }} <span class="muted">({{ counts.get(c.id, 0) }})</span></label>{% endfor %}</p>
 <p class="muted">Sources to download from when those run low:</p>
 <p>{% for m in sources %}<label style="display:inline-block;margin:2px 14px 2px 0"><input type="checkbox" name="sources" value="{{ m.NAME }}" {{ 'checked' if m.NAME in (d.sources or []) }}> {{ m.LABEL }}</label>{% endfor %}</p>

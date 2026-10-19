@@ -64,7 +64,7 @@ def test_make_replaces_off_niche_heroes(library, settings, channel, monkeypatch)
 
     def ask(prompt, *a, **k):
         out = real(prompt, *a, **k)
-        if "fact checker" not in prompt and "You screen archive videos" not in prompt:
+        if "fact checker" not in prompt and "You sort public-domain archive videos" not in prompt:
             calls.append(prompt)
             if len(calls) == 1:  # first batch: the first hero is off-niche
                 data = json.loads(out.strip("`\njson"))
@@ -74,4 +74,4 @@ def test_make_replaces_off_niche_heroes(library, settings, channel, monkeypatch)
     monkeypatch.setattr(llm, "ask", ask)
     done = pipeline.make(library, settings, channel, count=1)
     assert len(done) == 1 and len(calls) == 2
-    assert library.execute("SELECT COUNT(*) FROM off_niche").fetchone()[0] == 1
+    assert library.execute("SELECT COUNT(*) FROM channel_fit WHERE fits=0").fetchone()[0] == 1

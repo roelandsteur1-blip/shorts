@@ -20,7 +20,7 @@ def channel_card(ch) -> dict:
                           AND publish_at >= ? AND publish_at < ?""",
                      (ch.id, now.strftime("%Y-%m-%dT%H:%M:%SZ"),
                       (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"))).fetchone()[0]
-    left, videos = shorts_left(c, settings(), ch.id, ch.categories)
+    left, videos = shorts_left(c, settings(), ch.id, fits=ch)
     last_job = c.execute("SELECT * FROM jobs WHERE channel=? ORDER BY id DESC LIMIT 1", (ch.id,)).fetchone()
     return {
         "ch": ch,
@@ -31,7 +31,7 @@ def channel_card(ch) -> dict:
         "scheduled_week": week,
         "footage_left": left,
         "footage_videos": videos,
-        "categories": [(cat, shorts_left(c, settings(), ch.id, [cat])[0]) for cat in ch.categories],
+        "categories": [(cat, shorts_left(c, settings(), ch.id, [cat], fits=ch)[0]) for cat in ch.categories],
         "last_job": last_job,
     }
 

@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     prs = sub.add_parser("restock", help="1. download footage for the channel's categories that run low")
     prs.add_argument("--force", action="store_true", help="also when nothing is running low")
 
-    pcat = sub.add_parser("categorize", help="1. sort new scenes into categories (metadata, CLIP, Claude)")
+    pcat = sub.add_parser("categorize", help="1. sort new scenes into categories, and new videos per channel niche (Claude)")
     pcat.add_argument("--all", action="store_true", help="re-sort everything (keeps hand-sorted scenes)")
 
     psrc = sub.add_parser("sources", help="list footage sources, or try one: sources --try loc \"rocket\"")
@@ -160,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
             process_all(conn, settings)
             embed_pending(conn, settings)
             sort_pending(conn, settings)
+            from .fit import sort_pending as sort_channels
+            sort_channels(conn, settings)
     elif args.cmd == "restock":
         from .library import restock
         need = 10 ** 6 if args.force else 0
@@ -174,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"embedded {n} scenes")
         counts = sort_pending(conn, settings)
         print("sorted scenes: " + (", ".join(f"{k} {v}" for k, v in counts.items()) or "nothing new"))
+        from .fit import sort_pending as sort_channels
+        print(f"sorted {sort_channels(conn, settings)} videos per channel")
     elif args.cmd == "sources":
         return _sources(conn, settings, args.try_source)
     elif args.cmd == "dedupe":
@@ -297,20 +301,23 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{label}: " + ", ".join(f"{k} {v}" for k, v in conn.execute(sql).fetchall()))
         from .hero import shorts_left
         free = shutil.disk_usage(settings.footage_dir).free / 1e9
-        left, videos = shorts_left(conn, settings, channel.id, channel.categories)
+        left, videos = shorts_left(conn, settings, channel.id, fits=channel)
         print(f"Shorts left in the library: {left} from {videos} videos "
               f"(restock below {settings.restock_below}); {free:.0f} GB free on {settings.footage_dir}")
         if channel.categories:
             print("per category: " + ", ".join(
-                f"{c} {shorts_left(conn, settings, channel.id, [c])[0]}" for c in channel.categories))
+                f"{c} {shorts_left(conn, settings, channel.id, [c], fits=channel)[0]}" for c in channel.categories))
         if args.per_video:
             from .hero import per_video
-            for r in per_video(conn, settings, channel.id, channel.categories):
+            for r in per_video(conn, settings, channel.id, fits=channel):
                 print(f"  {r['left']} more (made {r['made']}, max {r['budget']}, "
                       f"{(r['duration'] or 0) / 60:.0f} min)  {r['title']}")
         unsorted = conn.execute("SELECT COUNT(*) FROM scenes WHERE rejected=0 AND sorted=0").fetchone()[0]
         if unsorted:
             print(f"{unsorted} scenes not sorted into categories yet (python -m shorts categorize)")
+        from .fit import pending
+        if waiting := len(pending(conn, [channel])):
+            print(f"{waiting} videos not sorted for this channel yet (python -m shorts categorize)")
     return 0
 
 

@@ -5,9 +5,9 @@ import sqlite3
 
 import numpy as np
 
-from . import db, embed, sources
+from . import db, embed, fit, sources
 from .categorize import scene_filter
-from .config import Settings
+from .config import Channel, Settings
 
 # What a scroll-stopping first frame looks like, as text for CLIP.
 HERO_QUERY = "a stunning dramatic space image, rocket launch fire, glowing planet, explosion of light"
@@ -52,11 +52,15 @@ def far_enough(settings: Settings, start: float, others: list[float]) -> bool:
 
 
 def _eligible(conn: sqlite3.Connection, settings: Settings, channel: str, use_clip: bool,
-              categories: list[str] | None) -> list[sqlite3.Row]:
+              categories: list[str] | None, fits: Channel | None = None) -> list[sqlite3.Row]:
     """Scenes that could open the next Short: long enough, rights clear, not stock B-roll, not used
     yet, from a video with budget left, and at least segment_seconds away from (and, with CLIP,
-    not looking like) the heroes that video already gave."""
+    not looking like) the heroes that video already gave. fits: only videos sorted as fitting this
+    channel's niche (shorts/fit.py)."""
     cond, args = scene_filter(categories)
+    if fits is not None:
+        fcond, fargs = fit.condition(fits)
+        cond, args = f"{cond} AND {fcond}", [*args, *fargs]
     stock = sources.stock_sources()
     rows = conn.execute(
         f"""SELECT sc.id, sc.asset_id, sc.motion, sc.contrast, sc.start, sc.end, a.duration,
@@ -69,9 +73,10 @@ def _eligible(conn: sqlite3.Connection, settings: Settings, channel: str, use_cl
     earlier = earlier_heroes(conn, channel)
     used_scenes = db.used_scene_ids(conn, channel)  # also scenes already shown as B-roll
     # One channel per video: a video another channel already opened a Short with stays there, and
-    # videos the script writer found off-niche for this channel are never offered again.
-    blocked = other_channels_videos(conn, channel) | {
-        r[0] for r in conn.execute("SELECT asset_id FROM off_niche WHERE channel=?", (channel,))}
+    # videos found off-niche for this channel are never offered again.
+    blocked = other_channels_videos(conn, channel) | (
+        fit.rejected(conn, fits) if fits is not None else
+        {r[0] for r in conn.execute("SELECT asset_id FROM channel_fit WHERE channel=? AND fits=0", (channel,))})
     out = []
     for r in rows:
         prev = earlier.get(r["asset_id"], [])
@@ -92,13 +97,14 @@ def _eligible(conn: sqlite3.Connection, settings: Settings, channel: str, use_cl
 
 def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: int,
                use_clip: bool = True, categories: list[str] | None = None,
-               query: str | None = None) -> list[int]:
+               query: str | None = None, fits: Channel | None = None) -> list[int]:
     """Return up to n hero scene ids, at most one per source video in one batch (siblings from a
     long video come in later batches, so their script knows what the earlier Shorts said).
     A video can open several Shorts over time, see budget(). Footage flagged for a rights check is
     skipped, and so is stock B-roll (Pexels etc.: fine between blocks, no story to tell as a hero).
-    categories: only scenes sorted into one of these (the channel's); none = any scene."""
-    rows = _eligible(conn, settings, channel, use_clip, categories)
+    categories: only scenes sorted into one of these; none = any scene. fits: only videos that fit
+    this channel (shorts/fit.py)."""
+    rows = _eligible(conn, settings, channel, use_clip, categories, fits)
     # Scenes not embedded yet (run 'embed') would switch CLIP scoring off for all: leave them out.
     if use_clip and any(r["embedding"] is not None for r in rows):
         rows = [r for r in rows if r["embedding"] is not None]
@@ -133,12 +139,12 @@ def candidates(conn: sqlite3.Connection, settings: Settings, channel: str, n: in
 
 
 def per_video(conn: sqlite3.Connection, settings: Settings, channel: str,
-              categories: list[str] | None = None) -> list[dict]:
+              categories: list[str] | None = None, fits: Channel | None = None) -> list[dict]:
     """Per video that can still open a Short on this channel: how many more (an estimate: as many
     heroes as its budget allows that also lie segment_seconds apart; the look-alike check is left
     out, it needs CLIP), how many it gave already, and its budget. Most Shorts left first."""
     by_asset: dict[int, list[sqlite3.Row]] = {}
-    for r in _eligible(conn, settings, channel, False, categories):
+    for r in _eligible(conn, settings, channel, False, categories, fits):
         by_asset.setdefault(r["asset_id"], []).append(r)
     earlier = earlier_heroes(conn, channel)
     out = []
@@ -157,9 +163,9 @@ def per_video(conn: sqlite3.Connection, settings: Settings, channel: str,
 
 
 def shorts_left(conn: sqlite3.Connection, settings: Settings, channel: str,
-                categories: list[str] | None = None) -> tuple[int, int]:
+                categories: list[str] | None = None, fits: Channel | None = None) -> tuple[int, int]:
     """(Shorts the library can still open on this channel, videos they come from)."""
-    videos = per_video(conn, settings, channel, categories)
+    videos = per_video(conn, settings, channel, categories, fits)
     return sum(v["left"] for v in videos), len(videos)
 
 

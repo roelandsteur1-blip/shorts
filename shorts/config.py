@@ -99,7 +99,8 @@ class Channel:
     music_terms: list[str] = field(default_factory=list)  # music searches (shorts/music.py); empty = defaults
     voice: str | None = None               # voice-over (shorts/voice.py): Kokoro voice id; empty = text + music only
     voice_speed: float = 1.0
-    # Footage categories this channel uses (config/categories.toml); empty = every category.
+    # Footage categories restock searches for this channel (config/categories.toml). Which videos it
+    # uses is decided by its niche (shorts/fit.py), not by these.
     categories: list[str] = field(default_factory=list)
     # Footage sources restock downloads from (shorts/sources); empty = NASA only.
     sources: list[str] = field(default_factory=list)

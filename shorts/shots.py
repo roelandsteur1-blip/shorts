@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from . import db, embed
-from .categorize import allowed_scenes
-from .config import Settings
+from . import db, embed, fit
+from .config import Channel, Settings
 
 FOOTAGE_WEIGHT = 0.02  # how much footage whose kind held viewers is preferred (shorts/learn.py)
 SAME_VIDEO_BONUS = 0.03  # mild preference for staying with the hero's video (visual coherence)
@@ -13,8 +12,8 @@ SAME_VIDEO_BONUS = 0.03  # mild preference for staying with the hero's video (vi
 
 
 def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
-           categories: list[str] | None = None) -> None:
-    """categories: the channel's; footage for the blocks only comes from scenes in them."""
+           channel: Channel | None = None) -> None:
+    """channel: footage for the blocks only comes from videos that fit it (shorts/fit.py)."""
     short = conn.execute("SELECT * FROM shorts WHERE id=?", (short_id,)).fetchone()
     hero = conn.execute("SELECT * FROM scenes WHERE id=?", (short["hero_scene_id"],)).fetchone()
     blocks = conn.execute("SELECT * FROM blocks WHERE short_id=? ORDER BY idx", (short_id,)).fetchall()
@@ -22,7 +21,7 @@ def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
     used = db.used_scene_ids(conn, None) - {hero["id"]}
     in_short = {hero["id"]}
     hero_left = (hero["end"] - hero["start"]) - blocks[0]["seconds"]
-    allowed = allowed_scenes(conn, categories)
+    allowed = fit.allowed_scenes(conn, channel) if channel else None
     # One CLIP call for every block that may need a search, instead of one per block.
     from . import learn
     held = learn.footage_scores(conn)
