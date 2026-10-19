@@ -112,7 +112,10 @@ def test_daily_run(conn, settings, cfg, monkeypatch):
 
 def test_daily_task_outside_windows(settings, client, monkeypatch):
     monkeypatch.setattr(daily.os, "name", "posix")
-    assert "Windows Task Scheduler" in daily.set_task(settings, True, "08:30")
+    monkeypatch.setattr(daily, "_crontab", lambda: None)  # no cron installed (cron: test_server.py)
+    with pytest.raises(RuntimeError, match="cron"):
+        daily.set_task(settings, True, "08:30")
+    assert daily.status(settings)["note"] == "no cron on this computer"
     with pytest.raises(ValueError):
         daily.set_task(settings, True, "8.30")
     assert client.post("/schedule/daily", data={"on": "1", "time": "8.30"}).status_code == 400

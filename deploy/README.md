@@ -1,7 +1,7 @@
 # Running everything on a Linux server
 
-The dashboard and all its jobs run 24/7 on a small server (tested target: Oracle Cloud Always Free,
-Ampere A1, 2 OCPU / 12 GB, Ubuntu 24.04, 200 GB boot volume). No GPU: rendering uses libx264,
+The dashboard and all its jobs run 24/7 on a small server (target: Contabo Cloud VPS 20, 6 vCPU /
+12 GB / 200 GB SSD, Ubuntu 24.04; Oracle Always Free Ampere A1 works too). No GPU: rendering uses libx264,
 CLIP / CLAP / Kokoro run on the CPU. The dashboard stays on 127.0.0.1; Tailscale makes it reachable
 from your own devices only.
 
@@ -9,6 +9,19 @@ In the commands below `SERVER` is `ubuntu@<public IP>` and `KEY` is the private 
 downloaded from Oracle (e.g. `C:\Users\roela\.ssh\oracle-shorts.key`).
 
 ## 1. Install (on the server)
+
+Contabo logs you in as `root` with a password. Make a normal user once and give it your key:
+
+```bash
+ssh root@<IP>
+adduser --disabled-password --gecos "" shorts && usermod -aG sudo shorts
+echo "shorts ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/shorts
+mkdir -p /home/shorts/.ssh && cp ~/.ssh/authorized_keys /home/shorts/.ssh/ 2>/dev/null
+chown -R shorts:shorts /home/shorts/.ssh
+```
+
+(Add your laptop's public key to `/home/shorts/.ssh/authorized_keys` if it isn't there yet.) Then
+`SERVER` below is `shorts@<IP>`.
 
 ```bash
 ssh -i KEY SERVER
