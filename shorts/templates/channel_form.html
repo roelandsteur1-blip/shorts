@@ -74,7 +74,7 @@
 <p>{% if found.thumbnail %}<img src="{{ found.thumbnail }}" alt="" style="width:40px;border-radius:50%;vertical-align:middle"> {% endif %}<b>{{ found.title }}</b></p>
 <form method="post" action="/channels/{{ d.id }}/confirm"><button class="primary">Yes, that's the one</button></form>
 <form method="post" action="/channels/{{ d.id }}/connect" style="margin-top:6px"><input type="hidden" name="fresh" value="1"><button>No, log in with another account</button></form>
-{% else %}<p class="muted">{% if connected %}Logged in, channel not checked yet.{% else %}Not connected.{% endif %} A browser window opens on this laptop: log in with the account that owns the channel.</p>{% endif %}
+{% else %}<p class="muted">{% if connected %}Logged in, channel not checked yet.{% else %}Not connected.{% endif %} Press Connect, then follow the login link on the job page: log in with the account that owns the channel.</p>{% endif %}
 {% if connect_job and connect_job.status in ('queued', 'running') %}<p class="muted">Waiting for the login in your browser… <a href="/jobs/{{ connect_job.id }}">details</a></p>
 {% elif not found and not d.youtube_channel_id %}<form method="post" action="/channels/{{ d.id }}/connect"><button class="primary">Connect YouTube</button></form>
 {% elif d.youtube_channel_id %}<form method="post" action="/channels/{{ d.id }}/connect"><input type="hidden" name="fresh" value="1"><button>Connect again</button></form>{% endif %}

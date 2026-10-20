@@ -12,7 +12,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from .config import Settings, list_channels, load_channel
+from .config import Settings, all_channels
 
 log = logging.getLogger(__name__)
 
@@ -25,8 +25,8 @@ def run(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
     from .upload import fetch_stats_all, upload_approved
 
     done = {}
-    chans = [load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)]
-    chans = [ch for ch in chans if ch.auto_run]
+    every = all_channels(settings.config_dir)
+    chans = [ch for ch in every if ch.auto_run]
     waiting = {ch.id: conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='rendered'",
                                    (ch.id,)).fetchone()[0] for ch in chans}
     orders = []
@@ -48,7 +48,7 @@ def run(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
         log.info("%s: %s", ch.id, done[ch.id])
     fetch_stats_all(conn, settings)
     from .inspiration import refresh_stale
-    refresh_stale(settings, [load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)])
+    refresh_stale(settings, every)
     return done
 
 
@@ -58,12 +58,7 @@ def _state_path(settings: Settings):
 
 def status(settings: Settings) -> dict:
     out = {"channels": [], "task": None, "time": None, "note": ""}
-    for cid in list_channels(settings.config_dir):
-        try:
-            if load_channel(cid, settings.config_dir).auto_run:
-                out["channels"].append(cid)
-        except Exception:  # noqa: BLE001
-            pass
+    out["channels"] = [ch.id for ch in all_channels(settings.config_dir) if ch.auto_run]
     try:
         out["time"] = json.loads(_state_path(settings).read_text(encoding="utf-8")).get("time")
     except (OSError, ValueError):

@@ -234,13 +234,10 @@ def usable(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 def all_terms(settings: Settings, channel: Channel | None = None) -> list[str]:
     """Music searches: this channel's first, then every other channel's, then the defaults."""
-    from .config import list_channels, load_channel
+    from .config import all_channels
     terms = list(channel.music_terms) if channel else []
-    for cid in list_channels(settings.config_dir):
-        try:
-            terms += load_channel(cid, settings.config_dir).music_terms
-        except Exception:  # noqa: BLE001 - a broken channel file must not stop music
-            pass
+    for ch in all_channels(settings.config_dir):
+        terms += ch.music_terms
     return list(dict.fromkeys(terms + DEFAULT_TERMS))
 
 

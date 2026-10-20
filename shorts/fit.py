@@ -12,7 +12,7 @@ import logging
 import sqlite3
 
 from . import llm, progress
-from .config import Channel, Settings, list_channels, load_channel
+from .config import Channel, Settings, all_channels
 
 log = logging.getLogger(__name__)
 
@@ -36,16 +36,6 @@ Answer with only JSON: [{{"n": <video number>, "channels": ["id", ...]}}]
 # Videos that can still be used: not flagged, not claimed, not cleaned up, with usable scenes.
 USABLE = """a.needs_check = 0 AND a.claimed IS NULL AND a.status NOT IN ('cleaned', 'duplicate', 'rejected')
             AND EXISTS (SELECT 1 FROM scenes s WHERE s.asset_id = a.id AND s.rejected = 0)"""
-
-
-def all_channels(settings: Settings) -> list[Channel]:
-    out = []
-    for cid in list_channels(settings.config_dir):
-        try:
-            out.append(load_channel(cid, settings.config_dir))
-        except Exception:  # noqa: BLE001 - a broken channel file must not stop the others
-            log.exception("channel %s", cid)
-    return out
 
 
 def condition(channel: Channel, alias: str = "sc") -> tuple[str, list]:
@@ -100,7 +90,7 @@ def sort_pending(conn: sqlite3.Connection, settings: Settings, channels: list[Ch
     """Sort every usable video that a channel hasn't judged yet. channels: default every channel;
     extra: these too (the ones a run is about to make Shorts for, as loaded for it). Returns
     videos sorted. A failed call leaves the rest for the next run."""
-    channels = channels if channels is not None else all_channels(settings)
+    channels = channels if channels is not None else all_channels(settings.config_dir)
     channels = list({c.id: c for c in [*channels, *extra]}.values())
     todo = pending(conn, channels)
     if not todo:

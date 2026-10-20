@@ -7,7 +7,7 @@ from statistics import median
 
 from flask import Blueprint, redirect, render_template, request
 
-from ..upload import AGES, LAG_DAYS
+from ..ytstats import AGES, LAG_DAYS
 from .common import channels, conn
 
 bp = Blueprint("stats", __name__)

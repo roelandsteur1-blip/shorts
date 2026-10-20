@@ -53,13 +53,6 @@ def same_title(conn: sqlite3.Connection, title: str | None, exclude_id: int | No
     return None
 
 
-def _dhash(frame: np.ndarray) -> int:
-    g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    g = cv2.resize(g, (9, 8), interpolation=cv2.INTER_AREA)
-    bits = (g[:, 1:] > g[:, :-1]).flatten()
-    return int("".join("1" if b else "0" for b in bits), 2)
-
-
 def fingerprint(path: str) -> bytes | None:
     """One frame hash about every FP_STEP seconds (8 bytes each), at most FP_MAX_FRAMES. Near-black
     or flat frames are skipped: they look alike in every video and would cause false matches.

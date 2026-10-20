@@ -11,7 +11,6 @@ Anything still unsure stays uncategorised, for sorting by hand on the Library pa
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 import sqlite3
@@ -332,7 +331,3 @@ Answer with only JSON:
     if not isinstance(data, dict):
         raise llm.LLMError("unexpected reply")
     return data
-
-
-def as_json(c: Category) -> str:
-    return json.dumps(c.__dict__, ensure_ascii=False)

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from . import db
-from .config import list_channels, load_channel, load_settings
+from .config import all_channels, list_channels, load_channel, load_settings
 
 
 # Commands that keep the CPU/GPU busy for a while; they run at below-normal priority.
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("finish", help="4-5. resume fact check/render for Shorts that stopped halfway")
 
-    for name, text in (("dashboard", "open the dashboard on http://127.0.0.1:5000 (this laptop only)"),
+    for name, text in (("dashboard", "open the dashboard on http://127.0.0.1:5000 (local only; Tailscale on the server)"),
                        ("review", "6. same as 'dashboard'")):
         pr = sub.add_parser(name, help=text)
         pr.add_argument("--port", type=int, default=5000)
@@ -200,11 +200,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "make":
         from .pipeline import make
         done = make(conn, settings, channel, args.count, args.format_id, restock=not args.no_restock)
-        print(f"{len(done)} Shorts ready for review: run 'python -m shorts review'")
+        print(f"{len(done)} Shorts ready for review on the dashboard")
     elif args.cmd == "make-all":
         from .pipeline import make_many, top_up_orders
-        channels = [load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)]
-        orders, enough = top_up_orders(conn, channels, args.to)
+        orders, enough = top_up_orders(conn, all_channels(settings.config_dir), args.to)
         if enough:
             print("already enough: " + ", ".join(enough))
         if orders:
@@ -296,9 +295,10 @@ def main(argv: list[str] | None = None) -> int:
         for label, sql in [
             ("videos", "SELECT status, COUNT(*) FROM assets GROUP BY status"),
             ("scenes", "SELECT CASE WHEN rejected THEN 'rejected' WHEN embedding IS NULL THEN 'not embedded' ELSE 'searchable' END, COUNT(*) FROM scenes GROUP BY 1"),
-            ("shorts", f"SELECT status, COUNT(*) FROM shorts WHERE channel='{channel.id}' GROUP BY status"),
+            ("shorts", "SELECT status, COUNT(*) FROM shorts WHERE channel=? GROUP BY status"),
         ]:
-            print(f"{label}: " + ", ".join(f"{k} {v}" for k, v in conn.execute(sql).fetchall()))
+            params = (channel.id,) if "?" in sql else ()
+            print(f"{label}: " + ", ".join(f"{k} {v}" for k, v in conn.execute(sql, params).fetchall()))
         from .hero import shorts_left
         free = shutil.disk_usage(settings.footage_dir).free / 1e9
         left, videos = shorts_left(conn, settings, channel.id, fits=channel)
@@ -328,8 +328,7 @@ def _research(conn, settings, channel, args) -> int:
             print(f"{c['views']:>13,} views in {c['shorts']} top Shorts  {c['title']}  "
                   f"https://www.youtube.com/channel/{c['id']}")
         return 0
-    chans = ([load_channel(cid, settings.config_dir) for cid in list_channels(settings.config_dir)]
-             if args.all else [channel])
+    chans = all_channels(settings.config_dir) if args.all else [channel]
     chans = [ch for ch in chans if ch.inspiration and (not args.stale or inspiration.stale(conn, ch))]
     if not chans:
         print("no channel with inspiration channels" + (" and an old pattern bank" if args.stale else "")
@@ -425,17 +424,21 @@ def _check(settings) -> int:
         ok &= good
         print(f"[{'OK' if good else '!!'}] {what}" + (f"  -> {hint}" if not good and hint else ""))
 
+    def optional(good: bool, what: str, hint: str = "") -> None:
+        """Nice to have (a GPU): missing it doesn't make the check fail."""
+        print(f"[{'OK' if good else '--'}] {what}" + (f"  -> {hint}" if not good and hint else ""))
+
     line(sys.version_info >= (3, 11), f"Python {sys.version.split()[0]}", "install Python 3.11+")
     line(shutil.which("ffmpeg") is not None, "ffmpeg", "winget install Gyan.FFmpeg, then open a new terminal"
          if win else "sudo apt install ffmpeg")
     if shutil.which("ffmpeg"):
         from .media import _nvenc_works
-        line(_nvenc_works(), "NVENC (GPU video encoding)", "update the NVIDIA driver; falls back to CPU encoding")
+        optional(_nvenc_works(), "NVENC (GPU video encoding)", "update the NVIDIA driver; falls back to CPU encoding")
         from .media import nvdec_works
-        line(nvdec_works(), "NVDEC (GPU video decoding)", "update the NVIDIA driver; falls back to CPU decoding")
+        optional(nvdec_works(), "NVDEC (GPU video decoding)", "update the NVIDIA driver; falls back to CPU decoding")
     try:
         import torch
-        line(torch.cuda.is_available(), f"PyTorch CUDA ({torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no GPU'})",
+        optional(torch.cuda.is_available(), f"PyTorch CUDA ({torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no GPU'})",
              "re-run setup.ps1 (installs the CUDA build of PyTorch)" if win else "no NVIDIA GPU: CPU is used")
     except ImportError:
         line(False, "PyTorch", f"run {setup}")
@@ -452,10 +455,9 @@ def _check(settings) -> int:
     free = shutil.disk_usage(settings.footage_dir).free / 1e9
     line(free >= settings.min_free_gb, f"footage folder {settings.footage_dir} ({free:.0f} GB free)",
          "free disk space or run 'python -m shorts cleanup'")
-    from .render import MUSIC_EXT
-    for folder in sorted(p for p in settings.music_dir.iterdir() if p.is_dir()):
-        n = sum(1 for p in folder.glob("*") if p.suffix.lower() in MUSIC_EXT)
-        print(f"[--] music tracks: {n} in {folder} (optional)")
+    from .music import MUSIC_EXT
+    n = sum(1 for p in settings.music_dir.glob("*") if p.suffix.lower() in MUSIC_EXT)
+    print(f"[--] music tracks: {n} in {settings.music_dir} (shared by all channels; fetched on the next Make)")
     return 0 if ok else 1
 
 

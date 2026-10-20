@@ -6,10 +6,10 @@ import json
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
 from .. import categorize, channels as chans, formats as fmtlib, inspiration, llm, looks, sources, tags as taglayers
-from ..config import list_channels, load_channel
-from ..render import MUSIC_EXT
+from ..config import all_channels, load_channel
+from ..music import MUSIC_EXT
+from ..upload import found_path, token_path
 from ..voice import SPEEDS, VOICES, label
-from ..upload import found_path
 from .common import channel_or_404, conn, runner, settings
 from .jobs import start_job
 
@@ -83,13 +83,7 @@ def _context(data: dict, errors=None, new=False) -> dict:
         """SELECT c.category, COUNT(*) FROM scene_categories c JOIN scenes sc ON sc.id = c.scene_id
             WHERE c.confidence > 0 AND sc.rejected = 0 GROUP BY c.category""").fetchall())
     # Other channels' looks and voices: each channel should look and sound like itself.
-    others = {}
-    for cid in list_channels(settings().config_dir):
-        if cid != data.get("id"):
-            try:
-                others[cid] = load_channel(cid, settings().config_dir)
-            except Exception:  # noqa: BLE001 - one broken file must not break this page
-                pass
+    others = {c.id: c for c in all_channels(settings().config_dir) if c.id != data.get("id")}
     same_voice = [c.name for c in others.values() if data.get("voice") and c.voice == data.get("voice")]
     same_look = [c.name for c in others.values() if (data.get("style") or {}).get("look")
                  and c.style.get("look") == (data.get("style") or {}).get("look")]
@@ -152,7 +146,7 @@ def page(cid: str):
                                      ORDER BY id DESC LIMIT 1""", (cid,)).fetchone()
     return render_template("channel_form.html", **_context(data), ch=ch, music=music, tracks=tracks,
                            bank=inspiration.bank(conn(), cid), research_job=research_job,
-                           connected=(settings().secrets_dir / f"token-{cid}.json").exists(),
+                           connected=token_path(settings(), cid).exists(),
                            found=found, connect_job=connect_job, created=request.args.get("created"),
                            saved=request.args.get("saved"))
 

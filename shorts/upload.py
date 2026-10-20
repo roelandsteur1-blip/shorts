@@ -1,5 +1,5 @@
 """Upload approved Shorts as private with a publishAt time, so YouTube publishes them on schedule
-(the laptop doesn't need to be on at publish time). OAuth token per channel."""
+(nothing needs to run at publish time). OAuth token per channel."""
 from __future__ import annotations
 
 import json
@@ -34,6 +34,11 @@ class LoginExpired(RuntimeError):
     """The saved YouTube login no longer works and nobody is there to log in again."""
 
 
+def token_path(settings: Settings, channel_id: str) -> Path:
+    """The channel's saved YouTube login; it exists once 'Connect YouTube' worked."""
+    return settings.secrets_dir / f"token-{channel_id}.json"
+
+
 def login_expired_path(settings: Settings, channel_id: str) -> Path:
     return settings.data_dir / f"login-expired-{channel_id}.txt"
 
@@ -46,7 +51,7 @@ def credentials(settings: Settings, channel: Channel, interactive: bool = True):
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
 
-    token = settings.secrets_dir / f"token-{channel.id}.json"
+    token = token_path(settings, channel.id)
     expired = login_expired_path(settings, channel.id)
     creds = None
     if token.exists():
@@ -132,9 +137,9 @@ def found_path(settings: Settings, channel_id: str) -> Path:
 
 
 def connect(settings: Settings, channel: Channel, fresh: bool = False) -> dict:
-    """'Connect YouTube': log in (browser on this laptop), then look up which channel that login
+    """'Connect YouTube': log in with Google, then look up which channel that login
     owns and save it, so the dashboard can ask "is this the right channel?"."""
-    token = settings.secrets_dir / f"token-{channel.id}.json"
+    token = token_path(settings, channel.id)
     if fresh and token.exists():
         token.unlink()
     found = my_channel(youtube(settings, channel))
@@ -403,9 +408,6 @@ def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
     return out
 
 
-from .ytstats import AGES, LAG_DAYS  # noqa: E402,F401 - Stats page imports them from here
-
-
 def fetch_stats(conn: sqlite3.Connection, settings: Settings, channel: Channel, interactive: bool = True) -> int:
     """Step 8: every video on the channel from YouTube, with live views and Analytics (ytstats.py).
     Returns the number of live Shorts."""
@@ -418,10 +420,6 @@ def fetch_stats_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, s
     from .config import list_channels
 
     cids = [cid for cid in list_channels(settings.config_dir)
-            if (settings.secrets_dir / f"token-{cid}.json").exists()]
+            if token_path(settings, cid).exists()]
     return _per_channel(settings, cids, lambda c, ch: f"stats for {fetch_stats(c, settings, ch, interactive=False)}",
                         STATS_AT_ONCE, failed="stats failed")
-
-
-def save_body_preview(path: Path, meta: dict, publish_at: datetime | None) -> None:
-    path.write_text(json.dumps(body_for(meta, publish_at), indent=2, ensure_ascii=False), encoding="utf-8")

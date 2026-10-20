@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, redirect, render_template, request, url_for
 
 from ..hero import shorts_left
+from ..upload import token_path
 from .common import channels, conn, settings
 
 bp = Blueprint("home", __name__)
@@ -24,7 +25,7 @@ def channel_card(ch) -> dict:
     last_job = c.execute("SELECT * FROM jobs WHERE channel=? ORDER BY id DESC LIMIT 1", (ch.id,)).fetchone()
     return {
         "ch": ch,
-        "connected": (settings().secrets_dir / f"token-{ch.id}.json").exists(),
+        "connected": token_path(settings(), ch.id).exists(),
         "review": counts.get("rendered", 0),
         "approved": counts.get("approved", 0),
         "failed": counts.get("failed", 0),

@@ -6,7 +6,7 @@ import sqlite3
 from flask import abort, current_app, g
 
 from .. import db
-from ..config import Channel, Settings, list_channels, load_channel
+from ..config import Channel, Settings, all_channels
 
 
 def settings() -> Settings:
@@ -24,13 +24,7 @@ def runner():
 
 
 def channels() -> list[Channel]:
-    out = []
-    for cid in list_channels(settings().config_dir):
-        try:
-            out.append(load_channel(cid, settings().config_dir))
-        except Exception:  # noqa: BLE001 - a broken file must not take the dashboard down
-            current_app.logger.exception("channel %s", cid)
-    return out
+    return all_channels(settings().config_dir)
 
 
 def channel_or_404(cid: str | None) -> Channel:

@@ -1,4 +1,5 @@
-"""The dashboard: `python -m shorts dashboard` on http://127.0.0.1:5000 (this laptop only).
+"""The dashboard: `python -m shorts dashboard` on http://127.0.0.1:5000 (local only; on the server
+Tailscale makes it reachable from your own devices).
 
 Server-rendered Flask pages; heavy work runs as background jobs (shorts/jobs.py)."""
 from __future__ import annotations

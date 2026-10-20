@@ -13,7 +13,7 @@
 {% if r.approved %}<table><tr><th>#</th><th>Title</th><th>Would publish at (UTC)</th></tr>
 {% for s, slot in r.approved %}<tr><td><a href="/short/{{ s.id }}">{{ s.id }}</a></td><td>{{ s.title }}</td><td>{{ slot.replace('T', ' ')[:16] }}</td></tr>{% endfor %}</table>
 <form method="post" action="/jobs/start" style="margin-top:8px"><input type="hidden" name="command" value="upload"><input type="hidden" name="channel" value="{{ r.ch.id }}">
-<button class="primary">Schedule approved now</button> <span class="muted">uploads them as private with these publish times; YouTube publishes them, the laptop can be off</span></form>
+<button class="primary">Schedule approved now</button> <span class="muted">uploads them as private with these publish times; YouTube publishes them by itself</span></form>
 {% else %}<p class="muted">Nothing approved. <a href="/review?channel={{ r.ch.id }}">Review</a></p>{% endif %}
 <h3>Scheduled</h3>
 {% for day, shorts in r.days %}<p style="margin-bottom:2px"><b>{{ day }}</b></p>

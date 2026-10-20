@@ -5,7 +5,7 @@ import logging
 import multiprocessing
 import os
 import sqlite3
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -122,12 +122,6 @@ def save_scenes(conn: sqlite3.Connection, asset_id: int, found: list[dict]) -> N
     )
     conn.execute("UPDATE assets SET status='scened' WHERE id=?", (asset_id,))
     conn.commit()
-
-
-def process_asset(conn: sqlite3.Connection, settings: Settings, asset: sqlite3.Row) -> int:
-    found = analyse_video(asset["id"], asset["path"], asset["duration"], str(settings.keyframe_dir))
-    save_scenes(conn, asset["id"], found)
-    return len(found)
 
 
 # ---------- fast detector: one ffmpeg pass, small frames, no seeking ----------

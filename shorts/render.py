@@ -12,7 +12,6 @@ from urllib.parse import urlsplit
 
 from . import db, looks, media, tags as taglayers
 from .config import Channel, Settings
-from .music import MUSIC_EXT  # noqa: F401 - imported from here by the dashboard and 'check'
 
 W, H, FPS = 1080, 1920, 30
 END_FADE = 0.3  # seconds: end sharply on the payoff, no long music fade (research/shorts-studies.md)

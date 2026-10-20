@@ -1,8 +1,8 @@
 {% extends "base.html" %}{% block title %}Voices{% endblock %}{% block body %}
 <h1>Voices</h1>
-<p class="muted">Free AI voice (Kokoro), made on this laptop. A channel with a voice gets it on every new Short; Shorts already made keep theirs.
+<p class="muted">Free AI voice (Kokoro), made on this computer, no Claude or API needed. A channel with a voice gets it on every new Short; Shorts already made keep theirs.
 {{ voiced }} of {{ channels|length }} channels have a voice now. The Stats page compares Shorts with and without a voice.</p>
-{% if not engine_ok %}<div class="card bad">The voice is not installed. Run <code>.venv\Scripts\python -m pip install kokoro</code> and restart the dashboard.</div>{% endif %}
+{% if not engine_ok %}<div class="card bad">The voice is not installed. Run <code>python -m pip install kokoro</code> in the project's .venv and restart the dashboard.</div>{% endif %}
 
 <div class="card"><h3 style="margin-top:0">Channels</h3>
 <p class="muted">The play button reads the channel's newest script with its saved voice and speed (the first play takes a few seconds).</p>

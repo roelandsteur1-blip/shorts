@@ -1,10 +1,13 @@
 """Settings and per-channel configuration."""
 from __future__ import annotations
 
+import logging
 import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 MAX_SHORT_SECONDS = 60
 BROAD_TAGS = ("shorts", "viral shorts", "for you")  # tag layer 3 default (shorts/tags.py)
@@ -161,3 +164,14 @@ def load_channel(channel_id: str, config_dir: Path | None = None) -> Channel:
 
 def list_channels(config_dir: Path | None = None) -> list[str]:
     return sorted(p.stem for p in (_dir(config_dir) / "channels").glob("*.toml"))
+
+
+def all_channels(config_dir: Path | None = None) -> list[Channel]:
+    """Every channel; a broken channel file is logged and skipped, so it can't stop the others."""
+    out = []
+    for cid in list_channels(config_dir):
+        try:
+            out.append(load_channel(cid, config_dir))
+        except Exception:  # noqa: BLE001
+            log.exception("channel %s", cid)
+    return out

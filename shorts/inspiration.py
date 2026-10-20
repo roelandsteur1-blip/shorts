@@ -49,7 +49,7 @@ def reader(settings: Settings, channel: Channel):
         return build("youtube", "v3", developerKey=key, cache_discovery=False)
     ids = [channel.id] + sorted(p.stem.removeprefix("token-") for p in settings.secrets_dir.glob("token-*.json"))
     for cid in dict.fromkeys(ids):
-        if not (settings.secrets_dir / f"token-{cid}.json").exists():
+        if not upload.token_path(settings, cid).exists():
             continue
         try:
             ch = channel if cid == channel.id else load_channel(cid, settings.config_dir)

@@ -69,17 +69,15 @@ class Limits:
     mode: str
     scene_workers: int   # videos (or parts of long videos) analysed at once
     render_workers: int  # Shorts rendered at once
-    downloads: int       # files downloaded at once
     x264_threads: int    # 0 = let x264 decide (all cores)
 
 
 def limits(data_dir: Path, nvenc: bool = False) -> Limits:
     cores = os.cpu_count() or 4
     if effective_mode(data_dir) == "fast":
-        return Limits("fast", scene_workers=cores, render_workers=3 if nvenc else 2,
-                      downloads=4, x264_threads=0)
+        return Limits("fast", scene_workers=cores, render_workers=3 if nvenc else 2, x264_threads=0)
     return Limits("quiet", scene_workers=max(1, cores // 2), render_workers=1,
-                  downloads=2, x264_threads=max(2, cores // 2))
+                  x264_threads=max(2, cores // 2))
 
 
 def lower_priority(efficiency: bool = False) -> None:
