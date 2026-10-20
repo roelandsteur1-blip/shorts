@@ -7,7 +7,7 @@ import tomllib
 from dataclasses import fields
 from pathlib import Path
 
-from . import llm, sources, tomlw
+from . import llm, sources, tags as taglayers, tomlw
 from .config import Channel, Settings, load_channel
 
 ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,30}$")
@@ -111,7 +111,7 @@ def new_channel(channel_id: str, name: str, language: str, niche: str) -> dict:
         "id": channel_id, "name": name, "language": language, "niche": niche,
         "categories": [], "sources": ["nasa"], "search_terms": [],
         "min_seconds": 15, "max_seconds": 30, "uploads_per_day": 2,
-        "publish_times_utc": ["15:00", "21:00"], "hashtags": ["#shorts"],
+        "publish_times_utc": ["15:00", "21:00"], "niche_tags": [],
         "formats": [{"id": "what_youre_seeing", "title": "What you're actually seeing",
                      "brief": "Explain what is actually happening in the hero shot, the thing most viewers\n"
                               "would not know. Open with a hook that makes the viewer look twice at the image.\n"
@@ -127,7 +127,8 @@ Footage categories available (id: label): {categories}
 Footage sources available (id: label): {sources}
 
 Answer with only JSON:
-{{"hashtags": ["#..." 2 specific to the niche, then "#shorts" (YouTube shows 3)],
+{{"niche_tags": [3 search tags for the niche as a whole, broader than one video, e.g. "gym", "fitness",
+     "bodybuilding" for a workout channel; not generic words like "viral" or "shorts"],
   "categories": ["category ids from the list where footage for this niche is likely found"],
   "sources": ["source ids from the list that will have this footage; nasa only for space"],
   "search_terms": ["8-15 short search terms for footage archives"],
@@ -138,7 +139,7 @@ Answer with only JSON:
 
 
 def draft(settings: Settings, name: str, language: str, niche: str, categories: dict[str, str]) -> dict:
-    """Claude drafts hashtags, categories, sources, search terms and format briefs. Only known
+    """Claude drafts niche tags, categories, sources, search terms and format briefs. Only known
     category and source ids are kept."""
     src = {m.NAME: m.LABEL for m in sources.all_sources()}
     prompt = DRAFT_PROMPT.format(
@@ -148,6 +149,7 @@ def draft(settings: Settings, name: str, language: str, niche: str, categories: 
     data = llm.ask_json(prompt, settings.claude_cmd)
     if not isinstance(data, dict):
         raise llm.LLMError("unexpected reply")
+    data["niche_tags"] = taglayers.pick(data.get("niche_tags") or [])
     data["categories"] = [c for c in data.get("categories") or [] if c in categories]
     data["sources"] = [s for s in data.get("sources") or [] if s in src]
     formats = []

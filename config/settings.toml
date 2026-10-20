@@ -61,3 +61,7 @@ channel_uploads_per_day = 5
 # Freesound once its free key is saved) when a channel has fewer usable tracks than this. 0 = never;
 # then only the files you put in data_dir/music/<channel> are used.
 music_min_tracks = 30
+
+# Tags, 3 layers of 3 (shorts/tags.py): 3 about the Short itself (written with the script), 3 for the
+# channel's niche (channel settings), and these 3 broad ones on every Short.
+broad_tags = ["shorts", "viral shorts", "for you"]

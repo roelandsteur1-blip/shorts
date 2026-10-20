@@ -5,7 +5,7 @@ import json
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
-from .. import categorize, channels as chans, formats as fmtlib, inspiration, llm, looks, sources
+from .. import categorize, channels as chans, formats as fmtlib, inspiration, llm, looks, sources, tags as taglayers
 from ..config import list_channels, load_channel
 from ..render import MUSIC_EXT
 from ..voice import SPEEDS, VOICES, label
@@ -28,7 +28,8 @@ def form_to_data(form, base: dict) -> dict:
     if "id" in form:
         data["id"] = form["id"].strip().lower()
     data["language"] = form.get("language", data.get("language", "en"))
-    data["hashtags"] = [h if h.startswith("#") else "#" + h for h in (form.get("hashtags") or "").split() if h.strip("#")]
+    if "niche_tags" in form:
+        data["niche_tags"] = taglayers.pick(_lines(form["niche_tags"]))
     data["search_terms"] = _lines(form.get("search_terms"))
     if "voice" in form:
         data["voice"] = form["voice"].strip() or None
@@ -101,7 +102,8 @@ def _context(data: dict, errors=None, new=False) -> dict:
             lib = None
     return {"d": data, "errors": errors or [], "new": new, "cats": cats, "counts": counts,
             "sources": sources.all_sources(), "languages": chans.LANGUAGES, "voices": VOICES, "speeds": SPEEDS, "voice_label": label,
-            "looks": looks.LABELS, "title_bars": looks.TITLE_BARS, "same_voice": same_voice, "same_look": same_look, "library_extra": lib}
+            "looks": looks.LABELS, "title_bars": looks.TITLE_BARS, "same_voice": same_voice, "same_look": same_look, "library_extra": lib,
+            "niche_default": taglayers.NICHE_DEFAULTS.get(data.get("id") or "", [])}
 
 
 @bp.get("/channels/new")

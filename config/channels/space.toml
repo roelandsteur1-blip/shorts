@@ -26,7 +26,9 @@ publish_times_utc = ["15:00", "21:00"]
 # Searches for background music (CC0 / public domain, fetched by itself; see the Music page).
 music_terms = ["space ambient", "cinematic ambient", "synth pad", "epic cinematic", "calm piano"]
 
-hashtags = ["#space", "#nasa", "#astronomy", "#shorts"]
+# Tag layer 2 (shorts/tags.py): 3 tags for the niche as a whole. Each Short also gets 3 tags about
+# itself and 3 broad ones (broad_tags in settings.toml).
+niche_tags = ["space", "astronomy", "nasa"]
 
 # Competitor research (shorts/inspiration.py): 2-3 successful channels in the niche (@handle, link
 # or channel id). Their most-viewed Shorts teach which topics, hooks and titles work; refreshed weekly.

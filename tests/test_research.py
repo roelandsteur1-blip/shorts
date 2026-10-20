@@ -3,7 +3,7 @@ import json
 from dataclasses import replace
 
 from conftest import fake_claude
-from shorts import channels as chans, db, formats, hero, llm, looks, pipeline, render, script
+from shorts import channels as chans, db, formats, hero, llm, looks, pipeline, render, script, tags
 
 
 def test_looks_fixed_yellow_and_safe_margins():
@@ -59,10 +59,18 @@ def test_prompt_offers_formats_and_saves_claudes_pick(library, settings, channel
     assert library.execute("SELECT format_id FROM shorts WHERE id=?", (sid,)).fetchone()[0] == "myth_vs_fact"
 
 
-def test_three_hashtags_ending_in_shorts(channel):
-    ch = replace(channel, hashtags=["#space", "#nasa", "#astronomy", "#shorts"])
-    assert render.hashtags(ch) == ["#space", "#nasa", "#shorts"]
-    assert render.hashtags(replace(channel, hashtags=[])) == ["#shorts"]
+def test_three_layers_of_three_tags(channel, settings):
+    ch = replace(channel, id="gym", niche_tags=["gym", "Fitness", "bodybuilding", "health"])
+    post = ["bicep curl", "#bicep workout", "fitness", "arm day", "extra"]
+    p, n, b = tags.layers(post, ch, settings)
+    assert p == ["bicep curl", "bicep workout", "fitness"]
+    assert n == ["gym", "bodybuilding", "health"]  # 'Fitness' is already a post tag
+    assert b == ["shorts", "viral shorts", "for you"]
+    assert tags.hashtag("viral shorts") == "#viralshorts" and tags.hashtag("#Arm-day!") == "#armday"
+    # Channels without niche tags: built-in defaults per channel, else their old hashtags minus #shorts.
+    assert tags.niche_tags(replace(channel, id="warplanedd", niche_tags=[])) == ["warplanes", "military aviation", "fighter jets"]
+    assert tags.niche_tags(replace(channel, id="new", niche_tags=[], hashtags=["#cats", "#shorts", "#pets"])) == ["cats", "pets"]
+    assert tags.layers([], ch, replace(settings, broad_tags=["a", "b", "c", "d"]))[2] == ["a", "b", "c"]
 
 
 def test_shorts_capped_at_a_minute(channel):

@@ -154,11 +154,15 @@ def test_credit_lines_for_other_archives(conn, channel):
     s1 = conn.execute("INSERT INTO scenes (asset_id, start, end) VALUES (?,0,5)", (aid,)).lastrowid
     s2 = conn.execute("INSERT INTO scenes (asset_id, start, end) VALUES (?,0,5)", (aid2,)).lastrowid
     sid = conn.execute("""INSERT INTO shorts (channel, format_id, hero_scene_id, title, description, tags)
-                          VALUES ('space', 'f', ?, 'T', 'D', '[]')""", (s1,)).lastrowid
+                          VALUES ('space', 'f', ?, 'T', 'D', '["glider flight", "Space", "old gliders"]')""", (s1,)).lastrowid
     conn.executemany("INSERT INTO blocks (short_id, idx, text, seconds, scene_id) VALUES (?,?,?,?,?)",
                      [(sid, 0, "a", 2, s1), (sid, 1, "b", 2, s2)])
     conn.commit()
-    desc = render.metadata(conn, channel, sid)["description"]
+    meta = render.metadata(conn, channel, sid)
+    desc = meta["description"]
+    assert meta["tags"] == ["glider flight", "Space", "old gliders", "astronomy", "nasa",
+                            "shorts", "viral shorts", "for you"]  # 'space' was a post tag already
+    assert desc.endswith("#gliderflight #space #oldgliders #astronomy #nasa #shorts #viralshorts #foryou")
     assert "- Ann Pilot / Wikimedia Commons (CC BY 4.0): Glider flight 1930" in desc
     assert "- Prelinger Archives (public-domain): Duck and cover" in desc
     assert "NASA does not endorse" not in desc and "http" not in desc

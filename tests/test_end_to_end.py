@@ -40,9 +40,9 @@ def test_make_renders_reviewable_short(library, settings, channel, monkeypatch):
     page = client.get(f"/short/{done[0]}").data
     assert b"unclear" in page and b"Approve" in page
     assert client.get(f"/video/{done[0]}").status_code == 200
-    client.post(f"/short/{done[0]}", data={"action": "approve", "title": "New title", "tags": "a, b"})
+    client.post(f"/short/{done[0]}", data={"action": "approve", "title": "New title", "tags": "a, b, c, d"})
     s = library.execute("SELECT status, title, tags FROM shorts WHERE id=?", (done[0],)).fetchone()
-    assert (s["status"], s["title"], json.loads(s["tags"])) == ("approved", "New title", ["a", "b"])
+    assert (s["status"], s["title"], json.loads(s["tags"])) == ("approved", "New title", ["a", "b", "c"])
 
 
 def test_music_is_mixed(library, settings, channel, monkeypatch):

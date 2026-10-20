@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 MAX_SHORT_SECONDS = 60
+BROAD_TAGS = ("shorts", "viral shorts", "for you")  # tag layer 3 default (shorts/tags.py)
 ROOT = Path(__file__).resolve().parent.parent
 # SHORTS_CONFIG_DIR / --config-dir: another config folder (tests, or jobs started by the dashboard).
 CONFIG_DIR = Path(os.environ.get("SHORTS_CONFIG_DIR") or ROOT / "config")
@@ -44,6 +45,7 @@ class Settings:
     restock_per_term: int = 2         # videos per search term in one automatic restock
     upload_quota: int = 100           # uploads per day for the Google Cloud project (all channels)
     channel_uploads_per_day: int = 5  # uploads per channel per 24 hours (YouTube's own per-channel limit)
+    broad_tags: list[str] = field(default_factory=lambda: list(BROAD_TAGS))  # tag layer 3, every Short
     music_min_tracks: int = 30        # 'make' fetches CC0 music when the shared library has fewer tracks (0 = never)
     config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR
 
@@ -94,7 +96,8 @@ class Channel:
     max_seconds: int = 30
     uploads_per_day: int = 2
     publish_times_utc: list[str] = field(default_factory=lambda: ["15:00"])
-    hashtags: list[str] = field(default_factory=list)
+    hashtags: list[str] = field(default_factory=list)  # old; niche_tags replaces it (still read as a fallback)
+    niche_tags: list[str] = field(default_factory=list)  # tag layer 2 (shorts/tags.py); empty = built-in default
     music_folder: str | None = None  # no longer used: all channels share data_dir/music (shorts/music.py)
     music_terms: list[str] = field(default_factory=list)  # music searches (shorts/music.py); empty = defaults
     voice: str | None = None               # voice-over (shorts/voice.py): Kokoro voice id; empty = text + music only

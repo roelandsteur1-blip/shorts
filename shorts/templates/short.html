@@ -30,7 +30,8 @@
 <p class="muted" style="font-size:12px">Only dispute with proof the footage is public domain. A rejected dispute can turn into a copyright strike; crediting the source is not a valid reason.</p></form></details></div>
 <form method="post" class="card" action="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">
 <label>Title<input type="text" name="title" value="{{ s.title }}" maxlength="100"></label>
-<label>Tags<input type="text" name="tags" value="{{ tags }}"></label>
+<label>Tags about this Short (3, comma separated)<input type="text" name="tags" value="{{ tags }}"></label>
+<p class="muted" style="font-size:12px">Added on upload: {{ other_tags|join(', ') }} (niche tags in channel settings, broad tags in settings.toml)</p>
 <p class="muted" style="white-space:pre-wrap">{{ s.description }}</p>
 <p><button class="approve" name="action" value="approve">Approve</button>
 &nbsp; <select name="reason" style="width:auto">{% for r in reasons %}<option>{{ r }}</option>{% endfor %}</select>

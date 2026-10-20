@@ -7,7 +7,7 @@ import math
 import re
 import sqlite3
 
-from . import formats as fmtlib, inspiration, learn, llm, looks, progress
+from . import formats as fmtlib, inspiration, learn, llm, looks, progress, tags as taglayers
 from .config import Channel, Settings
 from .music import MOODS
 from .voice import channel_voice
@@ -56,7 +56,9 @@ Rules:
   "Saturn's rings are disappearing"), make it match the video, no clickbait lies, no hashtags, and
   don't start every title the same way.
 {screen_title_rule}- Description: 1-2 sentences in plain English expanding on the Short.
-- Tags: 5-10 search tags.
+- Tags: exactly 3 search tags about this exact Short, what someone would type to find it (for a
+  Short about a bicep workout: "bicep curl", "bicep workout", "arm workout"). Not the channel's
+  niche in general and not generic words like "viral" or "shorts" (those are added separately).
 - Mood: the background music that fits this Short, one of: {moods}.
 
 Niche check first: this channel is only about {niche}. If a hero video (title, description, keywords)
@@ -277,7 +279,7 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     blocks = normalise_blocks(data.get("blocks") or [], channel)
     if len(blocks) < 3:
         raise ValueError("script too short")
-    tags = [t.strip().lstrip("#") for t in data.get("tags") or [] if t.strip()]
+    tags = taglayers.pick(data.get("tags") or [])
     cur = conn.execute(
         """INSERT INTO shorts (channel, format_id, hero_scene_id, topic, hook, title, description,
                                tags, status, duration, mood, screen_title)

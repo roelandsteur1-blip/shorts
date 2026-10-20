@@ -10,7 +10,7 @@ import sqlite3
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import db, looks, media
+from . import db, looks, media, tags as taglayers
 from .config import Channel, Settings
 from .music import MUSIC_EXT  # noqa: F401 - imported from here by the dashboard and 'check'
 
@@ -279,7 +279,7 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         media.run(args, cwd=work)
     os.replace(work / "out.mp4", out)
 
-    meta = metadata(conn, channel, short_id)
+    meta = metadata(conn, channel, short_id, settings)
     (work / "metadata.json").write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
     # A re-render of an approved Short stays approved; everything else goes (back) to review.
     current = conn.execute("SELECT status FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
@@ -499,13 +499,13 @@ def footage_credit(asset) -> str:
     return f"{label(asset['source'])} ({lic})" if lic and lic != "unknown" else label(asset["source"])
 
 
-def hashtags(channel: Channel) -> list[str]:
-    """YouTube shows three hashtags above the title: two about the topic, then #shorts."""
-    tags = [h for h in dict.fromkeys(channel.hashtags) if h.lower() != "#shorts"]
-    return tags[:2] + ["#shorts"]
+def all_tags(post: list[str], channel: Channel, settings=None) -> list[str]:
+    """The 9 tags of a Short: 3 post, 3 niche, 3 broad (shorts/tags.py)."""
+    p, n, b = taglayers.layers(post, channel, settings)
+    return p + n + b
 
 
-def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int) -> dict:
+def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int, settings=None) -> dict:
     s = conn.execute("SELECT * FROM shorts WHERE id=?", (short_id,)).fetchone()
     assets = conn.execute(
         """SELECT DISTINCT a.title, a.source, a.license, a.attribution FROM blocks b
@@ -522,13 +522,13 @@ def metadata(conn: sqlite3.Connection, channel: Channel, short_id: int) -> dict:
         parts += ["", "Sources: " + ", ".join(sources)]
     if any(a["source"] == "nasa" for a in assets):
         parts += ["", "NASA does not endorse this channel."]
-    parts += ["", " ".join(hashtags(channel))]
-    tags = json.loads(s["tags"] or "[]")
+    nine = all_tags(json.loads(s["tags"] or "[]"), channel, settings)
+    parts += ["", " ".join(dict.fromkeys(taglayers.hashtag(t) for t in nine))]
     title = clean_text(s["title"]).strip() or clean_text(s["topic"] or s["hook"] or "").replace("*", "").strip()
     return {
         "title": title[:100],
         "description": clean_text("\n".join(parts).strip())[:4900],
-        "tags": [clean_text(t) for t in tags if clean_text(t).strip()],
+        "tags": [clean_text(t) for t in nine if clean_text(t).strip()],
         "categoryId": "28",  # Science & Technology
         "containsSyntheticMedia": bool(s["synthetic"]),
         "selfDeclaredMadeForKids": False,

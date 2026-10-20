@@ -5,8 +5,9 @@ import json
 
 from flask import Blueprint, abort, redirect, render_template, request, send_file, url_for
 
-from .. import db, script
-from .common import channel_or_404, channels, conn
+from .. import db, script, tags as taglayers
+from ..config import load_channel
+from .common import channel_or_404, channels, conn, settings
 from .jobs import start_job
 
 bp = Blueprint("review", __name__)
@@ -60,8 +61,13 @@ def short(sid: int):
             WHERE (s.status != 'rejected' OR s.id = ?) AND sc.asset_id =
                   (SELECT asset_id FROM scenes WHERE id = ?) ORDER BY s.id""", (sid, s["hero_scene_id"])).fetchall()
     channel = request.args.get("channel") or None
+    post = taglayers.pick(json.loads(s["tags"] or "[]"))
+    try:
+        post, niche, broad = taglayers.layers(post, load_channel(s["channel"], settings().config_dir), settings())
+    except FileNotFoundError:
+        niche, broad = [], taglayers.broad_tags(settings())
     return render_template("short.html", s=s, blocks=blocks, facts=facts, assets=assets, family=family,
-                           tags=", ".join(json.loads(s["tags"] or "[]")), reasons=REJECT_REASONS,
+                           tags=", ".join(post), other_tags=niche + broad, reasons=REJECT_REASONS,
                            next_id=_next_id(s["status"], sid, channel), channel=channel)
 
 
@@ -79,7 +85,7 @@ def decide(sid: int):
     action = request.form.get("action")
     channel = request.args.get("channel") or None
     title = (request.form.get("title") or "").strip()[:100]
-    tags = [t.strip() for t in (request.form.get("tags") or "").split(",") if t.strip()]
+    tags = taglayers.pick((request.form.get("tags") or "").split(","))
     fields = {"title": title, "tags": json.dumps(tags)}
     if action == "approve":
         fields["status"] = "approved"

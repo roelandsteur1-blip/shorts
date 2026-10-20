@@ -318,7 +318,7 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
     slots = slots_for(conn, settings, channel, [r["id"] for r in rows]) if schedule else [None] * len(rows)
     done = []
     for s, slot in zip(rows, slots):
-        meta = metadata(conn, channel, s["id"])
+        meta = metadata(conn, channel, s["id"], settings)
         request = yt.videos().insert(
             part="snippet,status", body=body_for(meta, slot),
             media_body=MediaFileUpload(s["video_path"], mimetype="video/mp4", chunksize=8 << 20, resumable=True),

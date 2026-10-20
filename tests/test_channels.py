@@ -23,7 +23,7 @@ def client(settings, cfg):
     return create_app(settings, start_runner=False).test_client()
 
 
-DRAFT = {"hashtags": ["#history", "#shorts"], "categories": ["history", "war", "made_up"],
+DRAFT = {"niche_tags": ["#history", "old news", "newsreels", "extra"], "categories": ["history", "war", "made_up"],
          "sources": ["prelinger", "loc", "nope"], "search_terms": ["polygoon", "newsreel"],
          "hero_query": "a dramatic old newsreel moment",
          "formats": [{"id": "Then & Now", "title": "Then and now", "brief": "Compare the past with today."},
@@ -32,7 +32,7 @@ DRAFT = {"hashtags": ["#history", "#shorts"], "categories": ["history", "war", "
 
 def form_for(data, n_formats=3):
     form = {"name": data["name"], "id": data.get("id", ""), "language": "nl", "niche": data["niche"],
-            "hashtags": "#history shorts", "search_terms": "newsreel\npolygoon", "categories": ["history", "war"],
+            "niche_tags": "history, old news\nnewsreels, fourth", "search_terms": "newsreel\npolygoon", "categories": ["history", "war"],
             "sources": ["prelinger", "loc"], "min_seconds": "15", "max_seconds": "30", "uploads_per_day": "1",
             "publish_times_utc": "16:00", "format_count": str(n_formats), "hero_query": ""}
     form.update({"format_id_0": "then_now", "format_title_0": "Then and now",
@@ -47,13 +47,14 @@ def test_wizard_creates_a_channel(client, settings, cfg, monkeypatch):
     monkeypatch.setattr(llm, "ask", lambda *a, **k: json.dumps(DRAFT))
     d = client.post("/channels/draft", data={"name": "Oud Nieuws", "niche": "Dutch history", "language": "nl"}).get_json()
     assert d["categories"] == ["history", "war"] and d["sources"] == ["prelinger", "loc"]
+    assert d["niche_tags"] == ["history", "old news", "newsreels"]
     assert [f["id"] for f in d["formats"]] == ["then_now", "story"]
     assert client.post("/channels/draft", data={"name": ""}).status_code == 400
 
     r = client.post("/channels/new", data=form_for({"name": "Oud Nieuws", "id": "oudnieuws", "niche": "Dutch history"}))
     assert r.status_code == 302 and r.headers["Location"].endswith("/channels/oudnieuws?created=1")
     ch = load_channel("oudnieuws", cfg)
-    assert (ch.language, ch.categories, ch.sources, ch.hashtags) == ("nl", ["history", "war"], ["prelinger", "loc"], ["#history", "#shorts"])
+    assert (ch.language, ch.categories, ch.sources, ch.niche_tags) == ("nl", ["history", "war"], ["prelinger", "loc"], ["history", "old news", "newsreels"])
     assert ch.formats == [{"id": "then_now", "title": "Then and now", "brief": "Compare the past\nwith today.", "enabled": True}]
     assert ch.style["font"] == "Montserrat ExtraBold" and ch.hero_query is None
     # The same id twice is refused, and so is a broken form.

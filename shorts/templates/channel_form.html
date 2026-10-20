@@ -16,8 +16,8 @@
 <label>Voice speed<select name="voice_speed">{% for x in speeds %}<option value="{{ x }}" {{ 'selected' if x == (d.voice_speed or 1.0) }}>{{ x }}×</option>{% endfor %}</select></label>
 <label>Language<select name="language">{% for k, v in languages.items() %}<option value="{{ k }}" {{ 'selected' if k == d.language }}>{{ v }}</option>{% endfor %}</select></label>
 <label>Niche, in one line<input type="text" name="niche" value="{{ d.niche or '' }}" placeholder="e.g. Dutch history from old newsreels"></label>
-<p><button type="button" id="draft">Draft with Claude</button> <span class="muted" id="draftmsg">fills hashtags, footage, search terms and formats from the name and niche</span></p>
-<label>Hashtags<input type="text" name="hashtags" value="{{ (d.hashtags or [])|join(' ') }}"></label>
+<p><button type="button" id="draft">Draft with Claude</button> <span class="muted" id="draftmsg">fills niche tags, footage, search terms and formats from the name and niche</span></p>
+<label>Niche tags: 3, comma separated, broader than one Short (e.g. gym, fitness, bodybuilding). Every Short gets 3 tags about itself, these 3, and 3 broad ones (shorts, viral shorts, for you)<input type="text" name="niche_tags" value="{{ (d.niche_tags or [])|join(', ') }}" placeholder="{{ niche_default|join(', ') }}"></label>
 </div>
 
 <div class="card"><h3 style="margin-top:0">Footage</h3>
@@ -102,7 +102,7 @@ document.getElementById('draft').onclick = async () => {
   const r = await fetch('/channels/draft', {method: 'POST', body}); const d = await r.json();
   if (d.error) { msg.textContent = d.error; return; }
   if (f['id'] && !f['id'].value) f['id'].value = f['name'].value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 30);
-  f['hashtags'].value = (d.hashtags || []).join(' ');
+  f['niche_tags'].value = (d.niche_tags || []).join(', ');
   f['search_terms'].value = (d.search_terms || []).join('\n');
   if (d.hero_query) f['hero_query'].value = d.hero_query;
   for (const box of document.querySelectorAll('input[name=categories]')) box.checked = (d.categories || []).includes(box.value);
