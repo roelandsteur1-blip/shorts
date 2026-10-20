@@ -1,6 +1,9 @@
 """Home: one card per channel."""
 from __future__ import annotations
 
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, redirect, render_template, request, url_for
@@ -10,17 +13,59 @@ from ..upload import token_path
 from .common import channels, conn, settings
 
 bp = Blueprint("home", __name__)
+log = logging.getLogger(__name__)
+
+YT_CACHE_SECONDS = 600  # Home asks YouTube for the schedule at most this often per channel
+_yt_cache: dict[str, tuple[float, list[dict]]] = {}
 
 
-def channel_card(ch) -> dict:
+def youtube_schedule(chs) -> dict[str, list[dict] | None]:
+    """Scheduled videos per connected channel, straight from YouTube (cached a few minutes, the
+    channels fetched side by side). None = YouTube couldn't be asked: Home falls back to our data."""
+    from .. import ytstats
+
+    s, c, out, todo = settings(), conn(), {}, []
+    for ch in chs:
+        if not token_path(s, ch.id).exists():
+            continue
+        hit = _yt_cache.get(ch.id)
+        if hit and time.monotonic() - hit[0] < YT_CACHE_SECONDS:
+            out[ch.id] = hit[1]
+        else:
+            known = [r[0] for r in c.execute("SELECT youtube_id FROM shorts WHERE channel=? AND status='scheduled'"
+                                             " AND youtube_id IS NOT NULL", (ch.id,))]
+            todo.append((ch, known))
+
+    def fetch(job):
+        ch, known = job
+        try:
+            return ytstats.scheduled(s, ch, known)
+        except Exception as e:  # noqa: BLE001 - offline, expired login, quota: show our own data
+            log.warning("%s: could not read the schedule from YouTube: %s", ch.id, e)
+            return None
+
+    if todo:
+        with ThreadPoolExecutor(max_workers=min(len(todo), 5)) as pool:
+            for (ch, _), res in zip(todo, pool.map(fetch, todo)):
+                out[ch.id] = res
+                if res is not None:
+                    _yt_cache[ch.id] = (time.monotonic(), res)
+    return out
+
+
+def _our_schedule(ch, since: str) -> list[str]:
+    return [r[0] for r in conn().execute("""SELECT publish_at FROM shorts WHERE channel=? AND status='scheduled'
+                                              AND publish_at >= ?""", (ch.id, since))]
+
+
+def channel_card(ch, yt: list[dict] | None = None) -> dict:
     c = conn()
     counts = dict(c.execute("SELECT status, COUNT(*) FROM shorts WHERE channel=? GROUP BY status",
                             (ch.id,)).fetchall())
     now = datetime.now(timezone.utc)
-    week = c.execute("""SELECT COUNT(*) FROM shorts WHERE channel=? AND status='scheduled'
-                          AND publish_at >= ? AND publish_at < ?""",
-                     (ch.id, now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                      (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ"))).fetchone()[0]
+    start, end = now.strftime("%Y-%m-%dT%H:%M:%SZ"), (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    planned = [v["publish_at"] for v in yt] if yt is not None else _our_schedule(ch, start)
+    week = sum(start <= p < end for p in planned)
     left, videos = shorts_left(c, settings(), ch.id, fits=ch)
     last_job = c.execute("SELECT * FROM jobs WHERE channel=? ORDER BY id DESC LIMIT 1", (ch.id,)).fetchone()
     return {
@@ -30,6 +75,8 @@ def channel_card(ch) -> dict:
         "approved": counts.get("approved", 0),
         "failed": counts.get("failed", 0),
         "scheduled_week": week,
+        "planned": planned,
+        "from_youtube": yt is not None,
         "footage_left": left,
         "footage_videos": videos,
         "categories": [(cat, shorts_left(c, settings(), ch.id, [cat], fits=ch)[0]) for cat in ch.categories],
@@ -43,7 +90,7 @@ def warnings(cards: list[dict], now: datetime | None = None) -> list[dict]:
     from ..upload import blocked_until, login_expired_path
 
     now = now or datetime.now(timezone.utc)
-    c, s, out = conn(), settings(), []
+    s, out = settings(), []
     for card in cards:
         ch = card["ch"]
         if login_expired_path(s, ch.id).exists():
@@ -60,9 +107,7 @@ def warnings(cards: list[dict], now: datetime | None = None) -> list[dict]:
         if not card["connected"]:
             continue  # not uploading yet: an empty schedule is expected
         days = [(now + timedelta(days=i)).date() for i in range(1, 8)]
-        planned = {r[0] for r in c.execute("""SELECT substr(publish_at, 1, 10) FROM shorts WHERE channel=?
-                                                AND status='scheduled' AND publish_at >= ?""",
-                                           (ch.id, days[0].isoformat()))}
+        planned = {p[:10] for p in card["planned"]}
         empty = [d for d in days if d.isoformat() not in planned]
         if empty:
             when = ("the next 7 days" if len(empty) == len(days)
@@ -76,7 +121,9 @@ def warnings(cards: list[dict], now: datetime | None = None) -> list[dict]:
 @bp.get("/")
 def index():
     running = conn().execute("SELECT * FROM jobs WHERE status IN ('running','queued') ORDER BY id").fetchall()
-    cards = [channel_card(ch) for ch in channels()]
+    chs = channels()
+    yt = youtube_schedule(chs)
+    cards = [channel_card(ch, yt.get(ch.id)) for ch in chs]
     return render_template("home.html", cards=cards, running=running, warnings=warnings(cards),
                            per_channel=settings().channel_uploads_per_day, msg=request.args.get("msg"))
 

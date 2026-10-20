@@ -17,7 +17,7 @@ Shorts <button class="primary">Make for every channel</button></form>
 <p class="muted" style="margin-top:2px">{{ c.ch.id }} · {{ c.ch.niche }} ·
 {% if c.connected %}<span class="ok">YouTube connected</span>{% else %}<span class="warn">YouTube not connected</span>{% endif %}</p>
 <p><span class="stat"><b>{{ c.review }}</b>to review</span><span class="stat"><b>{{ c.approved }}</b>approved</span>
-<span class="stat"><b>{{ c.scheduled_week }}</b>next 7 days</span><span class="stat"><b>{{ c.footage_left }}</b>Shorts left (from {{ c.footage_videos }} videos)</span>
+<span class="stat" title="{{ 'Scheduled on YouTube' if c.from_youtube else 'From our own data: YouTube not connected or not reachable' }}"><b>{{ c.scheduled_week }}</b>next 7 days{% if c.connected and not c.from_youtube %}*{% endif %}</span><span class="stat"><b>{{ c.footage_left }}</b>Shorts left (from {{ c.footage_videos }} videos)</span>
 {% if c.failed %}<span class="stat bad"><b>{{ c.failed }}</b>failed</span>{% endif %}</p>
 {% if c.categories %}<p class="muted">{% for cat, n in c.categories %}<span class="pill">{{ cat }}: {{ n }}</span>{% endfor %}</p>{% endif %}
 {% if c.last_job %}<p class="muted">Last job: <a href="/jobs/{{ c.last_job.id }}">{{ c.last_job.label }}</a> · {{ c.last_job.status }}</p>{% endif %}

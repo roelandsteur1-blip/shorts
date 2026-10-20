@@ -239,3 +239,35 @@ def test_stats_page_shows_errors(client, conn, settings, channel, yt):
         sync(conn, settings, channel)
     page = client.get("/stats").data.decode()
     assert "Last fetch failed" in page and "has expired" in page
+
+
+def test_home_schedule_comes_from_youtube(conn, settings, channel, client, yt):
+    from datetime import timedelta
+
+    from shorts.web import home
+    home._yt_cache.clear()
+    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
+    later = (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%dT15:00:00Z")
+    add_short(conn, status="scheduled", youtube_id="ours", publish_at=soon)  # deleted on YouTube
+    yt.add("byhand", privacy="private", publish_at=soon)
+    yt.add("studio", privacy="private", publish_at=later)  # beyond 7 days
+    yt.add("live1", views=5)
+    assert [v["youtube_id"] for v in ytstats.scheduled(settings, channel, ["ours"])] == ["byhand", "studio"]
+
+    (settings.secrets_dir / "token-space.json").write_text("{}")
+    with client.application.app_context():
+        _check_home(home, channel, yt)
+
+
+def _check_home(home, channel, yt):
+    card = home.channel_card(channel, home.youtube_schedule([channel])["space"])
+    assert card["from_youtube"] and card["scheduled_week"] == 1
+    calls = len(yt.calls)
+    home.youtube_schedule([channel])
+    assert len(yt.calls) == calls  # cached
+
+    home._yt_cache.clear()
+    yt.fail = "offline"
+    assert home.youtube_schedule([channel]) == {"space": None}
+    card = home.channel_card(channel, None)
+    assert not card["from_youtube"] and card["scheduled_week"] == 1  # our own data

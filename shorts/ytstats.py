@@ -61,7 +61,7 @@ def state_of(item: dict, now: datetime) -> str:
     return "live"  # public or unlisted
 
 
-def channel_videos(yt, known: list[str]) -> tuple[str, dict[str, dict]]:
+def channel_videos(yt, known: list[str], part: str = "snippet,status,statistics,contentDetails") -> tuple[str, dict[str, dict]]:
     """(YouTube channel id, {video id: videos.list item}) for every upload on the logged-in channel,
     plus the ids we know from our own database (so scheduled ones are covered even if the uploads
     playlist leaves them out). Ids YouTube doesn't return are gone."""
@@ -80,10 +80,29 @@ def channel_videos(yt, known: list[str]) -> tuple[str, dict[str, dict]]:
     want = list(dict.fromkeys(ids + known))
     items = {}
     for i in range(0, len(want), 50):
-        res = _exec(yt.videos().list(part="snippet,status,statistics,contentDetails", id=",".join(want[i:i + 50]),
+        res = _exec(yt.videos().list(part=part, id=",".join(want[i:i + 50]),
                                      maxResults=50))
         items.update({it["id"]: it for it in res.get("items", [])})
     return ch[0]["id"], items
+
+
+def scheduled(settings: Settings, channel: Channel, known: list[str], now: datetime | None = None) -> list[dict]:
+    """The channel's scheduled videos as YouTube has them now (not what the pipeline remembers):
+    [{youtube_id, title, publish_at}], soonest first. Never opens a browser to log in."""
+    from googleapiclient.discovery import build
+
+    from . import upload
+
+    now = now or datetime.now(timezone.utc)
+    yt = build("youtube", "v3", credentials=upload.credentials(settings, channel, interactive=False),
+               cache_discovery=False)
+    yt_channel, items = channel_videos(yt, known, part="snippet,status")
+    if channel.youtube_channel_id and yt_channel != channel.youtube_channel_id:
+        raise RuntimeError(f"the YouTube login for '{channel.name}' is for another channel ({yt_channel})")
+    out = [{"youtube_id": vid, "title": it.get("snippet", {}).get("title"),
+            "publish_at": _iso(parse_time(it["status"]["publishAt"]))}
+           for vid, it in items.items() if state_of(it, now) == "scheduled"]
+    return sorted(out, key=lambda v: v["publish_at"])
 
 
 def channel_analytics(yta, start: date, end: date) -> dict[str, list]:
