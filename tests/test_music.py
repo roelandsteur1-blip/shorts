@@ -198,3 +198,27 @@ def test_restock_signals_ready_when_tracks_exist(conn, settings, channel, monkey
     monkeypatch.setattr(music, "fetch", lambda *a, **k: seen.append(ready.is_set()) or 0)
     music.restock(conn, settings, channel, ready)
     assert seen == [True] and ready.is_set()  # renders could start before the download
+
+
+def test_fetch_resumes_after_used_pages(conn, settings, channel, monkeypatch):
+    asked = []
+    monkeypatch.setattr(music, "all_terms", lambda *a: ["ambient"])
+    monkeypatch.setattr(music, "search_openverse", lambda term, page, s: asked.append(page) or (
+        [] if page > 2 else [{"source": "openverse", "source_id": f"{page}", "title": "x"}]))
+    monkeypatch.setattr(music, "_known", lambda *a: True)  # every result already in the library
+    assert music.fetch(conn, settings, channel, 5, session=object()) == 0
+    assert asked == [1, 2, 3]  # page 3 was empty: ambient is used up
+    asked.clear()
+    music.fetch(conn, settings, channel, 5, session=object())
+    assert asked == []  # nothing asked again
+
+
+def test_restock_waits_after_a_dry_fetch(conn, settings, channel, monkeypatch):
+    settings.music_min_tracks = 30
+    monkeypatch.setattr(music, "sync", lambda *a: None)
+    monkeypatch.setattr(music, "tag_pending", lambda *a: None)
+    calls = []
+    monkeypatch.setattr(music, "fetch", lambda *a, **k: calls.append(1) or 0)
+    music.restock(conn, settings, channel)
+    music.restock(conn, settings, channel)
+    assert calls == [1]  # the second Make doesn't try again within DRY_HOURS

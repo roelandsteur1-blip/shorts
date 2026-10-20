@@ -14,6 +14,7 @@ the script, never the one the previous Short of the channel used. A track YouTub
 'claimed' on the Music page: it moves to music/_claimed and is never picked again."""
 from __future__ import annotations
 
+import json
 import logging
 import random
 import re
@@ -22,6 +23,7 @@ import sqlite3
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -244,6 +246,25 @@ def all_terms(settings: Settings, channel: Channel | None = None) -> list[str]:
 
 SEARCH_TIMEOUT = 20  # seconds per music search request
 SOURCE_FAILURES = 2  # a music source that fails this many searches in a row is skipped for the run
+DRY_HOURS = 12       # a fetch that got nothing waits this long before Make tries again
+EXHAUSTED = -1       # search state: this source + term has no more results
+
+
+def _state_path(settings: Settings) -> Path:
+    return settings.data_dir / "music-search.json"
+
+
+def load_state(settings: Settings) -> dict:
+    """{"pages": {"<source>|<term>": last page fully used, or EXHAUSTED}, "dry_until": iso time}.
+    Every run carries on where the last one stopped instead of re-reading pages it already used."""
+    try:
+        return json.loads(_state_path(settings).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(settings: Settings, state: dict) -> None:
+    _state_path(settings).write_text(json.dumps(state, indent=1), encoding="utf-8")
 
 
 def search_openverse(term: str, page: int, session: requests.Session) -> list[dict]:
@@ -373,14 +394,20 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel | None,
     terms = all_terms(settings, channel)
     got = 0
     failures: dict[str, int] = {}
+    state = load_state(settings)
+    pages = state.setdefault("pages", {})
     with ThreadPoolExecutor(WORKERS) as pool:
-        for page in range(1, max_pages + 1):
+        for _ in range(max_pages):
             for term in terms:
                 for src in music_sources(settings):
                     if got >= need:
                         return got
                     if failures.get(src, 0) >= SOURCE_FAILURES:
                         continue  # down or too slow right now: try again next run
+                    key = f"{src}|{term}"
+                    if pages.get(key, 0) == EXHAUSTED:
+                        continue
+                    page = pages.get(key, 0) + 1
                     try:
                         hits = (search_openverse(term, page, s) if src == "openverse"
                                 else search_freesound(term, page, s, sources.api_key(settings, "freesound")))
@@ -390,6 +417,10 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel | None,
                                     "; skipping it for this run" if failures[src] >= SOURCE_FAILURES else "")
                         continue
                     failures[src] = 0
+                    if not hits:
+                        pages[key] = EXHAUSTED
+                        save_state(settings, state)
+                        continue
                     todo = []
                     for hit in hits:
                         if _known(conn, hit["source"], hit["source_id"]) or any(
@@ -413,6 +444,9 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel | None,
                                 got += 1
                                 log.info("music: kept %s (%s, %s, %s)", hit["title"], hit["source"], hit["license"], res["mood"])
                         progress.report(got, need, "music: download")
+                    if not todo:  # every result on this page used: the next run starts after it
+                        pages[key] = page
+                        save_state(settings, state)
     return got
 
 
@@ -427,8 +461,17 @@ def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, read
         if have and ready is not None:
             ready.set()
         if settings.music_min_tracks and have < settings.music_min_tracks:
+            state = load_state(settings)
+            now = datetime.now(timezone.utc)
+            if state.get("dry_until") and now.isoformat() < state["dry_until"]:
+                log.info("music: %d tracks (want %d); the last fetch found nothing, next try after %s UTC",
+                         have, settings.music_min_tracks, state["dry_until"][:16].replace("T", " "))
+                return
             n = fetch(conn, settings, channel, settings.music_min_tracks)
             log.info("music: fetched %d tracks", n)
+            state = load_state(settings)
+            state["dry_until"] = (now + timedelta(hours=DRY_HOURS)).isoformat() if n == 0 else None
+            save_state(settings, state)
     except Exception:  # noqa: BLE001
         log.exception("music restock failed; Shorts use the tracks there are")
     finally:
