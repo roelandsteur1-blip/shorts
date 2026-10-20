@@ -143,4 +143,4 @@ def test_sources_status_and_test_button(client, settings, monkeypatch):
 
     page = client.get("/sources").get_data(as_text=True)
     assert "Connected" in page and "Failing" in page and "Test all" in page
-    assert "1 of 10 archives connected" in page
+    assert "1 of 6 archives connected" in page

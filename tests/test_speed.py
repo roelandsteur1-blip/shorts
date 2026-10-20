@@ -71,13 +71,13 @@ def test_fast_scene_detector_finds_the_cuts(tmp_path):
     make_video(video, seconds=24)  # hard cut every 6 s
     info = media.probe(video)
     found = scenes.analyse_range(1, str(video), 0, info["duration"], info["width"], info["height"],
-                                 str(tmp_path / "kf"), 10, "cpu")
+                                 str(tmp_path / "kf"), 10)
     starts = [round(f["start"]) for f in found]
     assert starts == [0, 6, 12, 18]
     assert all(os.path.exists(f["keyframe"]) for f in found)
     # A long video is split over workers; a range edge is a cut, the rest stays the same.
     parts = [f for a, b in [(0, 10), (10, info["duration"])] for f in
-             scenes.analyse_range(1, str(video), a, b, info["width"], info["height"], str(tmp_path / "kf2"), 10, "cpu")]
+             scenes.analyse_range(1, str(video), a, b, info["width"], info["height"], str(tmp_path / "kf2"), 10)]
     assert [round(f["start"]) for f in parts] == [0, 6, 10, 12, 18]
     assert scenes.ranges_for(100) == [(0.0, 100)]
     assert len(scenes.ranges_for(1800)) == 10

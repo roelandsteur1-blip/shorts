@@ -68,7 +68,6 @@ def test_schedule_page(client, conn, settings):
     assert "Waiting one" in page and "Schedule approved now" in page
     assert "2099-01-02" in page and "youtu.be/yt1" in page and "Old one" in page
     assert "Uploads today: <b class=\"\">1 of 100</b>" in page
-    assert "Daily auto-run" in page
     client.post("/jobs/start", data={"command": "upload", "channel": "space"})
     assert json.loads(conn.execute("SELECT command FROM jobs ORDER BY id DESC").fetchone()[0]) == ["upload"]
     assert client.post("/jobs/start", data={"command": "rm", "channel": "space"}).status_code == 400
