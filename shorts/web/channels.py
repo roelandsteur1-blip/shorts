@@ -10,7 +10,7 @@ from ..config import list_channels, load_channel
 from ..render import MUSIC_EXT
 from ..voice import SPEEDS, VOICES, label
 from ..upload import found_path
-from .common import channel_or_404, conn, settings
+from .common import channel_or_404, conn, runner, settings
 from .jobs import start_job
 
 bp = Blueprint("channels", __name__)
@@ -170,6 +170,10 @@ def save(cid: str):
 @bp.post("/channels/<cid>/connect")
 def connect(cid: str):
     channel_or_404(cid)
+    # A login still waiting for Google (any channel) holds the server's login port: stop it first.
+    for (jid,) in conn().execute("""SELECT id FROM jobs WHERE command LIKE '["connect"%'
+                                     AND status IN ('queued', 'running')""").fetchall():
+        runner().stop(conn(), jid)
     args = ["connect"] + (["--fresh"] if request.form.get("fresh") else [])
     return start_job(cid, args, "Connect YouTube")
 
