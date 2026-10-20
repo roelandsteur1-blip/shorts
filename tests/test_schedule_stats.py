@@ -148,7 +148,7 @@ def fake_upload(monkeypatch):
     import googleapiclient.http
     from shorts import render
     monkeypatch.setattr(googleapiclient.http, "MediaFileUpload", lambda *a, **k: None)
-    monkeypatch.setattr(render, "metadata", lambda c, ch, sid: {"title": "T", "description": "D"})
+    monkeypatch.setattr(render, "metadata", lambda c, ch, sid, settings=None: {"title": "T", "description": "D"})
     monkeypatch.setattr(upload, "check_channel", lambda yt, ch: None)
 
     def use(yt):
