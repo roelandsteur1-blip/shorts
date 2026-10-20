@@ -44,16 +44,20 @@ def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: 
 def top_up_orders(conn: sqlite3.Connection, channels: list[Channel], target: int
                   ) -> tuple[list[tuple[Channel, int, None]], list[str]]:
     """'Make for every channel': how many each channel needs to have `target` Shorts waiting (to
-    review or approved, or still being made). Returns (orders, names of channels with enough)."""
+    review or approved, or still being made). A channel with Shorts left unrendered by an earlier
+    run gets an order too (of 0 when it has enough): the run renders them, else they would count as
+    waiting forever. Returns (orders, names of channels with enough and nothing left to render)."""
     orders, enough = [], []
     marks = ",".join("?" * len(WAITING))
     for ch in channels:
         have = conn.execute(f"SELECT COUNT(*) FROM shorts WHERE channel=? AND status IN ({marks})",
                             (ch.id, *WAITING)).fetchone()[0]
-        if have >= target:
-            enough.append(f"{ch.name} ({have})")
+        unfinished = conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status IN ('scripted','checked')",
+                                  (ch.id,)).fetchone()[0]
+        if have < target or unfinished:
+            orders.append((ch, max(0, target - have), None))
         else:
-            orders.append((ch, target - have, None))
+            enough.append(f"{ch.name} ({have})")
     return orders, enough
 
 

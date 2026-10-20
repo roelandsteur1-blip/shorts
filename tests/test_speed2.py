@@ -26,6 +26,10 @@ def test_top_up_counts_shorts_still_being_made(conn, channel):
     conn.commit()
     orders, enough = pipeline.top_up_orders(conn, [channel], 3)
     assert [(ch.id, n) for ch, n, _ in orders] == [("space", 1)] and not enough
+    # Enough waiting, but the scripted one was never rendered: a run of 0 new ones renders it.
+    orders, enough = pipeline.top_up_orders(conn, [channel], 2)
+    assert [(ch.id, n) for ch, n, _ in orders] == [("space", 0)] and not enough
+    conn.execute("UPDATE shorts SET status='rendered' WHERE status='scripted'")
     orders, enough = pipeline.top_up_orders(conn, [channel], 2)
     assert not orders and enough
 

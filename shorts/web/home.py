@@ -144,6 +144,7 @@ def make_all():
         return redirect(url_for("home.index", msg=f"Every channel already has {target} or more: " + ", ".join(enough)))
     n = sum(count for _, count, _ in orders)
     jobs.submit(conn(), None, ["make-all", "--to", str(target)],
-                f"Make {n} Shorts for {len(orders)} channels (to {target} each)")
+                f"Make {n} Shorts for {len(orders)} channels (to {target} each)" if n else
+                f"Finish Shorts an earlier run left unrendered ({len(orders)} channels)")
     return redirect(url_for("jobs.job_list"))
 
