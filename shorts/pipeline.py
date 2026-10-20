@@ -87,8 +87,11 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     from . import looks
     looks.assign_missing(settings, channels)  # each channel its own caption look, saved in its config
     # Music (tag tracks added by hand, fetch more when the library runs low) and loading the models
-    # happen next to the first Claude calls; the first render waits for the music check.
-    music_check = threading.Thread(target=_music_check, args=(settings, channels[0]), name="music", daemon=True)
+    # happen next to the first Claude calls; the first render waits until there is music to use
+    # (only for the whole download when the library is empty).
+    music_ready = threading.Event()
+    music_check = threading.Thread(target=_music_check, args=(settings, channels[0], music_ready),
+                                   name="music", daemon=True)
     music_check.start()
     threading.Thread(target=_warm_up, args=(settings, channels), name="warm-up", daemon=True).start()
 
@@ -96,7 +99,7 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     #      channel for the Claude steps).
     # No format given: the script writer picks per Short from the channel's formats.
     lanes = [Lane(ch, fmt, count) for ch, count, fmt in orders]
-    run_steps(conn, settings, lanes, before_render=music_check)
+    run_steps(conn, settings, lanes, before_render=music_ready)
     music_check.join()  # also when nothing rendered: don't cut a music download off at exit
 
     # 6. Refill the library for next time (below restock_below), after this batch is reviewable.
@@ -109,12 +112,12 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
                                 (ch.id,)).fetchone()[0] for ch in channels}
 
 
-def _music_check(settings: Settings, channel: Channel) -> None:
+def _music_check(settings: Settings, channel: Channel, ready: threading.Event) -> None:
     from . import music
     progress.mute()
     c = db.connect(settings.db_path)
     try:
-        music.restock(c, settings, channel)
+        music.restock(c, settings, channel, ready)
     finally:
         c.close()
 
@@ -164,11 +167,11 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
 
 
 def run_steps(conn: sqlite3.Connection, settings: Settings, lanes: list[Lane],
-              before_render: threading.Thread | None = None) -> None:
+              before_render: threading.Event | None = None) -> None:
     """Scripts for each lane, plus everything left halfway by an earlier run ('scripted'/'checked'/
     'failed' -> render). Two lanes of work: Claude writes (channel after channel) and every saved
     batch goes straight to the main thread, which picks footage and hands renders to a pool. Each
-    has its own database connection. before_render: a thread the first render waits for."""
+    has its own database connection. before_render: an event the first render waits for."""
     to_render: queue.Queue = queue.Queue()
     channels = {lane.channel.id: lane.channel for lane in lanes}
     for lane in lanes:
@@ -215,7 +218,7 @@ def _render_one(settings: Settings, channel: Channel, sid: int) -> None:
 
 
 def _render_lane(conn: sqlite3.Connection, settings: Settings, channels: dict[str, Channel],
-                 to_render: queue.Queue, total: list[int], before_render: threading.Thread | None) -> None:
+                 to_render: queue.Queue, total: list[int], before_render: threading.Event | None) -> None:
     """Footage per block (main thread: the CLIP search isn't shared between threads), then the
     render itself in a pool."""
     workers = speed.limits().render_workers
@@ -242,7 +245,7 @@ def _render_lane(conn: sqlite3.Connection, settings: Settings, channels: dict[st
                         done += 1
                         continue
                     if before_render is not None:
-                        before_render.join()  # music check done, so the render can pick a track
+                        before_render.wait()  # music there, so the render can pick a track
                         before_render = None
                     running.add(pool.submit(_render_one, settings, channel, sid))
                     continue

@@ -172,3 +172,29 @@ def test_old_channel_folders_merge_into_one_library(conn, settings, channel):
     # A Short on any channel can now get either track.
     sid = short(conn, channel="body")
     assert music.pick(conn, settings, sid, channel) is not None
+
+
+def test_fetch_gives_up_on_a_source_that_keeps_failing(conn, settings, channel):
+    import requests
+    calls = []
+
+    class Session:
+        def get(self, url, **kw):
+            calls.append(url)
+            raise requests.ConnectionError("Read timed out")
+
+    assert music.fetch(conn, settings, channel, 5, session=Session()) == 0
+    assert len(calls) == music.SOURCE_FAILURES  # not every term on every page
+
+
+def test_restock_signals_ready_when_tracks_exist(conn, settings, channel, monkeypatch):
+    settings.music_min_tracks = 30
+    import threading
+    ready = threading.Event()
+    monkeypatch.setattr(music, "sync", lambda *a: None)
+    monkeypatch.setattr(music, "tag_pending", lambda *a: None)
+    monkeypatch.setattr(music, "usable", lambda c: [object()])
+    seen = []
+    monkeypatch.setattr(music, "fetch", lambda *a, **k: seen.append(ready.is_set()) or 0)
+    music.restock(conn, settings, channel, ready)
+    assert seen == [True] and ready.is_set()  # renders could start before the download

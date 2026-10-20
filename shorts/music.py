@@ -242,12 +242,16 @@ def all_terms(settings: Settings, channel: Channel | None = None) -> list[str]:
 
 # ---------- fetching ----------
 
+SEARCH_TIMEOUT = 20  # seconds per music search request
+SOURCE_FAILURES = 2  # a music source that fails this many searches in a row is skipped for the run
+
+
 def search_openverse(term: str, page: int, session: requests.Session) -> list[dict]:
     # No category=music: Openverse returns nothing for it with CC0/PD (Oct 2026); the CC0 results are
     # Freesound uploads without a category. Length and CLAP ("is this music?") do the filtering.
     r = session.get(OPENVERSE, params={"q": term, "license": "cc0,pdm",
                                        "page_size": 20, "page": page, "mature": "false"},
-                    headers=UA, timeout=60)
+                    headers=UA, timeout=SEARCH_TIMEOUT)
     if r.status_code in (400, 404):  # past the last page
         return []
     r.raise_for_status()
@@ -268,7 +272,7 @@ def search_freesound(term: str, page: int, session: requests.Session, key: str) 
     r = session.get(FREESOUND, params={
         "query": f"{term} music", "token": key, "page": page, "page_size": 30, "sort": "rating_desc",
         "filter": f'license:"Creative Commons 0" duration:[{FETCH_MIN_SECONDS} TO {MAX_TRACK_SECONDS}]',
-        "fields": "id,name,username,license,duration,previews,url,tags"}, headers=UA, timeout=60)
+        "fields": "id,name,username,license,duration,previews,url,tags"}, headers=UA, timeout=SEARCH_TIMEOUT)
     if r.status_code == 404:
         return []
     r.raise_for_status()
@@ -368,18 +372,24 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel | None,
         return 0
     terms = all_terms(settings, channel)
     got = 0
+    failures: dict[str, int] = {}
     with ThreadPoolExecutor(WORKERS) as pool:
         for page in range(1, max_pages + 1):
             for term in terms:
                 for src in music_sources(settings):
                     if got >= need:
                         return got
+                    if failures.get(src, 0) >= SOURCE_FAILURES:
+                        continue  # down or too slow right now: try again next run
                     try:
                         hits = (search_openverse(term, page, s) if src == "openverse"
                                 else search_freesound(term, page, s, sources.api_key(settings, "freesound")))
                     except (requests.RequestException, ValueError) as e:
-                        log.warning("music search %s '%s' failed: %s", src, term, e)
+                        failures[src] = failures.get(src, 0) + 1
+                        log.warning("music search %s '%s' failed: %s%s", src, term, e,
+                                    "; skipping it for this run" if failures[src] >= SOURCE_FAILURES else "")
                         continue
+                    failures[src] = 0
                     todo = []
                     for hit in hits:
                         if _known(conn, hit["source"], hit["source_id"]) or any(
@@ -406,17 +416,24 @@ def fetch(conn: sqlite3.Connection, settings: Settings, channel: Channel | None,
     return got
 
 
-def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> None:
+def restock(conn: sqlite3.Connection, settings: Settings, channel: Channel, ready=None) -> None:
     """Before 'make': tag new hand-added tracks, and fetch when the library runs low. Never fails
-    the batch: without music a Short is silent, not broken."""
+    the batch: without music a Short is silent, not broken. ready (a threading.Event) is set as soon
+    as there is music to use, so renders don't wait for a slow download when tracks exist."""
     try:
         sync(conn, settings)
         tag_pending(conn, settings)
-        if settings.music_min_tracks and len(usable(conn)) < settings.music_min_tracks:
+        have = len(usable(conn))
+        if have and ready is not None:
+            ready.set()
+        if settings.music_min_tracks and have < settings.music_min_tracks:
             n = fetch(conn, settings, channel, settings.music_min_tracks)
             log.info("music: fetched %d tracks", n)
     except Exception:  # noqa: BLE001
         log.exception("music restock failed; Shorts use the tracks there are")
+    finally:
+        if ready is not None:
+            ready.set()
 
 
 # ---------- beats ----------
