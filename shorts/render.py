@@ -177,7 +177,7 @@ def _zoom_expr(plan: dict, frames: int) -> str:
     return f"{z0:.4f}+{z1 - z0:.4f}*(0.5-0.5*cos(PI*{u}))"
 
 
-OLD_FILM_SOURCES = {"prelinger", "internet_archive", "europeana", "openbeelden", "loc"}
+OLD_FILM_SOURCES = {"prelinger", "internet_archive", "europeana"}
 OLD_FILM_CLEAN = "hqdn3d=3:2:4:4,unsharp=5:5:0.5"  # grain and flicker down, then a little bite back
 
 
@@ -270,8 +270,8 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     from . import speed, timing, voice
     voice.prepare(conn, settings, channel, short_id)  # no-op unless voiced and the text changed
     looks.ensure_fonts({looks.resolve(channel.style).get("font")})
-    lim = speed.limits(settings.data_dir)
-    enc = media.video_encoder_args(settings.encoder, settings.x264_preset, lim.x264_threads)
+    lim = speed.limits()
+    enc = media.video_encoder_args(settings.x264_preset, lim.x264_threads)
     work, args, total, music = build_render(conn, settings, channel, short_id, enc)
     out = work / "short.mp4"
     with timing.timed(conn, "render", short=short_id, seconds_of_video=round(total, 1), encoder=enc[1]):
@@ -291,7 +291,7 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
                  encoder_args: list[str], out_name: str = "out.mp4") -> tuple[Path, list[str], float, Path | None]:
     """The ffmpeg arguments for one Short (run them inside the returned work folder: ffmpeg's ass
     filter and Windows drive letters don't mix). Writes subs.ass; touches nothing else, so
-    'bench' can render with other settings. Returns (work folder, args, seconds, music)."""
+    Returns (work folder, args, seconds, music)."""
     media.require_ffmpeg()
     blocks = [dict(r) for r in conn.execute(
         """SELECT b.idx, b.text, b.seconds, b.scene_id, sc.start, sc.end, sc.crop_x, a.path, a.width, a.height, a.source
@@ -319,10 +319,6 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     (work / "subs.ass").write_text(build_ass(blocks, channel.style, title, words), encoding="utf-8")
 
     inputs, filters, offsets = [], [], {}
-    # 4K sources: the GPU's video decoder does the heavy decoding, frames come back for the CPU
-    # filters. 1080p is cheap on the CPU and keeps GPU memory free for parallel renders.
-    gpu_decode = (settings.render_gpu_decode and settings.encoder != "libx264"
-                  and any((b["height"] or 0) > 1080 for b in blocks) and media.nvdec_works())
     for b in blocks:
         # Consecutive blocks on the same scene continue where the previous one stopped.
         off = offsets.get(b["scene_id"], 0.0)
@@ -348,8 +344,6 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         speed = speed_for(frames[i], b["seconds"], avail) if settings.render_speed_ramps and not shared else 1.0
         need = b["seconds"] * speed + 0.2
         hold = (need - avail) / speed if avail < need else 0.0
-        if gpu_decode and (b["height"] or 0) > 1080:
-            inputs += ["-hwaccel", "cuda"]
         inputs += ["-ss", f"{b['src_start']:.3f}", "-t", f"{min(need, avail):.3f}", "-i", b["path"]]
         mode = choose_mode(b["width"] or W, b["height"] or H)
         filters.append(_segment_filter(i, b["seconds"], frames[i], b["width"] or W, b["height"] or H,
@@ -447,7 +441,7 @@ def sound_effects(blocks: list[dict], plans: list[dict | None]) -> list[str]:
 
 def _subject_paths(work: Path, blocks: list[dict]) -> list[dict]:
     """shorts/framing.py's subject path for every block (a few at once: each is one small ffmpeg
-    read), cached in the render folder so a re-render or 'bench' doesn't read them again."""
+    read), cached in the render folder so a re-render doesn't read them again."""
     from concurrent.futures import ThreadPoolExecutor
     from . import framing
     cache = framing.load_cache(work)

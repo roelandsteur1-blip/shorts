@@ -1,6 +1,6 @@
 """Local image/text embeddings (CLIP via open_clip) for searching scenes by description.
 
-Runs on the laptop GPU; no Claude usage. ViT-B-32 needs well under 2 GB VRAM.
+Runs on the CPU; no Claude usage.
 """
 from __future__ import annotations
 
@@ -31,13 +31,8 @@ class ClipEncoder:
         import torch
 
         self.torch = torch
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if self.device == "cpu":
-            log.warning("CUDA not available: embeddings run on CPU (slow). Check PyTorch install.")
         self.model, _, self.preprocess = open_clip.create_model_and_transforms(model, pretrained=pretrained)
-        self.model = self.model.to(self.device).eval()
-        if self.device == "cuda":
-            self.model = self.model.half()
+        self.model = self.model.eval()
         self.tokenizer = open_clip.get_tokenizer(model)
         self.dim = self.model.text_projection.shape[1] if hasattr(self.model, "text_projection") else 512
 
@@ -49,14 +44,12 @@ class ClipEncoder:
     def images(self, paths: list[str]) -> np.ndarray:
         from PIL import Image
 
-        batch = self.torch.stack([self.preprocess(Image.open(p).convert("RGB")) for p in paths]).to(self.device)
-        if self.device == "cuda":
-            batch = batch.half()
+        batch = self.torch.stack([self.preprocess(Image.open(p).convert("RGB")) for p in paths])
         with self.torch.no_grad():
             return self._norm(self.model.encode_image(batch))
 
     def texts(self, texts: list[str]) -> np.ndarray:
-        tokens = self.tokenizer(texts).to(self.device)
+        tokens = self.tokenizer(texts)
         with self.torch.no_grad():
             return self._norm(self.model.encode_text(tokens))
 

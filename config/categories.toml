@@ -20,9 +20,7 @@ nasa = ["rocket launch", "space station", "spacewalk", "Mars rover", "Jupiter", 
         "earth from space", "moon landing", "galaxy", "nebula", "Artemis", "aurora from space"]
 internet_archive = "subject:(space OR rocket OR astronaut OR nasa)"
 prelinger = "subject:(space OR rocket OR missile OR satellite)"
-loc = "space flight"
 commons = "rocket launch"
-openbeelden = "raket ruimtevaart maan"
 europeana = "space rocket"
 
 [[category]]
@@ -36,9 +34,7 @@ clip_prompts = ["soldiers on a battlefield", "a warship at sea", "fighter planes
 [category.search]
 internet_archive = "subject:(war OR military OR army OR navy)"
 prelinger = "subject:(war OR military OR army OR navy OR defense)"
-loc = "world war, 1939-1945"
 commons = "World War II film"
-openbeelden = "oorlog militairen"
 europeana = "war"
 
 [[category]]
@@ -52,9 +48,7 @@ clip_prompts = ["an old black and white newsreel", "a crowd at a historic parade
 [category.search]
 internet_archive = "subject:(history OR newsreel)"
 prelinger = "subject:(history OR newsreel OR americana)"
-loc = "newsreels"
 commons = "newsreel"
-openbeelden = "polygoon"
 europeana = "newsreel"
 
 [[category]]
@@ -67,9 +61,7 @@ clip_prompts = ["an airplane flying in the sky", "a pilot in a cockpit", "a jet 
 [category.search]
 internet_archive = "subject:(aviation OR airplane OR aircraft)"
 prelinger = "subject:(aviation OR airplanes OR aircraft)"
-loc = "aeronautics"
 commons = "aircraft flight"
-openbeelden = "vliegtuig luchtvaart"
 europeana = "aviation"
 
 [[category]]
@@ -82,9 +74,7 @@ clip_prompts = ["a wild animal in nature", "a bird flying", "a green forest land
 [category.search]
 internet_archive = "subject:(nature OR wildlife OR animals)"
 prelinger = "subject:(nature OR animals OR wildlife)"
-loc = "animals"
 commons = "wildlife video"
-openbeelden = "natuur dieren"
 europeana = "nature animals"
 
 [[category]]
@@ -97,9 +87,7 @@ clip_prompts = ["underwater with fish and coral", "ocean waves crashing", "a wha
 [category.search]
 internet_archive = "subject:(ocean OR underwater OR marine)"
 prelinger = "subject:(ocean OR sea OR navy OR ships)"
-loc = "ocean"
 commons = "underwater video"
-openbeelden = "zee schip"
 europeana = "sea"
 
 [[category]]
@@ -113,9 +101,7 @@ clip_prompts = ["a scientist in a laboratory", "a vintage computer", "a chemistr
 [category.search]
 internet_archive = "subject:(science OR technology OR educational)"
 prelinger = "subject:(science OR technology OR atomic OR industry)"
-loc = "science"
 commons = "science experiment"
-openbeelden = "wetenschap techniek"
 europeana = "science"
 
 [[category]]
@@ -127,9 +113,7 @@ clip_prompts = ["a city skyline", "a busy city street", "a skyscraper under cons
 [category.search]
 internet_archive = "subject:(city OR cities OR architecture)"
 prelinger = "subject:(cities OR urban OR architecture)"
-loc = "city and town life"
 commons = "city timelapse"
-openbeelden = "stad Amsterdam Rotterdam"
 europeana = "city"
 
 [[category]]
@@ -141,9 +125,7 @@ clip_prompts = ["a steam locomotive", "cars driving on a highway", "a train at a
 [category.search]
 internet_archive = "subject:(railroad OR trains OR automobiles OR transportation)"
 prelinger = "subject:(transportation OR automobiles OR railroads OR highways)"
-loc = "railroads"
 commons = "train video"
-openbeelden = "trein auto verkeer"
 europeana = "railway"
 
 [[category]]
@@ -155,9 +137,7 @@ clip_prompts = ["athletes competing in a race", "a boxing match", "a football ga
 [category.search]
 internet_archive = "subject:(sports OR olympics)"
 prelinger = "subject:(sports OR recreation)"
-loc = "sports"
 commons = "sports video"
-openbeelden = "sport wedstrijd"
 europeana = "sport"
 
 [[category]]
@@ -171,9 +151,7 @@ clip_prompts = ["a 1950s family at home", "children in a classroom", "a vintage 
 [category.search]
 internet_archive = "subject:(americana OR family OR advertising)"
 prelinger = "subject:(americana OR family OR social guidance OR advertising)"
-loc = "everyday life"
 commons = "home movie"
-openbeelden = "gezin huishouden"
 europeana = "everyday life"
 
 [[category]]
@@ -186,7 +164,5 @@ clip_prompts = ["a tornado over fields", "a flooded street", "a volcano erupting
 [category.search]
 internet_archive = "subject:(disaster OR flood OR hurricane OR fire)"
 prelinger = "subject:(disasters OR floods OR fires OR weather)"
-loc = "natural disasters"
 commons = "storm video"
-openbeelden = "watersnood ramp brand"
 europeana = "flood"

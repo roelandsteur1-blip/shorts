@@ -100,13 +100,3 @@ def make_all():
                 f"Make {n} Shorts for {len(orders)} channels (to {target} each)")
     return redirect(url_for("jobs.job_list"))
 
-
-@bp.post("/speed")
-def set_speed():
-    """Quiet / Fast switch (nav bar). Running jobs pick it up before their next video or render."""
-    from ..speed import set_mode
-    mode = request.form.get("mode")
-    if mode in ("quiet", "fast"):
-        set_mode(settings().data_dir, mode)
-    target = request.referrer or "/"
-    return redirect(target if target.startswith(request.host_url) or target.startswith("/") else "/")

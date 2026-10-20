@@ -73,7 +73,6 @@ def credentials(settings: Settings, channel: Channel, interactive: bool = True):
         if _headless():
             # Server without a browser: Google sends the login back to localhost:8765 on the server,
             # so open the printed link on the laptop while `ssh -L 8765:localhost:8765 <server>` runs.
-            # Or connect on the laptop and copy secrets/token-<channel>.json to the server.
             print("No browser here. On your laptop run: ssh -L 8765:localhost:8765 <server>, then open "
                   "the link below in the laptop's browser.", flush=True)
             creds = _login_on_port(flow, 8765)

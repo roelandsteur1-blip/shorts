@@ -15,15 +15,6 @@ def test_footage_dir_setting(tmp_path):
     assert load_settings(cfg).footage_dir == Path("D:/shorts-footage")
 
 
-def test_move_footage(library, settings, tmp_path):
-    settings.footage_root = tmp_path / "other-drive"
-    n, _ = lib.move_footage(library, settings)
-    assert n == 2
-    for (path,) in library.execute("SELECT path FROM assets"):
-        assert Path(path).exists() and Path(path).is_relative_to(settings.footage_root)
-    assert lib.move_footage(library, settings)[0] == 0
-
-
 def test_restock_only_when_low(library, settings, channel, monkeypatch):
     import shorts.sources.common as common
     calls = []

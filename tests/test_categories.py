@@ -92,15 +92,11 @@ def test_sorting_steps(conn, settings, monkeypatch):
     categorize.sort_pending(conn, settings)
     assert len(asked) == 1
 
-    # A correction by hand moves the scene and survives a full re-sort.
-    categorize.move_scene(conn, reel[1], "everyday")
-    assert cats_of(conn, reel[1]) == {"everyday": "manual"}
+    # A full re-sort forgets everything and sorts again.
     categorize.resort(conn)
+    assert cats_of(conn, reel[1]) == {}
     categorize.sort_pending(conn, settings)
-    assert cats_of(conn, reel[1]) == {"everyday": "manual"}
-    rollup = dict(conn.execute("SELECT category, scenes FROM asset_categories WHERE asset_id=(SELECT asset_id FROM scenes WHERE id=?)",
-                               (reel[1],)).fetchall())
-    assert rollup == {"space": 1, "everyday": 1}
+    assert cats_of(conn, reel[1]) == {"history": "claude+clip"}
 
 
 def test_claude_unavailable_leaves_scenes_for_later(conn, settings, monkeypatch):
@@ -112,18 +108,6 @@ def test_claude_unavailable_leaves_scenes_for_later(conn, settings, monkeypatch)
     monkeypatch.setattr(llm, "ask", fail)
     categorize.sort_pending(conn, settings)
     assert conn.execute("SELECT sorted FROM scenes WHERE id=?", (ids[0],)).fetchone()[0] == 0
-
-
-def test_hand_sorted_scenes_teach_clip(conn, settings):
-    look = np.random.default_rng(9).standard_normal(32)
-    look /= np.linalg.norm(look)
-    _, a = add_video(conn, "commons", "example", [look])
-    categorize.set_manual(conn, a[0], "transport")
-    near = look + 0.05 * np.random.default_rng(10).standard_normal(32)
-    p = categorize.clip_probs(conn, settings, np.stack([near / np.linalg.norm(near)]).astype(np.float32),
-                              categorize.load_categories(settings))
-    ids = [c.id for c in categorize.load_categories(settings)]
-    assert p[0, ids.index("transport")] >= 0.5
 
 
 def test_channel_only_uses_videos_that_fit(library, settings, channel, monkeypatch):
@@ -192,30 +176,13 @@ def test_library_and_sources_pages(client, conn, settings, cfg, monkeypatch, tmp
     conn.execute("UPDATE scenes SET sorted=1 WHERE id=?", (ids[0],))
     conn.commit()
     page = client.get("/library").data
-    assert b"War &amp; military" in page and b"Uncategorised" in page
-    assert b"/keyframe/" in client.get("/library/uncategorised").data
+    assert b"War &amp; military" in page and b"Re-sort all" in page
     assert client.get(f"/keyframe/{ids[0]}").status_code == 200
-    client.post(f"/scene/{ids[0]}/category", data={"category": "aviation", "action": "move"})
-    assert cats_of(conn, ids[0]) == {"aviation": "manual"}
-    assert b"clip" in client.get("/library/aviation").data
-    assert client.post(f"/scene/{ids[0]}/category", data={"category": "nope"}).status_code == 400
-
-    monkeypatch.setattr(llm, "ask", lambda *a, **k: json.dumps(
-        {"id": "trains", "label": "Trains", "keywords": ["train", "railway"], "clip_prompts": ["a steam train"],
-         "search": {"internet_archive": "subject:(railroads)"}}))
-    assert client.post("/library/draft", data={"name": "Trains"}).get_json()["id"] == "trains"
-    client.post("/library/categories", data={"id": "trains", "label": "Trains", "keywords": "train, Railway",
-                                             "clip_prompts": "a steam train\na station",
-                                             "search": "internet_archive = subject:(railroads)\nloc = railroads"})
-    cats = {c.id: c for c in categorize.load_categories(settings)}
-    assert cats["trains"].keywords == ["train", "railway"]
-    assert cats["trains"].search == {"internet_archive": "subject:(railroads)", "loc": "railroads"}
-    assert (cfg / "categories.toml.bak").exists() and "war" in cats
 
     page = client.get("/sources").data
-    assert b"Library of Congress" in page and b"Switch off" in page
-    client.post("/sources/loc", data={"enabled": "0"})
-    assert b"Cloudflare blocks scripted requests" in client.get("/sources").data  # loc: off, with why
+    assert b"Prelinger" in page and b"Switch off" in page
+    client.post("/sources/prelinger", data={"enabled": "0"})
+    assert b"switched off" in client.get("/sources").data
     r = client.post("/sources/commons/try", data={"query": "glider"})
     job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
     assert json.loads(job["command"]) == ["sources", "--try", "commons", "glider"] and job["heavy"] == 0
@@ -229,7 +196,7 @@ def test_space_channel_config():
 
 
 def test_stock_footage_is_never_a_hero(conn, settings):
-    _, ids = add_video(conn, "pexels", "waves", [vec("ocean waves crashing")])
+    _, ids = add_video(conn, "pixabay", "waves", [vec("ocean waves crashing")])
     conn.execute("UPDATE scenes SET end = start + 6")
     conn.commit()
     assert ids[0] not in hero.candidates(conn, settings, "space", 10, use_clip=False)

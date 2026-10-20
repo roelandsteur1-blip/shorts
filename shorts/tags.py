@@ -50,10 +50,7 @@ def niche_tags(channel) -> list[str]:
     own = [t for t in (channel.niche_tags or []) if clean(t)]
     if own:
         return pick(own, 99)
-    if channel.id in NICHE_DEFAULTS:
-        return list(NICHE_DEFAULTS[channel.id])
-    # Older channel files: their hashtags, minus #shorts (a broad tag now).
-    return pick((h for h in channel.hashtags if clean(h).lower() != "shorts"), 99)
+    return list(NICHE_DEFAULTS.get(channel.id, []))
 
 
 def broad_tags(settings) -> list[str]:

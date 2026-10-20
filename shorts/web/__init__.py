@@ -31,11 +31,6 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
         if c is not None:
             c.close()
 
-    @app.context_processor
-    def speed_mode() -> dict:
-        from ..speed import get_mode, on_battery
-        return {"speed_mode": get_mode(settings.data_dir), "on_battery": on_battery()}
-
     @app.template_filter("pct")
     def pct(done, total):
         return int(100 * (done or 0) / total) if total else 0

@@ -1,11 +1,10 @@
 # Global settings. Override any value in config/local.toml (not committed).
 
-# Media, database and renders live here, OUTSIDE OneDrive.
+# Media, database and renders live here (setup.sh sets it in local.toml: ~/shorts-data).
 data_dir = "C:/shorts-data"
 
-# Downloaded videos (the big part) can live on another drive, e.g. footage_dir = "D:/shorts-footage".
-# Default: <data_dir>/footage. After changing it, run 'python -m shorts move-footage' once.
-# footage_dir = "D:/shorts-footage"
+# Downloaded videos (the big part) can live elsewhere. Default: <data_dir>/footage.
+# footage_dir = "/mnt/footage"
 
 # Downloads stop when the footage drive has less free space than this (GB).
 min_free_gb = 20
@@ -25,24 +24,16 @@ sibling_gap_days = 2
 # Command used to call Claude Code headless (uses your Claude subscription).
 claude_cmd = "claude"
 
-# Video encoder: "auto" tries h264_nvenc (RTX GPU) and falls back to libx264.
-encoder = "auto"
-# CPU encoding speed when the GPU encoder can't be used. YouTube re-encodes every upload, so
-# "veryfast" looks the same after upload as "medium" (the old setting) in a fraction of the time.
+# Render encoding speed (libx264). YouTube re-encodes every upload, so "veryfast" looks the same
+# after upload as "medium" (the old setting) in a fraction of the time.
 x264_preset = "veryfast"
 
-# Render: sources above 1080p (4K) are decoded by the GPU's video decoder when the driver allows.
-render_gpu_decode = true
-
-# Cutting videos into scenes: "fast" reads each video once with ffmpeg (on the GPU when the
-# driver allows), small frames, long videos split over several workers. "pyscenedetect" is the
-# old, slower way; 'python -m shorts bench --scenes' compares both on your own footage.
+# Cutting videos into scenes: "fast" reads each video once with ffmpeg, small frames, long videos
+# split over several workers. "pyscenedetect" is the old, slower way.
 scene_detector = "fast"
 scene_fps = 10
 
-# How much of the laptop the pipeline uses is switched by hand on the dashboard (Quiet / Fast).
-
-# Image/text embedding model (runs locally on the GPU).
+# Image/text embedding model (runs locally, no Claude usage).
 clip_model = "ViT-B-32"
 clip_pretrained = "laion2b_s34b_b79k"
 

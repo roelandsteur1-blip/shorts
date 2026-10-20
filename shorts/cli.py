@@ -11,9 +11,9 @@ from . import db
 from .config import all_channels, list_channels, load_channel, load_settings
 
 
-# Commands that keep the CPU/GPU busy for a while; they run at below-normal priority.
-HEAVY = {"ingest", "import", "restock", "categorize", "dedupe", "scenes", "embed", "make", "make-all", "finish",
-         "rerender", "daily", "bench", "music", "voice-test"}
+# Commands that keep the CPU busy for a while; they run at below-normal priority.
+HEAVY = {"ingest", "restock", "categorize", "dedupe", "scenes", "embed", "make", "make-all", "finish",
+         "rerender", "music"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,35 +24,26 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-v", "--verbose", action="store_true")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("check", help="check that ffmpeg, GPU, Claude Code and folders are ready")
+    sub.add_parser("check", help="check that ffmpeg, Claude Code and folders are ready")
 
     pi = sub.add_parser("ingest", help="1. download videos for the channel's search terms (or restock its categories)")
     pi.add_argument("--per-term", type=int, default=5)
     pi.add_argument("--term", action="append", help="search term (repeatable); default: channel terms")
     pi.add_argument("--source", help="footage source (default: nasa); see 'python -m shorts sources'")
 
-    pim = sub.add_parser("import", help="1. import videos you downloaded into <data_dir>/import/<source>/")
-    pim.add_argument("--source", required=True, choices=["mixkit", "dareful", "vidsplay"])
-    pim.add_argument("--license", help="license of this batch (default: the source's own)")
-    pim.add_argument("--credit", help="credit line for the description (default: the source's own)")
-
     prs = sub.add_parser("restock", help="1. download footage for the channel's categories that run low")
     prs.add_argument("--force", action="store_true", help="also when nothing is running low")
 
     pcat = sub.add_parser("categorize", help="1. sort new scenes into categories, and new videos per channel niche (Claude)")
-    pcat.add_argument("--all", action="store_true", help="re-sort everything (keeps hand-sorted scenes)")
+    pcat.add_argument("--all", action="store_true", help="re-sort everything (after editing categories.toml)")
 
-    psrc = sub.add_parser("sources", help="list footage sources, or try one: sources --try loc \"rocket\"")
+    psrc = sub.add_parser("sources", help="list footage sources, or try one: sources --try nasa \"rocket\"")
     psrc.add_argument("--try", dest="try_source", nargs=2, metavar=("SOURCE", "QUERY"),
-                      help="search without downloading and show the rights decision per item")
+                      help="search without downloading and show the rights decision per item (Try on the Sources page)")
 
     sub.add_parser("dedupe", help="1. find re-published copies already in the library (run once after updating)")
     sub.add_parser("scenes", help="1. cut downloaded videos into scenes and score them")
-    sub.add_parser("embed", help="1. make scenes searchable (CLIP on the GPU)")
-
-    ps = sub.add_parser("search", help="try the footage search: shorts search \"saturn rings\"")
-    ps.add_argument("query")
-    ps.add_argument("-k", type=int, default=8)
+    sub.add_parser("embed", help="1. make scenes searchable (CLIP)")
 
     pm = sub.add_parser("make", help="2-5. hero shots -> scripts -> fact check -> footage -> render")
     pm.add_argument("-n", "--count", type=int, default=5)
@@ -66,11 +57,6 @@ def main(argv: list[str] | None = None) -> int:
 
     pcl = sub.add_parser("cleanup", help="delete videos that are used up (all scenes used, Shorts uploaded)")
     pcl.add_argument("--dry-run", action="store_true", help="only show what would be deleted")
-    sub.add_parser("move-footage", help="move downloaded videos to footage_dir (after changing it)")
-
-    prb = sub.add_parser("rebase-paths", help="after copying the data to another computer: point stored "
-                         "file paths at the new folders (OLD=NEW, e.g. 'D:\\shorts-footage=/srv/footage')")
-    prb.add_argument("pairs", nargs="+", metavar="OLD=NEW")
 
     pbk = sub.add_parser("backup", help="consistent copy of the database (default: data_dir/backups, keeps 7)")
     pbk.add_argument("--to", help="file to write instead")
@@ -86,16 +72,10 @@ def main(argv: list[str] | None = None) -> int:
     pmu.add_argument("--claimed", type=int, metavar="TRACK_ID",
                      help="YouTube claimed this track: stop using it and re-render Shorts not uploaded yet")
 
-    pvt = sub.add_parser("voice-test", help="read recent scripts with several voices into <data_dir>/voice-test")
-    pvt.add_argument("--voices", help="comma separated Kokoro voices (default: all in shorts/voice.py)")
-    pvt.add_argument("--shorts", type=int, default=3, help="how many recent scripts")
-
     sub.add_parser("finish", help="4-5. resume fact check/render for Shorts that stopped halfway")
 
-    for name, text in (("dashboard", "open the dashboard on http://127.0.0.1:5000 (local only; Tailscale on the server)"),
-                       ("review", "6. same as 'dashboard'")):
-        pr = sub.add_parser(name, help=text)
-        pr.add_argument("--port", type=int, default=5000)
+    pd = sub.add_parser("dashboard", help="6. the dashboard on http://127.0.0.1:5000 (Tailscale makes it reachable)")
+    pd.add_argument("--port", type=int, default=5000)
 
     pu = sub.add_parser("upload", help="7. upload approved Shorts, scheduled with publishAt")
     pu.add_argument("--limit", type=int)
@@ -108,17 +88,7 @@ def main(argv: list[str] | None = None) -> int:
 
     pstat = sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
     pstat.add_argument("--all", action="store_true", help="every channel with a YouTube login")
-    pb = sub.add_parser("bench", help="time rendering and scene cutting with each setting (changes nothing)")
-    pb.add_argument("--renders", type=int, default=2, help="Shorts to render per setting")
-    pb.add_argument("--scenes", type=int, default=2, help="videos to cut with each scene detector")
 
-    prr2 = sub.add_parser("research", help="learn hook, title and format patterns (never topics) from the channel's inspiration channels")
-    prr2.add_argument("--all", action="store_true", help="every channel with inspiration channels")
-    prr2.add_argument("--stale", action="store_true", help="only pattern banks older than a week")
-    prr2.add_argument("--suggest", action="store_true",
-                      help="list channels with the most-viewed Shorts for the niche (one search, 100 quota units)")
-
-    sub.add_parser("daily", help="make + schedule for every channel with auto_run = true (run by the daily task)")
     pst = sub.add_parser("status", help="show counts per step")
     pst.add_argument("--per-video", action="store_true",
                      help="also list the videos that can still give Shorts, and how many")
@@ -132,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd in HEAVY:
         from .speed import lower_priority
-        lower_priority()  # also when started from a terminal: the laptop stays usable
+        lower_priority()  # also when started from a terminal: the dashboard stays quick
     if args.config_dir:
         from . import config
         config.CONFIG_DIR = Path(args.config_dir).resolve()
@@ -149,19 +119,6 @@ def main(argv: list[str] | None = None) -> int:
         from .sources.common import ingest
         n = ingest(conn, settings, args.source or "nasa", args.term or channel.search_terms, per_term=args.per_term)
         print(f"downloaded {n} new videos")
-    elif args.cmd == "import":
-        from .categorize import sort_pending
-        from .embed import embed_pending
-        from .scenes import process_all
-        from .sources.folder import import_folder
-        n = import_folder(conn, settings, args.source, args.license, args.credit)
-        print(f"imported {n} videos from {settings.data_dir / 'import' / args.source}")
-        if n:
-            process_all(conn, settings)
-            embed_pending(conn, settings)
-            sort_pending(conn, settings)
-            from .fit import sort_pending as sort_channels
-            sort_channels(conn, settings)
     elif args.cmd == "restock":
         from .library import restock
         need = 10 ** 6 if args.force else 0
@@ -191,12 +148,6 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "embed":
         from .embed import embed_pending
         print(f"embedded {embed_pending(conn, settings)} scenes")
-    elif args.cmd == "search":
-        from .embed import search
-        for sid, score in search(conn, settings, args.query, k=args.k):
-            r = conn.execute("""SELECT sc.keyframe, a.title FROM scenes sc JOIN assets a ON a.id=sc.asset_id
-                                 WHERE sc.id=?""", (sid,)).fetchone()
-            print(f"{score:.3f}  scene {sid}  {r['title']}  {r['keyframe']}")
     elif args.cmd == "make":
         from .pipeline import make
         done = make(conn, settings, channel, args.count, args.format_id, restock=not args.no_restock)
@@ -214,27 +165,9 @@ def main(argv: list[str] | None = None) -> int:
         from .library import cleanup
         n, gb = cleanup(conn, settings, dry_run=args.dry_run)
         print(f"{'would free' if args.dry_run else 'freed'} {gb:.1f} GB ({n} videos)")
-    elif args.cmd == "move-footage":
-        from .library import move_footage
-        n, gb = move_footage(conn, settings)
-        print(f"moved {n} videos ({gb:.1f} GB) to {settings.footage_dir}")
-    elif args.cmd == "rebase-paths":
-        from .server import rebase_paths
-        pairs = []
-        for p in args.pairs:
-            old, sep, new = p.partition("=")
-            if not sep or not old or not new:
-                raise SystemExit(f"expected OLD=NEW, got {p!r}")
-            pairs.append((old, new))
-        for col, n in rebase_paths(conn, pairs).items():
-            print(f"{col}: {n} paths changed")
     elif args.cmd == "backup":
         from .server import backup
         print(f"backup: {backup(conn, settings, Path(args.to) if args.to else None)}")
-    elif args.cmd == "voice-test":
-        from . import voice
-        voices = [v.strip() for v in (args.voices or ",".join(voice.VOICES)).split(",") if v.strip()]
-        print(f"samples in {voice.samples(conn, settings, voices, args.shorts)}")
     elif args.cmd == "music":
         return _music(conn, settings, channel, args)
     elif args.cmd == "finish":
@@ -251,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
                       "only Shorts that are not uploaded yet can be re-rendered)")
                 continue
             print(f"short {sid}: {render_short(conn, settings, channel, sid)}")
-    elif args.cmd in ("dashboard", "review"):
+    elif args.cmd == "dashboard":
         from .web import serve
         serve(settings, args.port)
     elif args.cmd == "upload":
@@ -268,18 +201,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"logged in: YouTube channel '{found['title']}' ({found['id']})")
         if channel.youtube_channel_id and channel.youtube_channel_id != found["id"]:
             print(f"!! this is not the channel confirmed for '{channel.id}' ({channel.youtube_channel_id})")
-    elif args.cmd == "bench":
-        from .bench import run as bench
-        bench(conn, settings, channel, args.renders, args.scenes)
-    elif args.cmd == "daily":
-        logs = settings.data_dir / "logs"  # the daily task has no terminal: keep a log
-        logs.mkdir(parents=True, exist_ok=True)
-        handler = logging.FileHandler(logs / "daily.log", encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-        logging.getLogger().addHandler(handler)
-        from .daily import run
-        for cid, what in run(conn, settings).items():
-            print(f"{cid}: {what}")
     elif args.cmd == "stats":
         if args.all:
             from .upload import fetch_stats_all
@@ -288,8 +209,6 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from .upload import fetch_stats
             print(f"stats for {fetch_stats(conn, settings, channel)} live Shorts")
-    elif args.cmd == "research":
-        return _research(conn, settings, channel, args)
     elif args.cmd == "status":
         print(f"channels: {', '.join(list_channels())}")
         for label, sql in [
@@ -319,33 +238,6 @@ def main(argv: list[str] | None = None) -> int:
         if waiting := len(pending(conn, [channel])):
             print(f"{waiting} videos not sorted for this channel yet (python -m shorts categorize)")
     return 0
-
-
-def _research(conn, settings, channel, args) -> int:
-    from . import inspiration
-    if args.suggest:
-        for c in inspiration.suggest_channels(inspiration.reader(settings, channel), channel):
-            print(f"{c['views']:>13,} views in {c['shorts']} top Shorts  {c['title']}  "
-                  f"https://www.youtube.com/channel/{c['id']}")
-        return 0
-    chans = all_channels(settings.config_dir) if args.all else [channel]
-    chans = [ch for ch in chans if ch.inspiration and (not args.stale or inspiration.stale(conn, ch))]
-    if not chans:
-        print("no channel with inspiration channels" + (" and an old pattern bank" if args.stale else "")
-              + ": add 2-3 on a channel's Settings page")
-        return 0 if args.all else 1
-    failed = 0
-    for i, ch in enumerate(chans):
-        from . import progress
-        progress.report(i, len(chans), f"research {ch.id}")
-        try:
-            r = inspiration.refresh(conn, settings, ch)
-            print(f"{ch.id}: {r['patterns']} patterns from {r['shorts']} Shorts on {r['channels']} channels"
-                  + (f" (not found: {', '.join(r['failed'])})" if r["failed"] else ""))
-        except Exception as e:  # noqa: BLE001 - one channel's problem must not stop the others
-            failed += 1
-            print(f"{ch.id}: failed: {e}")
-    return 1 if failed == len(chans) else 0
 
 
 def _music(conn, settings, channel, args) -> int:
@@ -416,42 +308,23 @@ def _check(settings) -> int:
     import subprocess
 
     ok = True
-    win = sys.platform == "win32"
-    setup = "setup.ps1" if win else "setup.sh"
 
     def line(good: bool, what: str, hint: str = "") -> None:
         nonlocal ok
         ok &= good
         print(f"[{'OK' if good else '!!'}] {what}" + (f"  -> {hint}" if not good and hint else ""))
 
-    def optional(good: bool, what: str, hint: str = "") -> None:
-        """Nice to have (a GPU): missing it doesn't make the check fail."""
-        print(f"[{'OK' if good else '--'}] {what}" + (f"  -> {hint}" if not good and hint else ""))
-
     line(sys.version_info >= (3, 11), f"Python {sys.version.split()[0]}", "install Python 3.11+")
-    line(shutil.which("ffmpeg") is not None, "ffmpeg", "winget install Gyan.FFmpeg, then open a new terminal"
-         if win else "sudo apt install ffmpeg")
-    if shutil.which("ffmpeg"):
-        from .media import _nvenc_works
-        optional(_nvenc_works(), "NVENC (GPU video encoding)", "update the NVIDIA driver; falls back to CPU encoding")
-        from .media import nvdec_works
-        optional(nvdec_works(), "NVDEC (GPU video decoding)", "update the NVIDIA driver; falls back to CPU decoding")
-    try:
-        import torch
-        optional(torch.cuda.is_available(), f"PyTorch CUDA ({torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no GPU'})",
-             "re-run setup.ps1 (installs the CUDA build of PyTorch)" if win else "no NVIDIA GPU: CPU is used")
-    except ImportError:
-        line(False, "PyTorch", f"run {setup}")
+    line(shutil.which("ffmpeg") is not None, "ffmpeg", "sudo apt install ffmpeg")
+    from importlib.util import find_spec
+    line(find_spec("torch") is not None, "PyTorch", "run setup.sh")
     from .llm import find_claude
     claude = find_claude(settings.claude_cmd)
-    line(claude is not None, "Claude Code CLI", "irm https://claude.ai/install.ps1 | iex, then run 'claude' once to log in"
-         if win else "curl -fsSL https://claude.ai/install.sh | bash; add ~/.local/bin to PATH")
+    line(claude is not None, "Claude Code CLI", "curl -fsSL https://claude.ai/install.sh | bash; add ~/.local/bin to PATH")
     if claude:
         v = subprocess.run([claude, "--version"], capture_output=True, text=True)
         print(f"     {v.stdout.strip()}")
     line(True, f"data folder {settings.data_dir}")
-    if "onedrive" in str(settings.data_dir).lower() or "onedrive" in str(settings.footage_dir).lower():
-        line(False, "data folder outside OneDrive", "set data_dir / footage_dir in config/local.toml")
     free = shutil.disk_usage(settings.footage_dir).free / 1e9
     line(free >= settings.min_free_gb, f"footage folder {settings.footage_dir} ({free:.0f} GB free)",
          "free disk space or run 'python -m shorts cleanup'")

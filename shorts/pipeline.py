@@ -2,7 +2,7 @@
 
 The steps overlap instead of waiting for each other: while Claude writes the scripts of the next
 batch, the previous batch is fact-checked, and every checked Short goes straight to rendering
-(several at once in Fast mode). Waiting on Claude and rendering on the CPU/GPU then happen at the
+(two at once). Waiting on Claude and rendering on the CPU then happen at the
 same time, so a batch takes about as long as its Claude calls. Several channels can share one run
 (make_many): Claude writes channel B while channel A renders. Meanwhile, in the background: footage
 downloads for the next restock, the music check, and loading CLIP/Kokoro for the first render."""
@@ -15,7 +15,7 @@ import threading
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
-from . import db, factcheck, fit, hero, inspiration, llm, progress, render, script, shots, speed, voice
+from . import db, factcheck, fit, hero, llm, progress, render, script, shots, speed, voice
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
@@ -25,7 +25,6 @@ REFILL_ROUNDS = 3  # times Make picks new hero shots for ones the script writer 
 # Shorts that count as "waiting" when Make for every channel tops channels up (failed ones are
 # retried by every run, so they don't count).
 WAITING = ("scripted", "checked", "rendered", "approved")
-RESEARCH_WAIT = 240  # seconds a channel's scripts wait for its weekly competitor research
 
 
 @dataclass
@@ -34,7 +33,6 @@ class Lane:
     channel: Channel
     fmt_id: str | None
     count: int
-    research: threading.Event | None = None  # set when this week's pattern bank is done (or failed)
 
 
 def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: int,
@@ -98,8 +96,7 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     # 2-5. Hero shots -> scripts -> fact check -> footage + render, overlapping (and channel after
     #      channel for the Claude steps).
     # No format given: the script writer picks per Short from the channel's formats.
-    research = _start_research(settings, channels)
-    lanes = [Lane(ch, fmt, count, research.get(ch.id)) for ch, count, fmt in orders]
+    lanes = [Lane(ch, fmt, count) for ch, count, fmt in orders]
     run_steps(conn, settings, lanes, before_render=music_check)
     music_check.join()  # also when nothing rendered: don't cut a music download off at exit
 
@@ -113,29 +110,6 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
                                 (ch.id,)).fetchone()[0] for ch in channels}
 
 
-def _start_research(settings: Settings, channels: list[Channel]) -> dict[str, threading.Event]:
-    """Refresh pattern banks older than a week in the background, in lane order; each channel's
-    scripts wait for its own (shorts/inspiration.py). Channels without inspiration: nothing."""
-    c = db.connect(settings.db_path)
-    try:
-        todo = [ch for ch in channels if inspiration.stale(c, ch)]
-    finally:
-        c.close()
-    events = {ch.id: threading.Event() for ch in todo}
-
-    def run() -> None:
-        progress.mute()
-        for ch in todo:
-            try:
-                inspiration.refresh_stale(settings, [ch])
-            finally:
-                events[ch.id].set()
-
-    if todo:
-        threading.Thread(target=run, name="research", daemon=True).start()
-    return events
-
-
 def _music_check(settings: Settings, channel: Channel) -> None:
     from . import music
     progress.mute()
@@ -147,13 +121,10 @@ def _music_check(settings: Settings, channel: Channel) -> None:
 
 
 def _warm_up(settings: Settings, channels: list[Channel]) -> None:
-    """Load what the first render needs while Claude writes: GPU checks, CLIP, Kokoro."""
-    from . import embed, looks, media
+    """Load what the first render needs while Claude writes: fonts, CLIP, Kokoro."""
+    from . import embed, looks
     try:
         looks.ensure_fonts({looks.resolve(ch.style).get("font") for ch in channels})
-        if settings.encoder in ("auto", "h264_nvenc"):
-            media._nvenc_works()
-            media.nvdec_works()
         embed.get_encoder(settings)
         if voices := {v for v in (voice.channel_voice(ch) for ch in channels) if v}:
             voice.warm_up(voices)
@@ -175,8 +146,6 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
     """Pick the lane's hero shots and write their scripts. Picked here, right before writing, so
     the scripts of the channels before it are saved and one-channel-per-video still holds."""
     ch = lane.channel
-    if lane.research and not lane.research.wait(RESEARCH_WAIT):
-        log.info("%s: competitor research still running; writing with the old pattern bank", ch.id)
     pending = hero.candidates(c, settings, ch.id, lane.count, query=ch.hero_query, fits=ch)
     total[0] -= lane.count - len(pending)
     if not pending:
@@ -275,15 +244,13 @@ def _render_one(settings: Settings, channel: Channel, sid: int) -> None:
 def _render_lane(conn: sqlite3.Connection, settings: Settings, channels: dict[str, Channel],
                  to_render: queue.Queue, total: list[int], before_render: threading.Thread | None) -> None:
     """Footage per block (main thread: the CLIP search isn't shared between threads), then the
-    render itself in a pool. How many render at once follows the Quiet/Fast switch."""
-    from .media import _nvenc_works
-    nvenc = settings.encoder in ("auto", "h264_nvenc") and _nvenc_works()
-    gate = speed.Gate(settings.data_dir, "render_workers", nvenc=nvenc)
+    render itself in a pool."""
+    workers = speed.limits().render_workers
     done, open_lane = 0, True
     running: set = set()
-    with ThreadPoolExecutor(max_workers=3, thread_name_prefix="render") as pool:
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="render") as pool:
         while open_lane or running:
-            if open_lane and len(running) < gate.allowed():
+            if open_lane and len(running) < workers:
                 try:
                     sid = to_render.get(timeout=0.5)
                 except queue.Empty:

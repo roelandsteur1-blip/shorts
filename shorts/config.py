@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -25,15 +25,13 @@ def _load_toml(path: Path) -> dict:
 class Settings:
     data_dir: Path
     claude_cmd: str = "claude"
-    encoder: str = "auto"
-    x264_preset: str = "veryfast"     # CPU encoding speed when NVENC is unavailable (medium = old, slower)
+    x264_preset: str = "veryfast"     # render encoding speed (medium = old, slower)
     render_zoom: bool = True          # render: slow zooms, hook push-in, punch-ins on highlighted words
     render_beat_cuts: bool = True     # render: move cuts up to 0.15 s to land on the music's beat
     render_word_highlight: bool = True  # voiced Shorts: the word being said lights up in the caption
     render_sfx: bool = True           # render: soft whoosh on cuts, low hit on punch-ins (made by ffmpeg)
     render_grade: bool = True         # render: light colour grade per channel, cleanup of old SD film
     render_speed_ramps: bool = True   # render: nearly still shots without people play at 1.2x
-    render_gpu_decode: bool = True    # render: decode sources above 1080p on the GPU (NVDEC) when it works
     scene_detector: str = "fast"      # "fast" = one ffmpeg pass per video; "pyscenedetect" = the old way
     scene_fps: float = 10.0           # frames per second the fast scene detector looks at
     clip_model: str = "ViT-B-32"
@@ -99,9 +97,7 @@ class Channel:
     max_seconds: int = 30
     uploads_per_day: int = 2
     publish_times_utc: list[str] = field(default_factory=lambda: ["15:00"])
-    hashtags: list[str] = field(default_factory=list)  # old; niche_tags replaces it (still read as a fallback)
     niche_tags: list[str] = field(default_factory=list)  # tag layer 2 (shorts/tags.py); empty = built-in default
-    music_folder: str | None = None  # no longer used: all channels share data_dir/music (shorts/music.py)
     music_terms: list[str] = field(default_factory=list)  # music searches (shorts/music.py); empty = defaults
     voice: str | None = None               # voice-over (shorts/voice.py): Kokoro voice id; empty = text + music only
     voice_speed: float = 1.0
@@ -111,10 +107,8 @@ class Channel:
     # Footage sources restock downloads from (shorts/sources); empty = NASA only.
     sources: list[str] = field(default_factory=list)
     youtube_channel_id: str | None = None  # set by 'Connect YouTube'; upload refuses another channel
-    auto_run: bool = False                 # daily make + upload (python -m shorts daily)
     hero_query: str | None = None          # what a scroll-stopping first frame looks like (CLIP)
     library_formats: bool = True           # also use shared formats (shorts/formats.py) up to 3 in total
-    inspiration: list[str] = field(default_factory=list)  # 2-3 similar channels (@handle / link) to learn from
 
     def __post_init__(self):
         # Claimed Shorts over a minute can't earn at all, and evidence favours short ones.
@@ -135,6 +129,14 @@ class Channel:
         raise KeyError(f"unknown format {format_id!r} for channel {self.id}")
 
 
+def _known(cls, data: dict, where: Path) -> dict:
+    """Leave out settings that no longer exist (removed features), so an old file still loads."""
+    names = {f.name for f in fields(cls)}
+    if old := sorted(set(data) - names):
+        log.info("%s: ignoring old settings %s", where.name, ", ".join(old))
+    return {k: v for k, v in data.items() if k in names}
+
+
 def _dir(config_dir: Path | None) -> Path:
     return Path(config_dir) if config_dir else CONFIG_DIR
 
@@ -151,15 +153,14 @@ def load_settings(config_dir: Path | None = None, **overrides) -> Settings:
         data["footage_root"] = Path(data.pop("footage_dir"))
     data.pop("footage_dir", None)
     data["config_root"] = config_dir
-    return Settings(**data)
+    return Settings(**_known(Settings, data, config_dir / "settings.toml"))
 
 
 def load_channel(channel_id: str, config_dir: Path | None = None) -> Channel:
     path = _dir(config_dir) / "channels" / f"{channel_id}.toml"
     if not path.exists():
         raise FileNotFoundError(f"no channel config at {path}")
-    data = _load_toml(path)
-    return Channel(**data)
+    return Channel(**_known(Channel, _load_toml(path), path))
 
 
 def list_channels(config_dir: Path | None = None) -> list[str]:

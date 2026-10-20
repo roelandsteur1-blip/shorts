@@ -7,7 +7,7 @@ import math
 import re
 import sqlite3
 
-from . import formats as fmtlib, inspiration, learn, llm, looks, progress, tags as taglayers
+from . import formats as fmtlib, learn, llm, looks, progress, tags as taglayers
 from .config import Channel, Settings
 from .music import MOODS
 from .voice import channel_voice
@@ -356,8 +356,7 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
         progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
         prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id),
-                              inspiration.prompt_note(conn, channel.id)
-                              + winners_note(conn, channel.id) + rejects_note(conn, channel.id)
+                              winners_note(conn, channel.id) + rejects_note(conn, channel.id)
                               + learn.retention_note(conn, channel.id) + learn.patterns_note(conn, channel.id),
                               other_topics(conn, channel.id), format_use(conn, channel.id),
                               format_results(conn, channel.id))

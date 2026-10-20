@@ -1,4 +1,4 @@
-"""Speed plan: Quiet/Fast switch, timings, lean Claude calls, usage-limit pause, one-pass scenes,
+"""Speed plan: timings, lean Claude calls, usage-limit pause, one-pass scenes,
 overlapping make."""
 import json
 import os
@@ -8,31 +8,7 @@ import sys
 import pytest
 
 from conftest import fake_claude, make_video
-from shorts import llm, media, pipeline, scenes, speed, timing
-from shorts.web import create_app
-
-
-def test_speed_mode_and_limits(settings):
-    assert speed.get_mode(settings.data_dir) == "quiet"
-    quiet = speed.limits(settings.data_dir)
-    assert quiet.render_workers == 1 and quiet.x264_threads >= 2
-    speed.set_mode(settings.data_dir, "fast")
-    fast = speed.limits(settings.data_dir, nvenc=True)
-    assert fast.mode == "fast" and fast.render_workers == 3 and fast.scene_workers >= quiet.scene_workers
-    gate = speed.Gate(settings.data_dir, "render_workers")
-    assert gate.allowed() == 2
-    speed.set_mode(settings.data_dir, "quiet")
-    assert gate.allowed() == 1  # a running job sees the switch on its next render
-    with pytest.raises(ValueError):
-        speed.set_mode(settings.data_dir, "turbo")
-    speed.lower_priority()  # never raises
-
-
-def test_speed_switch_on_dashboard(settings):
-    client = create_app(settings, start_runner=False).test_client()
-    assert b'value="fast"' in client.get("/").data
-    client.post("/speed", data={"mode": "fast"})
-    assert speed.get_mode(settings.data_dir) == "fast"
+from shorts import llm, media, pipeline, scenes, timing
 
 
 def test_timings_and_claude_usage(conn):

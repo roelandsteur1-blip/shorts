@@ -102,26 +102,6 @@ def test_upload_body():
                               "containsSyntheticMedia": False, "publishAt": "2026-10-17T15:00:00Z"}
 
 
-def test_find_claude_in_store_app_folder(tmp_path, monkeypatch):
-    """The Store (MSIX) desktop app keeps Claude Code under %LOCALAPPDATA%/Claude-Data."""
-    from shorts import llm
-    exe = tmp_path / "local" / "Claude-Data" / "claude_abc" / "claude-code" / "2.1.299" / "f0584be0fbaf" / "claude.exe"
-    exe.parent.mkdir(parents=True)
-    exe.write_bytes(b"")
-    monkeypatch.setenv("APPDATA", str(tmp_path / "roaming"))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
-    assert llm.find_claude("C:/gone/claude.exe") == str(exe)
-
-
-def test_jobs_run_under_console_python(tmp_path, monkeypatch):
-    """Dashboard under pythonw.exe: jobs still start python.exe, so claude/ffmpeg open no windows."""
-    from shorts import jobs
-    (tmp_path / "python.exe").write_bytes(b"")
-    (tmp_path / "pythonw.exe").write_bytes(b"")
-    monkeypatch.setattr(jobs.sys, "executable", str(tmp_path / "pythonw.exe"))
-    assert jobs.console_python() == str(tmp_path / "python.exe")
-
-
 def test_format_results_in_the_prompt():
     from shorts import script
     fmts = [{"id": "a", "title": "A", "brief": "x"}, {"id": "b", "title": "B", "brief": "y"}]

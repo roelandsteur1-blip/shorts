@@ -67,9 +67,9 @@ def test_three_layers_of_three_tags(channel, settings):
     assert n == ["gym", "bodybuilding", "health"]  # 'Fitness' is already a post tag
     assert b == ["shorts", "viral shorts", "for you"]
     assert tags.hashtag("viral shorts") == "#viralshorts" and tags.hashtag("#Arm-day!") == "#armday"
-    # Channels without niche tags: built-in defaults per channel, else their old hashtags minus #shorts.
+    # Channels without niche tags: built-in defaults per channel, else none.
     assert tags.niche_tags(replace(channel, id="warplanedd", niche_tags=[])) == ["warplanes", "military aviation", "fighter jets"]
-    assert tags.niche_tags(replace(channel, id="new", niche_tags=[], hashtags=["#cats", "#shorts", "#pets"])) == ["cats", "pets"]
+    assert tags.niche_tags(replace(channel, id="new", niche_tags=[])) == []
     assert tags.layers([], ch, replace(settings, broad_tags=["a", "b", "c", "d"]))[2] == ["a", "b", "c"]
 
 

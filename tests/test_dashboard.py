@@ -116,21 +116,21 @@ def test_shutdown_interrupts_running_jobs(conn, settings):
 def test_sources_status_and_test_button(client, settings, monkeypatch):
     import requests
     from shorts import sources
-    from shorts.sources import pexels, prelinger
+    from shorts.sources import pixabay, prelinger
 
-    assert sources.status(settings, "pexels")[0] == "needs-key"
-    assert sources.status(settings, "loc")[0] == "off"
-    assert sources.status(settings, "mixkit")[0] == "import"
+    assert sources.status(settings, "pixabay")[0] == "needs-key"
+    sources.set_enabled(settings, "commons", False)
+    assert sources.status(settings, "commons")[0] == "off"
     assert sources.status(settings, "prelinger")[0] == "untested"
 
     def bad_key(query, page=1, session=None, key=None):
         resp = requests.Response()
         resp.status_code = 401
         raise requests.HTTPError(response=resp)
-    monkeypatch.setattr(pexels, "search", bad_key)
-    r = client.post("/sources/pexels", data={"api_key": " wrong "})
+    monkeypatch.setattr(pixabay, "search", bad_key)
+    r = client.post("/sources/pixabay", data={"api_key": " wrong "})
     assert r.status_code == 302
-    state, msg = sources.status(settings, "pexels")
+    state, msg = sources.status(settings, "pixabay")
     assert state == "failing" and "key rejected" in msg
 
     monkeypatch.setattr(prelinger, "search", lambda q, page=1, session=None, key=None: [

@@ -150,7 +150,7 @@ def check(item: Item, session: requests.Session, key: str | None) -> tuple[Item,
     return item, mod.rights(item)
 
 
-TEST_QUERY = {"nasa": "moon", "openbeelden": "zee", "prelinger": "city"}  # default: "ocean"
+TEST_QUERY = {"nasa": "moon", "prelinger": "city"}  # default: "ocean"
 
 
 def test_connection(settings: Settings, name: str, query: str | None = None, sample: int = 5) -> dict:
@@ -202,7 +202,7 @@ def test_connection(settings: Settings, name: str, query: str | None = None, sam
 
 
 # Files downloaded at once per source: archives that ask for few connections get fewer.
-POLITE = {"commons": 2, "internet_archive": 2, "prelinger": 2, "europeana": 2, "loc": 1, "openbeelden": 1}
+POLITE = {"commons": 2, "internet_archive": 2, "prelinger": 2, "europeana": 2}
 
 _dedupe_lock = threading.Lock()
 _local = threading.local()
@@ -219,14 +219,14 @@ def _download_in_thread(settings: Settings, asset_id: int) -> bool:
 def ingest(conn: sqlite3.Connection, settings: Settings, source: str, queries: list[str],
            per_term: int = 10, include_flagged: bool = False, max_pages: int = 10) -> int:
     """Search each query on one source and download up to `per_term` new videos per query, several
-    files at once (Quiet/Fast switch, and fewer for archives that ask for it). Returns the number
+    files at once (fewer for archives that ask for it). Returns the number
     downloaded."""
     from .. import speed
     settings.ensure_dirs()
     mod = get(source)
     key = api_key(settings, source)
     s = requests.Session()
-    gate = speed.Gate(settings.data_dir, "downloads")
+    downloads = speed.limits().downloads
     polite = POLITE.get(source, 4)
     total = 0
     with ThreadPoolExecutor(max_workers=4, thread_name_prefix=f"dl-{source}") as pool:
@@ -284,7 +284,7 @@ def ingest(conn: sqlite3.Connection, settings: Settings, source: str, queries: l
                         if r.reject:
                             log.info("[%s] skip %s: %s", source, item.source_id, r.reject)
                         continue
-                    while len(running) >= min(gate.allowed(), polite):
+                    while len(running) >= min(downloads, polite):
                         collect(block=True)
                     log.info("[%s] [%s] downloading %s", source, term, item.source_id)
                     running.add(pool.submit(_download_in_thread, settings, asset_id))

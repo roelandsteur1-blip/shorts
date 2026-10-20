@@ -5,7 +5,7 @@ import threading
 from conftest import fake_claude
 from test_schedule_stats import cfg, fake_upload  # noqa: F401 - fixtures
 from shorts import library as lib
-from shorts import media, pipeline, progress, render, script, shots, voice
+from shorts import pipeline, progress
 
 
 def test_make_many_shares_one_run_and_keeps_one_channel_per_video(library, settings, channel, monkeypatch):
@@ -63,24 +63,6 @@ def test_progress_mute_is_per_thread(capsys):
     progress.report(2, 2, "shown")
     out = capsys.readouterr().out
     assert "shown" in out and "hidden" not in out
-
-
-def test_4k_sources_decode_on_the_gpu(library, settings, channel, monkeypatch):
-    fake_claude(monkeypatch)
-    heroes = [r[0] for r in library.execute("SELECT id FROM scenes WHERE rejected=0 ORDER BY id LIMIT 1")]
-    sid = script.write_scripts(library, settings, channel, channel.enabled_formats[0]["id"], heroes)[0]
-    voice.prepare(library, settings, channel, sid)
-    shots.assign(library, settings, sid)
-    monkeypatch.setattr(media, "nvdec_works", lambda: True)
-    settings.encoder = "auto"
-    _, args, _, _ = render.build_render(library, settings, channel, sid, ["-c:v", "libx264"])
-    assert "-hwaccel" not in args  # 720p test footage stays on the CPU
-    library.execute("UPDATE assets SET height=2160, width=3840")
-    _, args, _, _ = render.build_render(library, settings, channel, sid, ["-c:v", "libx264"])
-    assert args.count("-hwaccel") == args.count("-i") - 1  # every footage input, not the audio
-    settings.render_gpu_decode = False
-    _, args, _, _ = render.build_render(library, settings, channel, sid, ["-c:v", "libx264"])
-    assert "-hwaccel" not in args
 
 
 def test_upload_all_divides_the_quota(conn, settings, cfg, fake_upload):

@@ -102,5 +102,5 @@ cat <<MSG
 Done. Still to do once (see deploy/README.md):
   1. claude setup-token   -> put CLAUDE_CODE_OAUTH_TOKEN=<token> in $DATA/secrets/server.env
   2. sudo tailscale up     -> then: sudo tailscale serve --bg 5000
-  3. copy the laptop's data over and run 'rebase-paths'
+  3. copy secrets/client_secret.json over, then Connect YouTube per channel on the dashboard
 MSG

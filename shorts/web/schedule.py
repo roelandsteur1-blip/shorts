@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from itertools import groupby
 
-from flask import Blueprint, abort, redirect, render_template, request, url_for
+from flask import Blueprint, render_template, request
 
 from ..upload import blocked_until, channel_uploads_last_day, iso, slots_for, uploads_today
 from .common import channels, conn, settings
@@ -36,13 +36,8 @@ def index():
     used = uploads_today(c)
     return render_template("schedule.html", rows=out, used=used, quota=settings().upload_quota,
                            per_channel=settings().channel_uploads_per_day,
-                           channels=channels(), selected=selected, daily=daily_status(),
+                           channels=channels(), selected=selected,
                            msg=request.args.get("msg"))
-
-
-def daily_status() -> dict:
-    from .. import daily
-    return daily.status(settings())
 
 
 @bp.post("/schedule/upload-all")
@@ -50,12 +45,3 @@ def upload_all():
     from .jobs import start_job
     return start_job(None, ["upload-all"], "Daily upload, all channels")
 
-
-@bp.post("/schedule/daily")
-def set_daily():
-    from .. import daily
-    try:
-        msg = daily.set_task(settings(), request.form.get("on") == "1", (request.form.get("time") or "09:00").strip())
-    except (ValueError, RuntimeError) as e:
-        abort(400, str(e))
-    return redirect(url_for("schedule.index", msg=msg))

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import multiprocessing
-import os
 import sqlite3
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -142,16 +141,11 @@ def _frame_height(width: int, height: int) -> int:
     return max(2, h)
 
 
-def _ffmpeg_frames(path: str, start: float, length: float, fps: float, w: int, h: int, decoder: str):
+def _ffmpeg_frames(path: str, start: float, length: float, fps: float, w: int, h: int):
     """Yield BGR frames (h x w) from ffmpeg, `fps` per second, from `start` for `length` seconds."""
     import subprocess
-    if decoder == "cuda":
-        pre = ["-hwaccel", "cuda", "-hwaccel_output_format", "cuda"]
-        vf = f"fps={fps},scale_cuda={w}:{h},hwdownload,format=nv12,format=bgr24"
-    else:
-        pre = ["-threads", "2"]
-        vf = f"fps={fps},scale={w}:{h}:flags=area,format=bgr24"
-    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", *pre, "-ss", f"{start:.3f}",
+    vf = f"fps={fps},scale={w}:{h}:flags=area,format=bgr24"
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-threads", "2", "-ss", f"{start:.3f}",
            "-t", f"{length:.3f}", "-i", path, "-an", "-sn", "-vf", vf,
            "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
@@ -167,7 +161,7 @@ def _ffmpeg_frames(path: str, start: float, length: float, fps: float, w: int, h
         err = proc.stderr.read().decode("utf-8", "replace")
         proc.stderr.close()
         if proc.wait() != 0:
-            raise RuntimeError(f"ffmpeg ({decoder}) failed on {path}: {err.strip()[-500:]}")
+            raise RuntimeError(f"ffmpeg failed on {path}: {err.strip()[-500:]}")
 
 
 def _finish_shot(t0: float, t1: float, kept: list[tuple[float, np.ndarray]], out_dir: Path) -> list[dict]:
@@ -186,7 +180,7 @@ def _finish_shot(t0: float, t1: float, kept: list[tuple[float, np.ndarray]], out
 
 
 def analyse_range(asset_id: int, path: str, start: float, end: float, width: int, height: int,
-                  kf_dir: str, fps: float = 10.0, decoder: str = "cpu") -> list[dict]:
+                  kf_dir: str, fps: float = 10.0) -> list[dict]:
     """Cut and score [start, end) of one video in a single decoding pass: small frames at `fps`,
     a cut where the mean HSV change jumps over CUT_THRESHOLD, scoring and keyframes from frames
     already in memory. Pure (no database), runs in a worker process. A range edge counts as a cut."""
@@ -195,15 +189,10 @@ def analyse_range(asset_id: int, path: str, start: float, end: float, width: int
     out_dir.mkdir(parents=True, exist_ok=True)
     w, h = FRAME_W, _frame_height(width, height)
     keep_every = max(1, round(fps / KEEP_FPS))
-    try:
-        return _scan(path, start, end, w, h, fps, decoder, keep_every, out_dir)
-    except RuntimeError:
-        if decoder == "cpu":
-            raise
-        return _scan(path, start, end, w, h, fps, "cpu", keep_every, out_dir)  # GPU decode failed: CPU
+    return _scan(path, start, end, w, h, fps, keep_every, out_dir)
 
 
-def _scan(path, start, end, w, h, fps, decoder, keep_every, out_dir) -> list[dict]:
+def _scan(path, start, end, w, h, fps, keep_every, out_dir) -> list[dict]:
     found: list[dict] = []
     prev = None
     shot_start, last_cut = start, start - MIN_CUT_GAP
@@ -211,7 +200,7 @@ def _scan(path, start, end, w, h, fps, decoder, keep_every, out_dir) -> list[dic
     stride = keep_every
     count = 0
     window: list[float] = []
-    for n, frame in enumerate(_ffmpeg_frames(path, start, end - start, fps, w, h, decoder)):
+    for n, frame in enumerate(_ffmpeg_frames(path, start, end - start, fps, w, h)):
         count = n + 1
         t = start + n / fps
         small = cv2.cvtColor(cv2.resize(frame, (DETECT_W, max(2, h * DETECT_W // w)),
@@ -252,14 +241,13 @@ def ranges_for(duration: float) -> list[tuple[float, float]]:
 def process_all(conn: sqlite3.Connection, settings: Settings, workers: int | None = None,
                 more_coming=None) -> int:
     """Analyse all downloaded videos in parallel (longest first, long ones split into parts) at
-    low priority; how many run at once follows the dashboard's Quiet/Fast switch. Only this process
+    low priority. Only this process
     writes to the database. more_coming(): True while downloads still run (restock); videos that
     finish downloading meanwhile join the queue, so cutting starts with the first download."""
-    from . import media, speed, timing
+    from . import speed, timing
     import time
     from concurrent.futures import FIRST_COMPLETED, wait
     fast = settings.scene_detector != "pyscenedetect"
-    decoder = "cuda" if fast and media.nvdec_works() else "cpu"
     seen: set[int] = set()
     queue: list[tuple] = []  # (asset row, start, end), biggest part first
     parts: dict[int, int] = {}
@@ -280,26 +268,25 @@ def process_all(conn: sqlite3.Connection, settings: Settings, workers: int | Non
     add_new()
     if not queue and not (more_coming and more_coming()):
         return 0
-    gate = speed.Gate(settings.data_dir, "scene_workers")
-    max_workers = workers or max(speed.limits(settings.data_dir).scene_workers, os.cpu_count() or 2)
+    max_workers = workers or speed.limits().scene_workers
     total, done_assets = 0, 0
     # "spawn" everywhere (the Windows default): forking a process that already loaded OpenCV
     # or PyTorch threads can deadlock on Linux.
     ctx = multiprocessing.get_context("spawn")
     with ProcessPoolExecutor(max_workers=max_workers, mp_context=ctx,
-                             initializer=speed.worker_init, initargs=(str(settings.data_dir),)) as pool:
+                             initializer=speed.worker_init) as pool:
         running: dict = {}
         while True:
             if more_coming:
                 add_new()
-            limit = workers or gate.allowed()
+            limit = max_workers
             while queue and len(running) < limit:
                 r, start, end = queue.pop(0)
                 began.setdefault(r["id"], time.perf_counter())
                 if fast:
                     fut = pool.submit(analyse_range, r["id"], r["path"], start, min(end, r["duration"] or end),
                                       r["width"] or 0, r["height"] or 0, str(settings.keyframe_dir),
-                                      settings.scene_fps, decoder)
+                                      settings.scene_fps)
                 else:
                     fut = pool.submit(analyse_video, r["id"], r["path"], r["duration"], str(settings.keyframe_dir))
                 running[fut] = r
@@ -333,7 +320,7 @@ def process_all(conn: sqlite3.Connection, settings: Settings, workers: int | Non
                     total += len(found)
                     timing.record(conn, "scenes", time.perf_counter() - began[aid], 1, asset=aid,
                                   video_seconds=round(asset["duration"] or 0), height=asset["height"],
-                                  detector=settings.scene_detector, decoder=decoder)
+                                  detector=settings.scene_detector)
                     log.info("[%d/%d] %s: %d scenes", done_assets, len(seen), asset["source_id"], len(found))
                 progress.report(done_assets, len(seen), "cut scenes")
     return total

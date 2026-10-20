@@ -30,10 +30,6 @@ music_terms = ["space ambient", "cinematic ambient", "synth pad", "epic cinemati
 # itself and 3 broad ones (broad_tags in settings.toml).
 niche_tags = ["space", "astronomy", "nasa"]
 
-# Competitor research (shorts/inspiration.py): 2-3 successful channels in the niche (@handle, link
-# or channel id). Their most-viewed Shorts teach which topics, hooks and titles work; refreshed weekly.
-inspiration = []
-
 # Fixed formats (the series). Phase 1 uses just one; add more later.
 [[formats]]
 id = "what_youre_seeing"

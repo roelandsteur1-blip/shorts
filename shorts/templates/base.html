@@ -24,8 +24,6 @@ pre.log{background:#0b0d11;border-radius:8px;padding:10px;max-height:420px;overf
 .thumbs img{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px;background:#000}
 .pill{display:inline-block;border:1px solid var(--line);border-radius:12px;padding:1px 8px;font-size:12px;margin:2px}
 form.inline{display:inline}
-.speed button{padding:3px 10px;font-size:13px;border-radius:0}.speed button:first-of-type{border-radius:8px 0 0 8px}.speed button:last-of-type{border-radius:0 8px 8px 0}
-.speed button.on{background:var(--accent);color:#000}
 kbd{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
 </style></head><body><main>
 {% set here = request.path %}
@@ -40,9 +38,6 @@ kbd{border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
 <a href="/voices" class="{{ 'on' if here.startswith('/voices') }}">Voices</a>
 <a href="/stats" class="{{ 'on' if here.startswith('/stats') }}">Stats</a>
 <a href="/jobs" class="{{ 'on' if here.startswith('/jobs') }}">Jobs</a>
-<form method="post" action="/speed" class="inline speed" style="margin-left:auto" title="Quiet: about half the CPU, one render at a time, cooler and quieter. Fast: everything the laptop has. Jobs always run at low priority.">
-<span class="muted" style="font-size:13px">Speed{% if on_battery %} (on battery: Quiet){% endif %}</span>
-<button name="mode" value="quiet" class="{{ 'on' if speed_mode == 'quiet' }}">Quiet</button><button name="mode" value="fast" class="{{ 'on' if speed_mode == 'fast' }}">Fast</button></form>
 </nav>
 {% block body %}{% endblock %}
 </main></body></html>

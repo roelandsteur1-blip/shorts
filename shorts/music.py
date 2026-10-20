@@ -70,13 +70,12 @@ def folder(settings: Settings) -> Path:
 # ---------- tagging: CLAP, or words when transformers isn't installed ----------
 
 class Clap:
-    """LAION CLAP via transformers, on the GPU when there is one."""
+    """LAION CLAP via transformers, on the CPU."""
     def __init__(self, name: str = "laion/clap-htsat-unfused"):
         import torch
         from transformers import ClapModel, ClapProcessor
         self.torch = torch
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = ClapModel.from_pretrained(name).to(self.device).eval()
+        self.model = ClapModel.from_pretrained(name).eval()
         self.proc = ClapProcessor.from_pretrained(name)
 
     def _unit(self, v) -> np.ndarray:
@@ -87,19 +86,19 @@ class Clap:
     def audio(self, waves: list[np.ndarray]) -> np.ndarray:
         feats = self.proc.feature_extractor(waves, sampling_rate=SR, return_tensors="pt")
         with self.torch.no_grad():
-            return self._unit(self.model.get_audio_features(**{k: v.to(self.device) for k, v in feats.items()}))
+            return self._unit(self.model.get_audio_features(**feats))
 
     def texts(self, texts: list[str]) -> np.ndarray:
         tok = self.proc.tokenizer(texts, padding=True, return_tensors="pt")
         with self.torch.no_grad():
-            return self._unit(self.model.get_text_features(**{k: v.to(self.device) for k, v in tok.items()}))
+            return self._unit(self.model.get_text_features(**tok))
 
 
 _tagger = None  # None = not loaded yet; False = not available
 
 
 def set_tagger(tagger) -> None:
-    """Tests (and anything without a GPU budget) put their own tagger here; False = no CLAP."""
+    """Tests put their own tagger here; False = no CLAP."""
     global _tagger
     _tagger = tagger
 
@@ -336,7 +335,7 @@ def check_hit(settings: Settings, hit: dict, session: requests.Session) -> dict:
         duration = media.probe(dst)["duration"]
         if not FETCH_MIN_SECONDS <= duration <= MAX_TRACK_SECONDS:
             raise ValueError(f"length {duration:.0f}s")
-        with _clap_lock:  # one model on the GPU
+        with _clap_lock:  # one model in memory
             info = analyse(dst, f"{hit['title']} {hit.get('words', '')}")
     except (requests.RequestException, ValueError, KeyError, subprocess.CalledProcessError, OSError) as e:
         part.unlink(missing_ok=True)

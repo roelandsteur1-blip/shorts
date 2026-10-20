@@ -17,7 +17,7 @@ CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p
 {% for r in rows %}<tr id="src-{{ r.mod.NAME }}">
 <td><b>{{ r.mod.LABEL }}</b> <span class="muted">{{ r.mod.NAME }}</span><br>
 {% set cls = {'connected': 'ok', 'failing': 'bad', 'needs-key': 'warn', 'untested': 'warn'}.get(r.state, 'muted') %}
-<span class="{{ cls }}"><b>{{ {'connected': 'Connected', 'failing': 'Failing', 'needs-key': 'Needs key', 'untested': 'Not tested', 'off': 'Off', 'import': 'Import folder'}[r.state] }}</b></span>
+<span class="{{ cls }}"><b>{{ {'connected': 'Connected', 'failing': 'Failing', 'needs-key': 'Needs key', 'untested': 'Not tested', 'off': 'Off'}[r.state] }}</b></span>
 <span class="muted" style="font-size:12px">{{ r.state_msg }}{% if r.tested_at and r.state in ('connected', 'failing') %} ({{ r.tested_at }} UTC){% endif %}</span>
 {% if r.mod.HERO_OK is defined and not r.mod.HERO_OK %}<br><span class="muted">stock B-roll: used between text blocks, never as hero shot</span>{% endif %}</td>
 <td>{{ r.mod.LICENSE }}{% if r.mod.NOTE is defined %}<br><span class="muted">{{ r.mod.NOTE }}</span>{% endif %}</td>
@@ -32,18 +32,8 @@ CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p
 {% if r.mod.KEY_HELP is defined and not r.has_key %}<br><span class="muted" style="font-size:12px">{{ r.mod.KEY_HELP }}</span>{% endif %}</form>{% endif %}
 {% if r.state in ('connected', 'failing', 'untested') %}<form method="post" action="/sources/{{ r.mod.NAME }}/test" style="margin-top:6px"
  onsubmit="this.querySelector('button').textContent='Testing…';this.querySelector('button').disabled=true"><button>Test</button></form>{% endif %}
-{% if r.mod.IMPORT_ONLY is defined and r.mod.IMPORT_ONLY %}<p class="muted" style="font-size:12px">no API: use the import folder below</p>
-{% elif r.usable %}<form method="post" action="/sources/{{ r.mod.NAME }}/try" style="margin-top:6px">
+{% if r.usable %}<form method="post" action="/sources/{{ r.mod.NAME }}/try" style="margin-top:6px">
 <input type="text" name="query" placeholder="try a search (no download)"></form>{% endif %}
 </td></tr>{% endfor %}
 </table>
-<h2>Import folders</h2>
-<p class="muted">For sites without an API: download the videos yourself into the folder, then import them here.
-The license you give applies to the whole batch; imported files move to an <code>imported</code> subfolder.</p>
-{% for i in imports %}<form method="post" action="/sources/{{ i.mod.NAME }}/import" class="card">
-<h3 style="margin-top:0">{{ i.mod.LABEL }} <span class="muted" style="font-size:14px">{{ i.waiting }} files waiting in <code>{{ i.dir }}</code></span></h3>
-<p class="muted">{{ i.mod.NOTE }}</p>
-<span style="display:flex;gap:8px"><label style="flex:1">License<input type="text" name="license" value="{{ i.mod.default_license }}"></label>
-<label style="flex:2">Credit in the description (empty = none)<input type="text" name="credit" value="{{ i.mod.default_credit }}"></label></span>
-<button class="primary" {{ 'disabled' if not i.waiting }}>Import {{ i.waiting }} files</button></form>{% endfor %}
 {% endblock %}

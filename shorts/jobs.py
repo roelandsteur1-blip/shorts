@@ -1,7 +1,7 @@
 """Background jobs for the dashboard. Each job is a subprocess `python -m shorts --channel <id> ...`,
 so the CLI stays the single source of truth and everything still works without the dashboard.
 
-One heavy job at a time (GPU, CPU encoding and the Claude limit are shared); the rest queue.
+One heavy job at a time (CPU encoding and the Claude limit are shared); the rest queue.
 Light jobs (logging in to YouTube) start right away."""
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from .config import ROOT, Settings
 
 log = logging.getLogger(__name__)
 
-LIGHT = {"connect", "sources", "stats", "research"}  # commands that don't need the GPU/CPU (research: one Claude call)
+LIGHT = {"connect", "sources", "stats"}  # commands that don't need the CPU
 
 
 def submit(conn: sqlite3.Connection, channel: str | None, args: list[str], label: str | None = None) -> int:
@@ -35,7 +35,7 @@ def submit(conn: sqlite3.Connection, channel: str | None, args: list[str], label
 
 def recover(conn: sqlite3.Connection) -> int:
     """At dashboard start: jobs still marked running belonged to a dashboard that is gone
-    (laptop restarted): mark them interrupted."""
+    (dashboard restarted): mark them interrupted."""
     n = conn.execute("""UPDATE jobs SET status='interrupted', finished_at=datetime('now')
                          WHERE status='running'""").rowcount
     conn.commit()
@@ -63,18 +63,8 @@ def follow_up(job: sqlite3.Row) -> tuple[str, list[str]] | None:
     return "Run again", args
 
 
-def console_python() -> str:
-    """python.exe, also when the dashboard itself runs under pythonw.exe (the desktop shortcut).
-    A pythonw job has no console, so Windows opens a new window for every claude/ffmpeg it starts;
-    python.exe started with CREATE_NO_WINDOW has a hidden console its children share."""
-    exe = Path(sys.executable)
-    if exe.name.lower() == "pythonw.exe" and (exe.parent / "python.exe").exists():
-        return str(exe.parent / "python.exe")
-    return sys.executable
-
-
 def cli_command(settings: Settings, job: sqlite3.Row) -> list[str]:
-    cmd = [console_python(), "-u", "-m", "shorts", "--data-dir", str(settings.data_dir),
+    cmd = [sys.executable, "-u", "-m", "shorts", "--data-dir", str(settings.data_dir),
            "--config-dir", str(settings.config_dir)]
     if job["channel"]:
         cmd += ["--channel", job["channel"]]
@@ -154,18 +144,11 @@ class Runner:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.log_dir / f"job-{job['id']:05d}.log"
         env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
-        kw: dict = {}
-        if os.name == "nt":
-            # Below-normal priority: whatever you do on the laptop comes first; ffmpeg, Claude and the
-            # worker processes a job starts inherit it.
-            kw["creationflags"] = (subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-                                   | subprocess.BELOW_NORMAL_PRIORITY_CLASS)
-        else:
-            kw["start_new_session"] = True  # own process group, so Stop also ends ffmpeg/claude
         with open(log_path, "wb") as out:
             try:
                 proc = subprocess.Popen(self.command(self.settings, job), stdout=out, stderr=subprocess.STDOUT,
-                                        stdin=subprocess.DEVNULL, cwd=str(ROOT), env=env, **kw)
+                                        stdin=subprocess.DEVNULL, cwd=str(ROOT), env=env,
+                                        start_new_session=True)  # own group: Stop also ends ffmpeg/claude
             except OSError as e:
                 out.write(f"could not start: {e}\n".encode())
                 conn.execute("""UPDATE jobs SET status='failed', log_path=?, finished_at=datetime('now')
@@ -215,10 +198,7 @@ class Runner:
 def kill_tree(proc: subprocess.Popen) -> None:
     if proc.poll() is not None:
         return
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
-    else:
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass

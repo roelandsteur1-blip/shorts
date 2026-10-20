@@ -5,7 +5,7 @@ import subprocess
 import pytest
 
 from shorts import media, sources
-from shorts.sources import commons, common, internet_archive, loc, prelinger
+from shorts.sources import commons, common, internet_archive, prelinger
 
 # ---------- a fake requests.Session ----------
 
@@ -67,20 +67,6 @@ IA_META = {"files": [
     {"name": "Apollo11Launch.mpeg", "format": "MPEG2", "size": "99000000000"},
     {"name": "Apollo11Launch_thumb.jpg", "format": "JPEG"},
 ]}
-
-LOC_SEARCH = {"results": [
-    {"id": "http://www.loc.gov/item/00694297/", "title": "Rocket test, 1946", "subject": ["rockets"],
-     "description": ["Test firing of a captured rocket."], "date": "1946", "partof": ["paper print films"]},
-    {"id": "https://www.loc.gov/item/2019000001/", "title": "Home movie", "subject": ["families"]},
-]}
-LOC_ITEMS = {
-    "00694297": {"item": {"rights_advisory": "No known restrictions on publication."},
-                 "resources": [{"files": [[{"mimetype": "video/mp4", "url": "https://tile.loc.gov/a-small.mp4", "height": 360},
-                                           {"mimetype": "video/mp4", "url": "https://tile.loc.gov/a-large.mp4", "height": 720},
-                                           {"mimetype": "image/jpeg", "url": "https://tile.loc.gov/a.jpg"}]]}]},
-    "2019000001": {"item": {"rights_advisory": "Rights status not evaluated. Permission is required for reuse."},
-                   "resources": []},
-}
 
 COMMONS = {"query": {"pages": {
     "1": {"pageid": 1, "index": 1, "title": "File:Launch of Falcon.webm", "imageinfo": [{
@@ -158,17 +144,6 @@ def test_prelinger_is_its_own_collection():
     assert {i.source for i in items} == {"prelinger"}
 
 
-def test_loc_only_free_to_use():
-    s = FakeSession({"film-and-videos": FakeResponse(LOC_SEARCH),
-                     "/item/": lambda url, params: FakeResponse(LOC_ITEMS[url.rstrip("/").rsplit("/", 1)[1]])})
-    items = loc.search("rocket", session=s)
-    assert [i.source_id for i in items] == ["00694297", "2019000001"]
-    ok = common.check(items[0], s, None)
-    assert ok[1].license == "public-domain" and ok[0].file_url == "https://tile.loc.gov/a-large.mp4"
-    bad = common.check(items[1], s, None)
-    assert bad[1].reject
-
-
 def test_commons_rights_per_file():
     s = FakeSession({"api.php": FakeResponse(COMMONS)})
     items = commons.search("launch", session=s)
@@ -214,18 +189,20 @@ def test_ingest_downloads_usable_and_records_rejections(conn, settings, clip_byt
 
 def test_source_settings(settings):
     assert sources.usable(settings, "nasa") == (True, "")
-    sources.set_enabled(settings, "loc", False)
-    assert sources.usable(settings, "loc")[0] is False
-    sources.set_enabled(settings, "loc", True)
-    assert sources.usable(settings, "loc")[0] is True
-    sources.set_api_key(settings, "pexels", "abc ")
-    assert sources.api_key(settings, "pexels") == "abc"
+    sources.set_enabled(settings, "prelinger", False)
+    assert sources.usable(settings, "prelinger")[0] is False
+    sources.set_enabled(settings, "prelinger", True)
+    assert sources.usable(settings, "prelinger")[0] is True
+    assert sources.usable(settings, "pixabay") == (False, "needs an API key (Sources page)")
+    sources.set_api_key(settings, "pixabay", "abc ")
+    assert sources.api_key(settings, "pixabay") == "abc"
+    assert sources.usable(settings, "loc") == (False, "unknown source")  # removed source in an old channel file
     assert (settings.secrets_dir / "api_keys.json").exists()
 
 
-# ---------- phase 4: key-based sources and import folders ----------
+# ---------- phase 4: key-based sources ----------
 
-from shorts.sources import europeana, folder, openbeelden, pexels, pixabay  # noqa: E402
+from shorts.sources import europeana, pixabay  # noqa: E402
 
 EUROPEANA = {"items": [
     {"id": "/2051906/data_film_1", "title": ["Zeppelin over Berlin"], "dcDescription": ["An airship."],
@@ -237,38 +214,6 @@ EUROPEANA = {"items": [
     {"id": "/1/sa", "title": ["Parade"], "rights": ["http://creativecommons.org/licenses/by-sa/4.0/"],
      "edmIsShownBy": ["https://media.example.org/parade.mp4"]},
 ]}
-
-OAI_PAGE1 = b"""<?xml version="1.0" encoding="UTF-8"?>
-<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords>
-<record><header><identifier>oai:openimages.eu:100</identifier></header><metadata>
-<oi:oi xmlns:oi="http://www.openbeelden.nl/oai/">
-<oi:title>Watersnood in Zeeland</oi:title><oi:subject>rampen</oi:subject><oi:description>Polygoon journaal over de ramp.</oi:description>
-<oi:date>1953-02-05</oi:date><oi:license>http://creativecommons.org/publicdomain/mark/1.0/</oi:license>
-<oi:attributionName>Polygoon</oi:attributionName><oi:attributionURL>https://www.openbeelden.nl/media/100</oi:attributionURL>
-<oi:medium format="ogv">https://www.openbeelden.nl/files/100.ogv</oi:medium>
-<oi:medium format="mp4">https://www.openbeelden.nl/files/100.mp4</oi:medium>
-</oi:oi></metadata></record>
-<record><header><identifier>oai:openimages.eu:101</identifier></header><metadata>
-<oi:oi xmlns:oi="http://www.openbeelden.nl/oai/"><oi:title>Kermis</oi:title>
-<oi:license>http://creativecommons.org/licenses/by-sa/3.0/nl/</oi:license>
-<oi:medium format="mp4">https://www.openbeelden.nl/files/101.mp4</oi:medium></oi:oi></metadata></record>
-<resumptionToken>tok2</resumptionToken>
-</ListRecords></OAI-PMH>"""
-
-OAI_PAGE2 = b"""<?xml version="1.0" encoding="UTF-8"?>
-<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"><ListRecords>
-<record><header><identifier>oai:openimages.eu:102</identifier></header><metadata>
-<oi:oi xmlns:oi="http://www.openbeelden.nl/oai/"><oi:title>Ramp in Limburg</oi:title>
-<oi:license>https://creativecommons.org/licenses/by/3.0/nl/</oi:license><oi:attributionName>Beeld en Geluid</oi:attributionName>
-<oi:medium format="mp4">https://www.openbeelden.nl/files/102.mp4</oi:medium></oi:oi></metadata></record>
-<resumptionToken></resumptionToken>
-</ListRecords></OAI-PMH>"""
-
-
-class XmlResponse(FakeResponse):
-    def __init__(self, xml):
-        super().__init__(content=xml)
-
 
 def test_europeana():
     s = FakeSession({"api.europeana.eu": FakeResponse(EUROPEANA)})
@@ -284,70 +229,12 @@ def test_europeana():
     assert "share-alike" in r["1/sa"].reject
 
 
-def test_openbeelden_feed_pages_and_filter():
-    pages = iter([XmlResponse(OAI_PAGE1), XmlResponse(OAI_PAGE2)])
-    s = FakeSession({"openbeelden.nl/feeds/oai": lambda url, params: next(pages)})
-    items = openbeelden.search("ramp watersnood", session=s)
-    assert [i.source_id for i in items] == ["100", "102"]  # 'Kermis' doesn't match the words
-    assert s.calls[1][1] == {"verb": "ListRecords", "resumptionToken": "tok2"}
-    assert items[0].file_url.endswith("100.mp4") and items[0].source_url.endswith("/media/100")
-    assert openbeelden.rights(items[0]).license == "public-domain"
-    assert openbeelden.rights(items[1]).attribution == "Beeld en Geluid / Open Beelden (CC BY 3.0)"
-    rec, _ = openbeelden.parse(OAI_PAGE1)
-    assert "share-alike" in openbeelden.rights(openbeelden.to_item(rec[1])).reject
-
-
 def test_stock_sources():
-    s = FakeSession({"api.pexels.com": FakeResponse({"videos": [{
-        "id": 857195, "url": "https://www.pexels.com/video/waves-crashing-on-rocks-857195/", "user": {"name": "Ana"},
-        "video_files": [{"file_type": "video/mp4", "width": 1280, "height": 720, "link": "https://v.pexels.com/720.mp4"},
-                        {"file_type": "video/mp4", "width": 3840, "height": 2160, "link": "https://v.pexels.com/2160.mp4"},
-                        {"file_type": "video/mp4", "width": 7680, "height": 4320, "link": "https://v.pexels.com/8k.mp4"}]}]}),
-        "pixabay.com": FakeResponse({"hits": [{"id": 5, "pageURL": "https://pixabay.com/videos/id-5/", "tags": "ocean, waves, sea",
+    s = FakeSession({"pixabay.com": FakeResponse({"hits": [{"id": 5, "pageURL": "https://pixabay.com/videos/id-5/", "tags": "ocean, waves, sea",
                                                "user": "bob", "videos": {"large": {"url": ""}, "medium": {"url": "https://p/m.mp4"}}}]})})
-    p = pexels.search("waves", session=s, key="K")[0]
-    assert (p.title, p.file_url, pexels.rights(p).license) == ("Waves crashing on rocks", "https://v.pexels.com/2160.mp4", "Pexels License")
-    assert s.calls[0][0] == pexels.API
     x = pixabay.search("waves", session=s, key="K")[0]
     assert (x.title, x.file_url, x.keywords) == ("ocean, waves, sea", "https://p/m.mp4", ["ocean", "waves", "sea"])
-    assert set(sources.stock_sources()) == {"pexels", "pixabay", "coverr", "mixkit", "dareful", "vidsplay"}
-
-
-def test_coverr_off_by_default(settings):
-    ok, why = sources.usable(settings, "coverr")
-    assert not ok and "switched off" in why
-    assert sources.usable(settings, "pexels") == (False, "needs an API key (Sources page)")
-    assert sources.usable(settings, "mixkit")[1] == "no API: use the import folder"
-
-
-def test_import_folder(conn, settings, clip_bytes):
-    d = folder.folder(settings, "dareful")
-    d.mkdir(parents=True)
-    (d / "city_night_4k.mp4").write_bytes(clip_bytes)
-    (d / "notes.txt").write_text("not a video")
-    assert len(folder.waiting(settings, "dareful")) == 1
-    assert folder.import_folder(conn, settings, "dareful") == 1
-    a = conn.execute("SELECT * FROM assets").fetchone()
-    assert (a["source"], a["title"], a["license"], a["status"]) == ("dareful", "city night 4k", "CC BY 4.0", "downloaded")
-    assert a["attribution"] == "Joel Holland / Dareful (CC BY 4.0)"
-    assert not media.probe(a["path"])["has_audio"]
-    assert (d / "imported" / "city_night_4k.mp4").exists() and folder.waiting(settings, "dareful") == []
-    # The same file again is recognised (and the duplicate check would catch a re-encode).
-    (d / "again.mp4").write_bytes(clip_bytes)
-    assert folder.import_folder(conn, settings, "dareful", license="CC BY 4.0", credit="") == 0
-
-
-def test_import_page(settings, conn):
-    from shorts.web import create_app
-    client = create_app(settings, start_runner=False).test_client()
-    page = client.get("/sources").data
-    assert b"Import folders" in page and b"Joel Holland / Dareful" in page and b"Europeana" in page
-    client.post("/sources/vidsplay/import", data={"license": "Vidsplay License", "credit": "Vidsplay.com"})
-    import json
-    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
-    assert json.loads(job["command"]) == ["import", "--source", "vidsplay", "--license", "Vidsplay License",
-                                          "--credit", "Vidsplay.com"]
-    assert client.post("/sources/nasa/import").status_code == 404
+    assert set(sources.stock_sources()) == {"pixabay"}
 
 
 def test_internet_archive_skips_files_listed_too_long_or_large():
@@ -370,9 +257,9 @@ def test_try_reports_failed_search(settings, monkeypatch, capsys):
 
     def refuse(*a, **k):
         raise requests.HTTPError("403 Client Error: Forbidden")
-    monkeypatch.setattr(loc, "search", refuse)
-    assert cli._sources(None, settings, ("loc", "rocket")) == 1
-    assert "search on Library of Congress failed: 403" in capsys.readouterr().out
+    monkeypatch.setattr(prelinger, "search", refuse)
+    assert cli._sources(None, settings, ("prelinger", "rocket")) == 1
+    assert f"search on {prelinger.LABEL} failed: 403" in capsys.readouterr().out
 
 
 def test_commons_takes_1080p_transcode_of_4k_and_checks_duration():
@@ -387,16 +274,3 @@ def test_commons_takes_1080p_transcode_of_4k_and_checks_duration():
     assert "out of range" in commons.rights(item).reject
     item.extra["duration"] = 95.0
     assert commons.rights(item).license == "public-domain"
-
-
-def test_loc_cloudflare_block_is_explained():
-    class Blocked:
-        status_code = 403
-        headers = {"server": "cloudflare"}
-
-    class S:
-        def get(self, *a, **k):
-            return Blocked()
-    with pytest.raises(ValueError, match="Cloudflare"):
-        loc.search("rocket", session=S())
-    assert "loc" in sources.OFF_BY_DEFAULT

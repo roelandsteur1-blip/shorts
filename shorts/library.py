@@ -1,9 +1,8 @@
-"""Keep the footage library stocked and tidy: move it to another drive, download more when it runs
-low, and delete videos that have nothing left to give."""
+"""Keep the footage library stocked and tidy: download more when it runs low, and delete videos
+that have nothing left to give."""
 from __future__ import annotations
 
 import logging
-import shutil
 import sqlite3
 from pathlib import Path
 
@@ -14,38 +13,6 @@ log = logging.getLogger(__name__)
 
 # Shorts in these states no longer need their source footage (rerender is refused once uploaded).
 DONE_STATES = ("scheduled", "uploaded", "published", "rejected")
-
-
-def move_footage(conn: sqlite3.Connection, settings: Settings) -> tuple[int, float]:
-    """Move every downloaded video that is not under settings.footage_dir into it (same
-    sub-folders) and update its path. Returns (files moved, GB moved)."""
-    target = settings.footage_dir.resolve()
-    target.mkdir(parents=True, exist_ok=True)
-    old_root = (settings.data_dir / "footage").resolve()
-    moved, size = 0, 0.0
-    for r in conn.execute("SELECT id, path FROM assets WHERE path IS NOT NULL").fetchall():
-        src = Path(r["path"])
-        if not src.exists():
-            continue
-        try:
-            src.resolve().relative_to(target)
-            continue  # already there
-        except ValueError:
-            pass
-        try:
-            rel = src.resolve().relative_to(old_root)
-        except ValueError:
-            rel = Path(src.parent.name) / src.name
-        dst = target / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        gb = src.stat().st_size / 1e9
-        shutil.move(str(src), str(dst))
-        conn.execute("UPDATE assets SET path=? WHERE id=?", (str(dst), r["id"]))
-        conn.commit()  # per file, so an interrupted move leaves the database right
-        moved += 1
-        size += gb
-        log.info("moved %s -> %s (%.2f GB)", src, dst, gb)
-    return moved, size
 
 
 def shorts_left(conn: sqlite3.Connection, settings: Settings, channel: Channel,

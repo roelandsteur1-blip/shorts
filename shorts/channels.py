@@ -78,8 +78,6 @@ def validate(data: dict, known_categories: set[str]) -> list[str]:
     bar = (data.get("style") or {}).get("title_bar")
     if bar and bar not in TITLE_BARS:
         errors.append(f"unknown title bar: {bar}")
-    if not isinstance(data.get("inspiration", []), list):
-        errors.append("inspiration: a list of channels")
     allowed = {f.name for f in fields(Channel)}
     extra = set(data) - allowed
     if extra:
@@ -92,9 +90,15 @@ def validate(data: dict, known_categories: set[str]) -> list[str]:
     return errors
 
 
+# Fields of features that were removed; an older channel file loses them on its next save.
+REMOVED_FIELDS = {"hashtags", "music_folder", "auto_run", "inspiration"}
+
+
 def save(settings: Settings, data: dict, known_categories: set[str], new: bool = False) -> list[str]:
     """Validate and write; returns the problems instead of writing when there are any."""
-    data = {k: v for k, v in data.items() if v not in (None, "")}
+    data = {k: v for k, v in data.items() if v not in (None, "") and k not in REMOVED_FIELDS}
+    if "sources" in data:  # sources that were removed (loc, coverr, openbeelden, pexels, import folders)
+        data["sources"] = [x for x in data["sources"] if x in sources.ORDER]
     errors = validate(data, known_categories)
     path = path_for(settings, data.get("id", ""))
     if new and path.exists():

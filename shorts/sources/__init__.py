@@ -22,11 +22,8 @@ from types import ModuleType
 
 from ..config import Settings
 
-# Display order on the Sources page. Import-folder sources have no API (sources/folder.py).
-ORDER = ["nasa", "internet_archive", "prelinger", "loc", "commons", "europeana", "openbeelden",
-         "pexels", "pixabay", "coverr", "mixkit", "dareful", "vidsplay"]
-FOLDER_SOURCES = {"mixkit", "dareful", "vidsplay"}
-OFF_BY_DEFAULT = {"coverr", "loc"}  # coverr: its terms ban AI use; loc: Cloudflare blocks scripted requests
+# Display order on the Sources page.
+ORDER = ["nasa", "internet_archive", "prelinger", "commons", "europeana", "pixabay"]
 
 
 @dataclass
@@ -54,9 +51,6 @@ class Rights:
 
 
 def get(name: str) -> ModuleType:
-    if name in FOLDER_SOURCES:
-        from . import folder
-        return folder.source(name)
     if name not in ORDER:
         raise KeyError(f"unknown source {name!r}; known: {', '.join(ORDER)}")
     return import_module(f".{name}", __name__)
@@ -84,7 +78,7 @@ def label(name: str) -> str:
         return name
 
 
-# ---------- per-laptop source settings: on/off and API keys ----------
+# ---------- source settings: on/off and API keys ----------
 
 def _read(path) -> dict:
     try:
@@ -95,7 +89,7 @@ def _read(path) -> dict:
 
 def disabled(settings: Settings) -> set[str]:
     data = _read(settings.data_dir / "sources.json")
-    return set(data.get("disabled", sorted(OFF_BY_DEFAULT)))
+    return set(data.get("disabled", []))
 
 
 def set_enabled(settings: Settings, name: str, on: bool) -> None:
@@ -131,8 +125,6 @@ def usable(settings: Settings, name: str) -> tuple[bool, str]:
         return False, "switched off on the Sources page"
     if getattr(mod, "NEEDS_KEY", False) and not api_key(settings, name):
         return False, "needs an API key (Sources page)"
-    if name in FOLDER_SOURCES:
-        return False, "no API: use the import folder"
     return True, ""
 
 
@@ -151,14 +143,10 @@ def save_test(settings: Settings, name: str, result: dict) -> None:
 
 def status(settings: Settings, name: str) -> tuple[str, str]:
     """Connection status for the Sources page: (state, explanation). state is one of
-    'connected', 'untested', 'failing', 'needs-key', 'off', 'import'."""
+    'connected', 'untested', 'failing', 'needs-key', 'off'."""
     mod = get(name)
-    if name in FOLDER_SOURCES:
-        return "import", "no API: download files yourself into the import folder"
     if name in disabled(settings):
-        why = {"coverr": "off on purpose: its terms ban AI use",
-               "loc": "off: Cloudflare blocks scripted requests"}.get(name, "switched off")
-        return "off", why
+        return "off", "switched off"
     if getattr(mod, "NEEDS_KEY", False) and not api_key(settings, name):
         return "needs-key", "paste a free API key below"
     test = test_results(settings).get(name)

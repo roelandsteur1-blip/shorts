@@ -8,6 +8,5 @@ secrets/
 client_secret*.json
 fonts/*.ttf
 *.egg-info/
-launcher/dashboard.log
 fonts/*.part
 models/

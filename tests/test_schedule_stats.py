@@ -1,11 +1,11 @@
-"""Phase 5 and 6: edit text and re-render, Schedule page and upload quota, daily auto-run, Stats page."""
+"""Phase 5 and 6: edit text and re-render, Schedule page and upload quota, Stats page."""
 import json
 import shutil
 from datetime import datetime, timezone
 
 import pytest
 
-from shorts import daily, script, upload
+from shorts import script, upload
 from shorts.config import ROOT, list_channels, load_channel
 
 
@@ -89,36 +89,6 @@ def test_uploads_today_counts_all_channels(conn):
     add_short(conn, uploaded_at="2026-10-16T06:59:00Z")  # before the reset
     add_short(conn, uploaded_at="2026-10-16T19:00:00Z", channel="other")
     assert upload.uploads_today(conn, now) == 2
-
-
-def test_daily_run(conn, settings, cfg, monkeypatch):
-    import shorts.pipeline
-    import shorts.upload as up
-    path = cfg / "channels" / "space.toml"
-    path.write_text(path.read_text().replace('id = "space"', 'id = "space"\nauto_run = true'))
-    made, uploaded = [], []
-    monkeypatch.setattr(shorts.pipeline, "make_many",
-                        lambda c, s, orders: made.extend((ch.id, n) for ch, n, _ in orders) or {ch.id: 2 for ch, _, _ in orders})
-    monkeypatch.setattr(up, "upload_approved", lambda c, s, ch, **k: uploaded.append(ch.id) or ["yt"])
-    assert daily.run(conn, settings) == {"space": "made 2, scheduled 1"}
-    assert made == [("space", 2)]
-    # A big review backlog: no new Shorts, approved ones are still scheduled.
-    for _ in range(daily.BACKLOG_DAYS * 2):
-        add_short(conn, status="rendered")
-    assert daily.run(conn, settings) == {"space": "made 0, scheduled 1"} and len(made) == 1
-    st = daily.status(settings)
-    assert st["channels"] == ["space"]
-
-
-def test_daily_task_outside_windows(settings, client, monkeypatch):
-    monkeypatch.setattr(daily.os, "name", "posix")
-    monkeypatch.setattr(daily, "_crontab", lambda: None)  # no cron installed (cron: test_server.py)
-    with pytest.raises(RuntimeError, match="cron"):
-        daily.set_task(settings, True, "08:30")
-    assert daily.status(settings)["note"] == "no cron on this computer"
-    with pytest.raises(ValueError):
-        daily.set_task(settings, True, "8.30")
-    assert client.post("/schedule/daily", data={"on": "1", "time": "8.30"}).status_code == 400
 
 
 class _FakeYouTube:

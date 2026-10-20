@@ -4,7 +4,7 @@ launch, then a parade).
 
 Three steps, cheapest first; each result is stored with a confidence and the method:
 1. source metadata: the archive's own title, subjects and description against category keywords;
-2. CLIP (local GPU): each scene's embedding against the category's clip_prompts, plus the scenes
+2. CLIP (local): each scene's embedding against the category's clip_prompts, plus the scenes
    Roeland sorted by hand as extra examples;
 3. Claude, only when 1 and 2 disagree or are both unsure: one call sorts up to 50 videos.
 Anything still unsure stays uncategorised, for sorting by hand on the Library page.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import embed, llm, sources, tomlw
+from . import embed, llm, sources
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -29,7 +29,6 @@ META_SURE = 0.6      # metadata confidence that counts as sure (about two keywor
 META_SOME = 0.3      # one weak hit: enough to agree with CLIP, not enough alone
 CLIP_SURE = 0.6      # CLIP probability that counts as sure
 CLIP_AGREE = 0.15    # CLIP probability that is enough to confirm a metadata category
-KNN_SIM = 0.8        # hand-sorted scenes at least this similar count as votes
 CLAUDE_BATCH = 50
 
 
@@ -62,14 +61,6 @@ def load_categories(settings: Settings) -> list[Category]:
     return [Category(**c) for c in data.get("category", [])]
 
 
-def save_categories(settings: Settings, cats: list[Category]) -> None:
-    header = ("# Footage categories (see the dashboard's Library page). Channels pick categories in\n"
-              "# their own TOML: categories = [...]. Edited by the dashboard; old version in .bak.")
-    data = {"category": [{k: v for k, v in c.__dict__.items() if v not in (None, {}, [])}
-                         for c in cats]}
-    tomlw.write(categories_path(settings), data, header)
-
-
 # ---------- step 1: metadata ----------
 
 def _phrase_re(phrase: str) -> re.Pattern:
@@ -97,8 +88,7 @@ def metadata_scores(asset: sqlite3.Row | dict, cats: list[Category]) -> dict[str
 # ---------- step 2: CLIP ----------
 
 def clip_probs(conn: sqlite3.Connection, settings: Settings, emb: np.ndarray, cats: list[Category]) -> np.ndarray:
-    """(scenes x categories) probabilities: CLIP zero-shot against the prompts, mixed with votes
-    from hand-sorted scenes that look alike."""
+    """(scenes x categories) probabilities: CLIP zero-shot against the prompts."""
     enc = embed.get_encoder(settings)
     sims = np.full((len(emb), len(cats)), -1.0, dtype=np.float32)
     for j, c in enumerate(cats):
@@ -107,23 +97,6 @@ def clip_probs(conn: sqlite3.Connection, settings: Settings, emb: np.ndarray, ca
     logits = 100.0 * sims
     p = np.exp(logits - logits.max(axis=1, keepdims=True))
     p /= p.sum(axis=1, keepdims=True)
-
-    examples = conn.execute(
-        """SELECT sc.embedding, c.category FROM scene_categories c JOIN scenes sc ON sc.id = c.scene_id
-            WHERE c.method = 'manual' AND c.confidence > 0 AND sc.embedding IS NOT NULL""").fetchall()
-    idx = {c.id: j for j, c in enumerate(cats)}
-    examples = [(np.frombuffer(e["embedding"], dtype=np.float32), idx[e["category"]])
-                for e in examples if e["category"] in idx]
-    if examples:
-        ex = np.stack([e[0] for e in examples])
-        ex_cat = np.array([e[1] for e in examples])
-        ex_sims = emb @ ex.T
-        for i in range(len(emb)):
-            near = np.where(ex_sims[i] >= KNN_SIM)[0]
-            if len(near):
-                near = near[np.argsort(-ex_sims[i, near])][:5]
-                votes = np.bincount(ex_cat[near], minlength=len(cats)) / len(near)
-                p[i] = 0.5 * p[i] + 0.5 * votes
     return p
 
 
@@ -265,31 +238,10 @@ def sort_pending(conn: sqlite3.Connection, settings: Settings, use_claude: bool 
 
 
 def resort(conn: sqlite3.Connection) -> None:
-    """Forget automatic results (keeps hand-sorted ones), e.g. after editing categories.toml."""
-    conn.execute("DELETE FROM scene_categories WHERE method != 'manual'")
-    conn.execute("""UPDATE scenes SET sorted = 0
-                     WHERE id NOT IN (SELECT scene_id FROM scene_categories WHERE method = 'manual')""")
+    """Forget every result, e.g. after editing categories.toml."""
+    conn.execute("DELETE FROM scene_categories")
+    conn.execute("UPDATE scenes SET sorted = 0")
     conn.commit()
-
-
-def set_manual(conn: sqlite3.Connection, scene_id: int, category: str, on: bool = True) -> None:
-    """A correction by hand. on=True adds the category, on=False removes it for good (a sort
-    never re-adds it). Hand-sorted scenes also teach the CLIP step."""
-    conn.execute("""INSERT OR REPLACE INTO scene_categories (scene_id, category, confidence, method)
-                    VALUES (?,?,?,'manual')""", (scene_id, category, 1.0 if on else 0.0))
-    conn.execute("UPDATE scenes SET sorted = 1 WHERE id = ?", (scene_id,))
-    conn.commit()
-    _rollup(conn)
-
-
-def move_scene(conn: sqlite3.Connection, scene_id: int, category: str) -> None:
-    """'This scene is <category>, not what it was sorted into': one click on the Library page."""
-    for (old,) in conn.execute("""SELECT category FROM scene_categories
-                                  WHERE scene_id = ? AND confidence > 0 AND category != ?""",
-                               (scene_id, category)).fetchall():
-        conn.execute("""INSERT OR REPLACE INTO scene_categories (scene_id, category, confidence, method)
-                        VALUES (?,?,0,'manual')""", (scene_id, old))
-    set_manual(conn, scene_id, category, True)
 
 
 def _rollup(conn: sqlite3.Connection) -> None:
@@ -315,19 +267,3 @@ def allowed_scenes(conn: sqlite3.Connection, categories: list[str] | None) -> se
         return None
     cond, args = scene_filter(categories)
     return {r[0] for r in conn.execute(f"SELECT sc.id FROM scenes sc WHERE {cond}", args)}
-
-
-def draft_category(settings: Settings, name: str) -> dict:
-    """Claude drafts keywords, CLIP prompts and per-source search hints for a new category."""
-    names = ", ".join(m.NAME for m in sources.all_sources() if not getattr(m, "IMPORT_ONLY", False))
-    prompt = f"""Draft a footage category for sorting public-domain archive video. Category: "{name}".
-Answer with only JSON:
-{{"id": "short lowercase id, letters only", "label": "display name",
-  "keywords": ["15-25 lowercase words or short phrases archives use in titles/subjects"],
-  "clip_prompts": ["4-5 short visual descriptions of typical shots, for CLIP"],
-  "search": {{"<source>": "search query"}} for these sources: {names}.
-  For internet_archive and prelinger use archive syntax like "subject:(a OR b)"; for the others plain words.}}"""
-    data = llm.ask_json(prompt, settings.claude_cmd)
-    if not isinstance(data, dict):
-        raise llm.LLMError("unexpected reply")
-    return data

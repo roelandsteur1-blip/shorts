@@ -6,13 +6,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import shutil
 import subprocess
 import tempfile
 import time
-from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -26,21 +24,8 @@ class LLMError(RuntimeError):
 
 
 def find_claude(claude_cmd: str = "claude") -> str | None:
-    """The configured command, else the newest Claude Code bundled with the Claude desktop app.
-    That bundled path contains a version number, so it changes whenever the app updates."""
-    found = shutil.which(claude_cmd)
-    if found:
-        return found
-    # Older app installs keep it in %APPDATA%\Claude, the Store (MSIX) app in
-    # %LOCALAPPDATA%\Claude-Data\claude_<id>.
-    bundled = []
-    if appdata := os.environ.get("APPDATA"):
-        bundled += Path(appdata, "Claude", "claude-code").glob("*/*/claude.exe")
-    if local := os.environ.get("LOCALAPPDATA"):
-        bundled += Path(local, "Claude-Data").glob("claude_*/claude-code/*/*/claude.exe")
-    if bundled:
-        return str(max(bundled, key=lambda p: p.stat().st_mtime))
-    return None
+    """The configured Claude Code command, or None when it isn't installed."""
+    return shutil.which(claude_cmd)
 
 
 class LLMLimitError(LLMError):

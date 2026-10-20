@@ -24,7 +24,7 @@ def client(settings, cfg):
 
 
 DRAFT = {"niche_tags": ["#history", "old news", "newsreels", "extra"], "categories": ["history", "war", "made_up"],
-         "sources": ["prelinger", "loc", "nope"], "search_terms": ["polygoon", "newsreel"],
+         "sources": ["prelinger", "commons", "nope"], "search_terms": ["polygoon", "newsreel"],
          "hero_query": "a dramatic old newsreel moment",
          "formats": [{"id": "Then & Now", "title": "Then and now", "brief": "Compare the past with today."},
                      {"id": "story", "title": "The story", "brief": "Tell the story behind the shot."}]}
@@ -33,7 +33,7 @@ DRAFT = {"niche_tags": ["#history", "old news", "newsreels", "extra"], "categori
 def form_for(data, n_formats=3):
     form = {"name": data["name"], "id": data.get("id", ""), "language": "nl", "niche": data["niche"],
             "niche_tags": "history, old news\nnewsreels, fourth", "search_terms": "newsreel\npolygoon", "categories": ["history", "war"],
-            "sources": ["prelinger", "loc"], "min_seconds": "15", "max_seconds": "30", "uploads_per_day": "1",
+            "sources": ["prelinger", "commons"], "min_seconds": "15", "max_seconds": "30", "uploads_per_day": "1",
             "publish_times_utc": "16:00", "format_count": str(n_formats), "hero_query": ""}
     form.update({"format_id_0": "then_now", "format_title_0": "Then and now",
                  "format_brief_0": "Compare the past\r\nwith today.", "format_enabled_0": "1"})
@@ -46,7 +46,7 @@ def test_wizard_creates_a_channel(client, settings, cfg, monkeypatch):
 
     monkeypatch.setattr(llm, "ask", lambda *a, **k: json.dumps(DRAFT))
     d = client.post("/channels/draft", data={"name": "Oud Nieuws", "niche": "Dutch history", "language": "nl"}).get_json()
-    assert d["categories"] == ["history", "war"] and d["sources"] == ["prelinger", "loc"]
+    assert d["categories"] == ["history", "war"] and d["sources"] == ["prelinger", "commons"]
     assert d["niche_tags"] == ["history", "old news", "newsreels"]
     assert [f["id"] for f in d["formats"]] == ["then_now", "story"]
     assert client.post("/channels/draft", data={"name": ""}).status_code == 400
@@ -54,7 +54,7 @@ def test_wizard_creates_a_channel(client, settings, cfg, monkeypatch):
     r = client.post("/channels/new", data=form_for({"name": "Oud Nieuws", "id": "oudnieuws", "niche": "Dutch history"}))
     assert r.status_code == 302 and r.headers["Location"].endswith("/channels/oudnieuws?created=1")
     ch = load_channel("oudnieuws", cfg)
-    assert (ch.language, ch.categories, ch.sources, ch.niche_tags) == ("nl", ["history", "war"], ["prelinger", "loc"], ["history", "old news", "newsreels"])
+    assert (ch.language, ch.categories, ch.sources, ch.niche_tags) == ("nl", ["history", "war"], ["prelinger", "commons"], ["history", "old news", "newsreels"])
     assert ch.formats == [{"id": "then_now", "title": "Then and now", "brief": "Compare the past\nwith today.", "enabled": True}]
     assert ch.style["font"] == "Montserrat ExtraBold" and ch.hero_query is None
     # The same id twice is refused, and so is a broken form.
@@ -70,14 +70,18 @@ def test_wizard_creates_a_channel(client, settings, cfg, monkeypatch):
 
 
 def test_settings_keep_style_and_backup(client, cfg):
-    before = tomllib.loads((cfg / "channels" / "space.toml").read_text())
+    path = cfg / "channels" / "space.toml"
+    # Fields of removed features: the file still loads, and loses them on the next save.
+    path.write_text(path.read_text().replace('id = "space"', 'id = "space"\nauto_run = true\nhashtags = ["#space"]'))
+    assert load_channel("space", cfg).id == "space"
+    before = tomllib.loads(path.read_text())
     form = form_for({"name": "Space Shorts", "niche": "space exploration and astronomy"}, n_formats=1)
-    form.update(categories=["space"], sources=["nasa", "internet_archive"], language="en", auto_run="1")
+    form.update(categories=["space"], sources=["nasa", "internet_archive"], language="en")
     r = client.post("/channels/space", data=form)
     assert r.status_code == 302
     after = tomllib.loads((cfg / "channels" / "space.toml").read_text())
     assert after["style"] == before["style"] and after["id"] == "space"
-    assert after["sources"] == ["nasa", "internet_archive"] and after["auto_run"] is True
+    assert after["sources"] == ["nasa", "internet_archive"] and "auto_run" not in after and "hashtags" not in after
     assert (cfg / "channels" / "space.toml.bak").read_text().startswith("# One file per channel")
 
 

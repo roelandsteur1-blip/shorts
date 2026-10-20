@@ -279,24 +279,6 @@ def word_timings(work: Path) -> list | None:
         return None
 
 
-def samples(conn: sqlite3.Connection, settings: Settings, voices: list[str], shorts: int = 3) -> Path:
-    """voice-test: read the newest scripts with each voice into <data_dir>/voice-test/*.wav."""
-    eng = engine()
-    if not eng:
-        raise RuntimeError("Kokoro is not installed: python -m pip install kokoro")
-    out = settings.data_dir / "voice-test"
-    out.mkdir(parents=True, exist_ok=True)
-    ids = [r[0] for r in conn.execute(
-        "SELECT id FROM shorts WHERE status != 'rejected' ORDER BY id DESC LIMIT ?", (shorts,))]
-    for sid in ids:
-        text = " ".join(_speakable(r[0]) for r in conn.execute(
-            "SELECT text FROM blocks WHERE short_id=? ORDER BY idx", (sid,)))
-        for v in voices:
-            write_wav(out / f"short{sid}-{v}.wav", eng.speak(text, v))
-            log.info("voice-test: short %d, %s", sid, v)
-    return out
-
-
 def sample(settings: Settings, v: str, speed: float = 1.0, text: str | None = None) -> Path:
     """One wav for the Voices page play buttons, made once and kept in <data_dir>/voice-test."""
     if v not in VOICES:

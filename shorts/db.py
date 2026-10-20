@@ -195,7 +195,7 @@ CREATE TABLE IF NOT EXISTS asset_categories (
     PRIMARY KEY (asset_id, category)
 );
 
--- How long each step took (shorts/timing.py), for the Stats page and 'python -m shorts bench'.
+-- How long each step took (shorts/timing.py), for the Stats page.
 CREATE TABLE IF NOT EXISTS timings (
     id        INTEGER PRIMARY KEY,
     at        TEXT NOT NULL DEFAULT (datetime('now')),
@@ -212,9 +212,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     channel        TEXT,
     command        TEXT NOT NULL,              -- JSON list of CLI arguments after --channel
     label          TEXT,
-    heavy          INTEGER NOT NULL DEFAULT 1, -- 1 = uses GPU/CPU/Claude: one at a time
+    heavy          INTEGER NOT NULL DEFAULT 1, -- 1 = uses CPU/Claude: one at a time
     status         TEXT NOT NULL DEFAULT 'queued',
-        -- queued, running, done, failed, stopped, interrupted (laptop restarted mid-job)
+        -- queued, running, done, failed, stopped, interrupted (dashboard restarted mid-job)
     pid            INTEGER,
     exit_code      INTEGER,
     progress       TEXT,                       -- e.g. 'render'
@@ -257,30 +257,6 @@ CREATE TABLE IF NOT EXISTS claims (
     claimant  TEXT,
     note      TEXT,
     at        TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Competitor research (shorts/inspiration.py): recent Shorts of a channel's inspiration channels,
--- and the pattern bank Claude made from them (hooks, titles, format; never topics).
-CREATE TABLE IF NOT EXISTS inspiration_videos (
-    channel        TEXT NOT NULL,             -- our channel
-    video_id       TEXT NOT NULL,
-    source_channel TEXT NOT NULL,             -- their YouTube channel id
-    source_title   TEXT,
-    title          TEXT,
-    views          INTEGER,
-    likes          INTEGER,
-    comments       INTEGER,
-    seconds        INTEGER,
-    published_at   TEXT,
-    fetched_at     TEXT NOT NULL,
-    PRIMARY KEY (channel, video_id)
-);
-
-CREATE TABLE IF NOT EXISTS idea_banks (
-    channel   TEXT PRIMARY KEY,
-    data      TEXT NOT NULL,                  -- JSON: hooks, titles, format, avoid
-    videos    INTEGER,                        -- Shorts it was made from
-    made_at   TEXT NOT NULL
 );
 
 -- Old: videos the script writer said don't fit a channel. Copied into channel_fit, no longer written.

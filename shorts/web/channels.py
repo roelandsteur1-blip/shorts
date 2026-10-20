@@ -5,7 +5,7 @@ import json
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
-from .. import categorize, channels as chans, formats as fmtlib, inspiration, llm, looks, sources, tags as taglayers
+from .. import categorize, channels as chans, formats as fmtlib, llm, looks, sources, tags as taglayers
 from ..config import all_channels, load_channel
 from ..music import MUSIC_EXT
 from ..upload import found_path, token_path
@@ -48,7 +48,6 @@ def form_to_data(form, base: dict) -> dict:
             data[key] = int(form.get(key, data.get(key)))
         except (TypeError, ValueError):
             data[key] = form.get(key)
-    data["auto_run"] = form.get("auto_run") == "1"
     if "look" in form:
         data["style"] = dict(data.get("style") or chans.DEFAULT_STYLE)
         if form["look"]:
@@ -61,8 +60,6 @@ def form_to_data(form, base: dict) -> dict:
             data["style"]["title_bar"] = form["title_bar"]
         else:
             data["style"].pop("title_bar", None)
-    if "inspiration" in form:
-        data["inspiration"] = [x.strip() for x in form["inspiration"].splitlines() if x.strip()]
     if "format_count" in form:
         data["library_formats"] = form.get("library_formats") == "1"
     formats = []
@@ -142,10 +139,7 @@ def page(cid: str):
     found = json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else None
     connect_job = conn().execute("""SELECT * FROM jobs WHERE channel=? AND command LIKE '["connect"%'
                                     ORDER BY id DESC LIMIT 1""", (cid,)).fetchone()
-    research_job = conn().execute("""SELECT * FROM jobs WHERE channel=? AND command LIKE '["research"%'
-                                     ORDER BY id DESC LIMIT 1""", (cid,)).fetchone()
     return render_template("channel_form.html", **_context(data), ch=ch, music=music, tracks=tracks,
-                           bank=inspiration.bank(conn(), cid), research_job=research_job,
                            connected=token_path(settings(), cid).exists(),
                            found=found, connect_job=connect_job, created=request.args.get("created"),
                            saved=request.args.get("saved"))
@@ -188,22 +182,6 @@ def confirm(cid: str):
     if errors:
         abort(400, "; ".join(errors))
     return redirect(url_for("channels.page", cid=cid, saved=1))
-
-
-@bp.post("/channels/<cid>/research")
-def research(cid: str):
-    channel_or_404(cid)
-    return start_job(cid, ["research"], "Competitor research")
-
-
-@bp.post("/channels/<cid>/suggest")
-def suggest(cid: str):
-    """Channels with the most-viewed Shorts for the niche, to pick inspiration channels from."""
-    ch = channel_or_404(cid)
-    try:
-        return jsonify(channels=inspiration.suggest_channels(inspiration.reader(settings(), ch), ch))
-    except Exception as e:  # noqa: BLE001 - no login, quota, offline: say so on the page
-        return jsonify(error=str(e)), 502
 
 
 @bp.post("/channels/<cid>/try")
