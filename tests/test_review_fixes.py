@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from conftest import fake_claude
-from shorts import dedupe, embed, factcheck, hero, llm, pipeline, render, script
+from shorts import dedupe, embed, hero, llm, pipeline, render, script
 
 
 def test_source_name():
@@ -37,16 +37,6 @@ def test_scripts_only_attach_to_valid_hero_numbers(library, settings, channel, m
     assert len(created) == 1
     row = library.execute("SELECT topic, hero_scene_id FROM shorts WHERE id=?", (created[0],)).fetchone()
     assert (row["topic"], row["hero_scene_id"]) == ("two", heroes[1])
-
-
-def test_factcheck_ignores_unknown_short_ids(library, settings, channel, monkeypatch):
-    fake_claude(monkeypatch)
-    heroes = hero.candidates(library, settings, channel.id, 1)
-    sid = script.write_scripts(library, settings, channel, "what_youre_seeing", heroes)[0]
-    monkeypatch.setattr(llm, "ask", lambda *a, **k: json.dumps(
-        [{"short": None, "facts": []}, {"short": 999, "facts": []}]))
-    factcheck.check(library, settings, [sid])
-    assert library.execute("SELECT status FROM shorts WHERE id=?", (sid,)).fetchone()[0] == "scripted"
 
 
 def test_llm_timeout_is_an_llm_error(monkeypatch):

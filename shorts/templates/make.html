@@ -7,7 +7,7 @@
 <label>Format<select name="format" id="format"><option value="">first enabled format</option>
 {% for ch in channels %}{% for f in ch.formats %}<option value="{{ f.id }}" data-channel="{{ ch.id }}">{{ f.title }}{% if f.enabled is defined and not f.enabled %} (off){% endif %}</option>{% endfor %}{% endfor %}
 </select></label>
-<p class="muted">Runs in the background: restock footage if low, scripts, fact check, render. One heavy job runs at a time; others wait in line. You can review while it runs.</p>
+<p class="muted">Runs in the background: restock footage if low, scripts, render. One heavy job runs at a time; others wait in line. You can review while it runs.</p>
 <p><button class="primary">Start</button></p>
 </form>
 <script>

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 
-from shorts import factcheck, hero, library as lib, script, upload
+from shorts import hero, library as lib, script, upload
 
 
 def vec(seed: int) -> bytes:
@@ -108,16 +108,12 @@ def test_cleanup_when_budget_used(conn, settings, tmp_path):
     assert first
 
 
-def test_script_and_factcheck_see_siblings(conn, settings, channel):
+def test_script_sees_siblings(conn, settings, channel):
     aid, ids = add_video(conn, 15)
     add_short(conn, ids[0], status="scheduled", topic="the launch pad")
     ctx = script.hero_context(conn, ids[-1])
     prompt = script.build_prompt(channel, {"title": "T", "brief": "b"}, [ctx], [])
     assert "already gave other Shorts" in prompt and "the launch pad" in prompt
-    sid = add_short(conn, ids[-1])
-    item = factcheck._item(conn, sid)
-    assert "Other Shorts from the same video: hook text" in item
-    assert "15-minute video" in item
 
 
 def test_siblings_are_scheduled_days_apart(conn, settings, channel):

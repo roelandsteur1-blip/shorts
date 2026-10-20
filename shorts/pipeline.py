@@ -1,8 +1,7 @@
 """Runs the 'make' steps. Every step is resumable: it picks up Shorts by status.
 
 The steps overlap instead of waiting for each other: while Claude writes the scripts of the next
-batch, the previous batch is fact-checked, and every checked Short goes straight to rendering
-(two at once). Waiting on Claude and rendering on the CPU then happen at the
+batch, every written Short goes straight to rendering (two at once). Waiting on Claude and rendering on the CPU then happen at the
 same time, so a batch takes about as long as its Claude calls. Several channels can share one run
 (make_many): Claude writes channel B while channel A renders. Meanwhile, in the background: footage
 downloads for the next restock, the music check, and loading CLIP/Kokoro for the first render."""
@@ -15,7 +14,7 @@ import threading
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 
-from . import db, factcheck, fit, hero, llm, progress, render, script, shots, speed, voice
+from . import db, fit, hero, llm, progress, render, script, shots, speed, voice
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
@@ -93,7 +92,7 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     music_check.start()
     threading.Thread(target=_warm_up, args=(settings, channels), name="warm-up", daemon=True).start()
 
-    # 2-5. Hero shots -> scripts -> fact check -> footage + render, overlapping (and channel after
+    # 2-5. Hero shots -> scripts -> footage + render, overlapping (and channel after
     #      channel for the Claude steps).
     # No format given: the script writer picks per Short from the channel's formats.
     lanes = [Lane(ch, fmt, count) for ch, count, fmt in orders]
@@ -133,7 +132,7 @@ def _warm_up(settings: Settings, channels: list[Channel]) -> None:
 
 
 def finish(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> None:
-    """Fact check, footage per block and render for everything that's not done yet."""
+    """Footage per block and render for everything that's not done yet."""
     run_steps(conn, settings, [Lane(channel, None, 0)])
 
 
@@ -166,21 +165,17 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
 
 def run_steps(conn: sqlite3.Connection, settings: Settings, lanes: list[Lane],
               before_render: threading.Thread | None = None) -> None:
-    """Scripts for each lane, plus everything left halfway by an earlier run ('scripted' ->
-    fact check, 'checked'/'failed' -> render). Three lanes of work: Claude writes (channel after
-    channel), Claude checks, the main thread picks footage and hands renders to a pool. Each has
-    its own database connection. before_render: a thread the first render waits for."""
-    to_check: queue.Queue = queue.Queue()
+    """Scripts for each lane, plus everything left halfway by an earlier run ('scripted'/'checked'/
+    'failed' -> render). Two lanes of work: Claude writes (channel after channel) and every saved
+    batch goes straight to the main thread, which picks footage and hands renders to a pool. Each
+    has its own database connection. before_render: a thread the first render waits for."""
     to_render: queue.Queue = queue.Queue()
     channels = {lane.channel.id: lane.channel for lane in lanes}
-    leftover: list[list[int]] = []
     for lane in lanes:
-        for sid in _ids(conn, lane.channel, "checked", "failed"):
+        for sid in _ids(conn, lane.channel, "scripted", "checked", "failed"):
             to_render.put(sid)
-        ids = _ids(conn, lane.channel, "scripted")
-        leftover += [ids[i:i + 5] for i in range(0, len(ids), 5)]
     writing = [lane for lane in lanes if lane.count > 0]
-    total = [sum(lane.count for lane in writing) + sum(map(len, leftover)) + to_render.qsize()]
+    total = [sum(lane.count for lane in writing) + to_render.qsize()]
     if not total[0]:
         return
 
@@ -194,39 +189,17 @@ def run_steps(conn: sqlite3.Connection, settings: Settings, lanes: list[Lane],
                     total[0] -= lane.count
                     continue
                 try:
-                    _write_lane(c, settings, lane, total, to_check.put)
+                    _write_lane(c, settings, lane, total, lambda ids: [to_render.put(sid) for sid in ids])
                 except Exception:  # noqa: BLE001 - heroes without a script are picked again next run
                     log.exception("%s: writing scripts failed", lane.channel.id)
-        finally:
-            to_check.put(_DONE)
-            c.close()
-
-    def check() -> None:
-        c = db.connect(settings.db_path)
-        try:
-            while True:
-                batch = leftover.pop(0) if leftover else to_check.get()
-                if batch is _DONE:
-                    break
-                factcheck.check(c, settings, batch)
-                for sid in batch:  # unanswered ones stay 'scripted' and are retried next run
-                    if c.execute("SELECT status FROM shorts WHERE id=?", (sid,)).fetchone()[0] == "checked":
-                        to_render.put(sid)
-                if llm.limit_reached():
-                    log.warning("Claude usage limit: the remaining scripts wait for the next run")
-        except Exception:  # noqa: BLE001
-            log.exception("fact check failed")
         finally:
             to_render.put(_DONE)
             c.close()
 
     writer = threading.Thread(target=write, name="claude-write", daemon=True)
-    checker = threading.Thread(target=check, name="claude-check", daemon=True)
     writer.start()
-    checker.start()
     _render_lane(conn, settings, channels, to_render, total, before_render)
     writer.join()
-    checker.join()
 
 
 def _render_one(settings: Settings, channel: Channel, sid: int) -> None:

@@ -385,7 +385,7 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
                 log.warning("skipping a script: %s", e)
         created += batch_ids
         if on_batch and batch_ids:
-            on_batch(batch_ids)  # pipelined make: fact check this batch while the next is written
+            on_batch(batch_ids)  # pipelined make: render this batch while the next is written
     return created
 
 

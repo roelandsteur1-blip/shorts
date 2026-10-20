@@ -6,9 +6,8 @@
 {% if family|length > 1 %}<p class="muted">Short {% for f in family %}{% if f.id == s.id %}{{ loop.index }}{% endif %}{% endfor %} of {{ family|length }} from this video:
 {% for f in family if f.id != s.id %}<a href="/short/{{ f.id }}">#{{ f.id }}</a> <span class="muted">({{ f.status }})</span> {% endfor %}</p>{% endif %}</div>
 <div>
-<div class="card"><h3>Fact check</h3><table>
-{% for f in facts %}<tr><td class="{{ 'ok' if f.verdict=='supported' else ('bad' if f.verdict=='unsupported' else 'warn') }}">{{ f.verdict or 'unchecked' }}</td>
-<td>{{ f.claim }}{% if f.note %}<br><span class="muted">{{ f.note }}</span>{% endif %}
+<div class="card"><h3>Facts and sources</h3><table>
+{% for f in facts %}<tr><td>{{ f.claim }}{% if f.note %}<br><span class="muted">{{ f.note }}</span>{% endif %}
 {% if f.source_quote %}<br><span class="muted">“{{ f.source_quote }}”</span>{% endif %}
 {% if f.source_url %}<br><a href="{{ f.source_url }}" target="_blank" rel="noopener">source</a>{% endif %}</td></tr>{% endfor %}
 </table></div>
@@ -19,7 +18,7 @@
 <input type="text" name="screen_title" value="{{ s.screen_title or '' }}" maxlength="60"></label>
 {% for b in blocks %}<label style="margin:4px 0"><span class="muted" style="font-size:12px">{{ loop.index }} · {{ b.seconds }}s · {{ b.visual }}</span>
 <input type="text" name="block_{{ b.idx }}" value="{{ b.text }}"></label>{% endfor %}
-<p class="muted" style="font-size:12px">*word* = highlighted. Keep blocks short (8 words); the fact check is not run again.</p>
+<p class="muted" style="font-size:12px">*word* = highlighted. Keep blocks short (8 words).</p>
 <button>Save text and re-render</button></form>{% endif %}</div>
 <div class="card"><h3>Footage</h3>{% for a in assets %}<p><a href="{{ a.source_url }}" target="_blank" rel="noopener">{{ a.title }}</a> <span class="muted">· {{ a.license }} · {{ a.credit }}</span>{% if a.needs_check %} <span class="bad">rights check needed</span>{% endif %}{% if a.claimed %} <span class="bad">claimed by {{ a.claimed }}</span>{% endif %}</p>{% endfor %}
 <details><summary class="muted">Got a copyright claim on this Short?</summary>

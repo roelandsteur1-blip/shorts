@@ -89,7 +89,7 @@ def test_limit_mid_make_still_renders_written_scripts(library, settings, channel
     calls = {"script": 0}
 
     def ask(prompt, claude_cmd="claude", timeout=600):
-        if "fact checker" not in prompt and "You sort public-domain archive videos" not in prompt:
+        if "You sort public-domain archive videos" not in prompt:
             calls["script"] += 1
             if calls["script"] > 1:
                 raise llm.LLMLimitError("Claude usage limit reached")

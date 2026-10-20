@@ -45,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("scenes", help="1. cut downloaded videos into scenes and score them")
     sub.add_parser("embed", help="1. make scenes searchable (CLIP)")
 
-    pm = sub.add_parser("make", help="2-5. hero shots -> scripts -> fact check -> footage -> render")
+    pm = sub.add_parser("make", help="2-5. hero shots -> scripts -> footage -> render")
     pm.add_argument("-n", "--count", type=int, default=5)
     pm.add_argument("--format", dest="format_id")
     pm.add_argument("--no-restock", action="store_true",
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     pmu.add_argument("--claimed", type=int, metavar="TRACK_ID",
                      help="YouTube claimed this track: stop using it and re-render Shorts not uploaded yet")
 
-    sub.add_parser("finish", help="4-5. resume fact check/render for Shorts that stopped halfway")
+    sub.add_parser("finish", help="4-5. resume rendering Shorts that stopped halfway")
 
     pd = sub.add_parser("dashboard", help="6. the dashboard on http://127.0.0.1:5000 (Tailscale makes it reachable)")
     pd.add_argument("--port", type=int, default=5000)

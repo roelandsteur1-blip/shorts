@@ -23,7 +23,7 @@ def test_make_renders_reviewable_short(library, settings, channel, monkeypatch):
     assert (info["width"], info["height"]) == (1080, 1920)
     assert info["has_audio"]
     assert channel.min_seconds - 0.5 <= info["duration"] <= channel.max_seconds + 1
-    assert s["factcheck_ok"] == 0  # one fact flagged 'unclear'
+    assert s["factcheck_ok"] is None  # no fact check any more
     assert "NASA (public domain)" in s["description"]
     # Sources are named, not linked (links in a Shorts description are not clickable).
     assert "Sources: NASA Image and Video Library, NASA Science" in s["description"]
@@ -38,7 +38,7 @@ def test_make_renders_reviewable_short(library, settings, channel, monkeypatch):
     assert b"Saturn" in client.get("/review").data
     assert b"Saturn" not in client.get("/review?channel=other").data
     page = client.get(f"/short/{done[0]}").data
-    assert b"unclear" in page and b"Approve" in page
+    assert b"Facts and sources" in page and b"Approve" in page
     assert client.get(f"/video/{done[0]}").status_code == 200
     client.post(f"/short/{done[0]}", data={"action": "approve", "title": "New title", "tags": "a, b, c, d"})
     s = library.execute("SELECT status, title, tags FROM shorts WHERE id=?", (done[0],)).fetchone()
@@ -64,7 +64,7 @@ def test_make_replaces_off_niche_heroes(library, settings, channel, monkeypatch)
 
     def ask(prompt, *a, **k):
         out = real(prompt, *a, **k)
-        if "fact checker" not in prompt and "You sort public-domain archive videos" not in prompt:
+        if "You sort public-domain archive videos" not in prompt:
             calls.append(prompt)
             if len(calls) == 1:  # first batch: the first hero is off-niche
                 data = json.loads(out.strip("`\njson"))

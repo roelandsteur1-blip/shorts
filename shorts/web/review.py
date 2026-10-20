@@ -36,8 +36,7 @@ def index():
         where += " AND s.channel = ?"
         args.append(channel)
     shorts = c.execute(
-        f"""SELECT s.*, (SELECT COUNT(*) FROM facts f WHERE f.short_id=s.id AND f.verdict!='supported') AS flagged
-              FROM shorts s WHERE {where} ORDER BY s.id""", args).fetchall()
+        f"""SELECT s.* FROM shorts s WHERE {where} ORDER BY s.id""", args).fetchall()
     count_sql = "SELECT status, COUNT(*) FROM shorts" + (" WHERE channel=?" if channel else "") + " GROUP BY status"
     counts = dict(c.execute(count_sql, [channel] if channel else []).fetchall())
     return render_template("review.html", shorts=shorts, status=status, counts=counts,
@@ -51,7 +50,7 @@ def short(sid: int):
     if not s:
         abort(404)
     blocks = c.execute("SELECT * FROM blocks WHERE short_id=? ORDER BY idx", (sid,)).fetchall()
-    facts = c.execute("SELECT * FROM facts WHERE short_id=? ORDER BY verdict='supported', id", (sid,)).fetchall()
+    facts = c.execute("SELECT * FROM facts WHERE short_id=? ORDER BY id", (sid,)).fetchall()
     assets = c.execute(
         """SELECT DISTINCT a.* FROM blocks b JOIN scenes sc ON sc.id=b.scene_id
              JOIN assets a ON a.id=sc.asset_id WHERE b.short_id=?""", (sid,)).fetchall()

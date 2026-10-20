@@ -117,15 +117,8 @@ def library(conn, settings, tmp_path):
 
 
 def fake_claude(monkeypatch):
-    """Answer script and fact-check prompts like Claude would, without calling it."""
+    """Answer script prompts like Claude would, without calling it."""
     def ask(prompt, claude_cmd="claude", timeout=600):
-        if "fact checker" in prompt:
-            import re
-            ids = [int(x) for x in re.findall(r"^Short (\d+):", prompt, re.M)]
-            return json.dumps([{"short": i, "facts": [
-                {"claim": "Cassini reached Saturn in 2004", "verdict": "supported", "note": ""},
-                {"claim": "Saturn's rings are mostly water ice", "verdict": "unclear", "note": "not in source"},
-            ]} for i in ids])
         if "You sort public-domain archive videos" in prompt:  # every video fits every channel
             import re
             chans = re.findall(r"^(\w+): ", prompt.split("Videos:")[0], re.M)

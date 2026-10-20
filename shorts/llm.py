@@ -1,6 +1,6 @@
 """Call Claude through Claude Code headless (`claude -p`), using the Claude subscription.
 
-Only used for topics, scripts, fact checks and titles; never for describing footage.
+Only used for topics, scripts and titles; never for describing footage.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ class LLMLimitError(LLMError):
 # Hit once in a run: the rest of that run skips Claude instead of failing call after call.
 _limit_hit: str | None = None
 
-SYSTEM_PROMPT = ("You write and fact-check on-screen text for short factual videos. "
+SYSTEM_PROMPT = ("You write on-screen text for short factual videos. "
                  "Answer with only the JSON the user asks for. You have no tools.")
 
 # Flags that strip Claude Code's own coding context (tools, MCP servers, skills, project
