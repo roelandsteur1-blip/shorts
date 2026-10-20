@@ -71,12 +71,39 @@ def credentials(settings: Settings, channel: Channel, interactive: bool = True):
             # Or connect on the laptop and copy secrets/token-<channel>.json to the server.
             print("No browser here. On your laptop run: ssh -L 8765:localhost:8765 <server>, then open "
                   "the link below in the laptop's browser.", flush=True)
-            creds = flow.run_local_server(port=8765, open_browser=False)
+            creds = _login_on_port(flow, 8765)
         else:
             creds = flow.run_local_server(port=0)
     token.write_text(creds.to_json(), encoding="utf-8")
     expired.unlink(missing_ok=True)
     return creds
+
+
+def _reuse_port() -> None:
+    """The login server refuses a port with closed connections still lingering on it (TIME_WAIT,
+    about a minute after the previous login came in through the ssh tunnel), so every Connect
+    right after another one failed with "Address already in use". Allow that on Linux: a port
+    another process really listens on is still refused."""
+    from google_auth_oauthlib import flow as gflow
+    server = getattr(gflow, "_ExclusiveWSGIServer", None)
+    if server is not None:
+        server.allow_reuse_address = True
+
+
+def _login_on_port(flow, port: int, tries: int = 24):
+    """run_local_server on a fixed port (the ssh tunnel's). If the port is still busy (an earlier
+    login that hasn't let go yet), wait and try again for up to two minutes instead of failing."""
+    import errno
+    import time as clock
+    _reuse_port()
+    for i in range(tries):
+        try:
+            return flow.run_local_server(port=port, open_browser=False)
+        except OSError as e:
+            if e.errno != errno.EADDRINUSE or i == tries - 1:
+                raise
+            print(f"port {port} is still busy from an earlier login, trying again in 5 s", flush=True)
+            clock.sleep(5)
 
 
 def _headless() -> bool:
