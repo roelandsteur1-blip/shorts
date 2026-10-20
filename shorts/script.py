@@ -29,17 +29,38 @@ For EACH hero shot below, write one Short built around that shot. The hero shot 
 the viewer sees; the first text block is the hook and must make sense on top of that image.
 
 Every Short is a tiny story that teaches ONE specific thing, never a list of loose facts over
-footage (YouTube does not recommend or pay for templated, mass-produced Shorts):
-- Block 1 is the hook: open on the most surprising true claim or a sharp question about what is on
-  screen, with honest emotion (awe, danger, strangeness). No date or background first. Never
-  "Did you know", "You won't believe", or anything the Short doesn't deliver.
-- Block 2 hints at the payoff so the viewer wants to stay ("but that's not the strange part").
-- The middle blocks build: link them with "but" / "so" / "then", each adding something new.
-- The LAST block is the payoff: the most surprising fact or the answer to the hook. Nothing after
-  it: no summary, no "comment below", no "follow for more". When it fits naturally, word it so it
-  runs straight on into the hook when the Short replays (a loop: "...and that is why" -> hook),
-  and give it the visual "hero" so the picture returns to the opening shot. Never force it.
-- Never write as a person or an expert ("As an engineer...", "I").
+footage (YouTube does not recommend or pay for templated, mass-produced Shorts). Viewers decide in
+the first second whether to swipe, so the three parts each have one job:
+
+HOOK (block 1): stop the scroll.
+- First write three different hooks in "hook_drafts" (e.g. a startling concrete claim, a sharp
+  question about what is on screen, a number or everyday comparison), then use the strongest as
+  block 1. Strongest = most concrete (a number, a name, a scale anyone can picture), tied to what
+  the viewer is looking at, and opening a question that only the last block answers.
+- Readable in one glance: one screen, at most {max_words} words, the subject named or obvious.
+- Honest emotion (awe, danger, strangeness). No date or background first ("In 1969..."), no
+  "Did you know", "You won't believe", "Wait for it", and never a promise the Short doesn't keep.
+
+BODY (the middle blocks): give no reason to swipe.
+- Block 2 raises the stakes or hints at the payoff without giving it away ("but that's not the
+  strange part", "and it got worse").
+- Every block adds ONE new fact or turn; never restate, never filler ("Interestingly", "In fact",
+  "It's important to note"). Link blocks with "but" / "so" / "then" so each one pulls into the next.
+- Escalate: each fact a little more surprising than the one before. Around the middle, add a turn
+  ("But...") that reopens the question.
+- Concrete beats general: numbers, names and comparisons to everyday things ("as tall as a
+  40-storey building", "faster than a rifle bullet").
+- Use the fewest blocks the story needs: cut any block the payoff doesn't need.
+
+PAYOFF (the LAST block): the reward for watching.
+- It answers the hook's question directly, reusing the hook's key word, so the viewer feels the
+  loop close. It is the single most surprising fact of the Short: no earlier block gives it away.
+- Short and complete: a full, punchy sentence with its key word highlighted, never a fragment
+  that only makes sense on a replay.
+- Nothing after it: no summary, no "comment below", no "follow for more", no "and that's why".
+- Its visual is the most striking image of the subject.
+
+Never write as a person or an expert ("As an engineer...", "I").
 
 Rules:
 - {min_blocks} to {max_blocks} text blocks, each at most {max_words} words. Plain words, no emoji,
@@ -51,7 +72,7 @@ Rules:
   sure exists, and the quote it supports; do not invent URLs. When in doubt, leave the fact out.
 - For blocks after the first, "visual" describes in 3-8 plain words what footage should show,
   preferring one clear subject close up (e.g. "Saturn rings close up", "astronaut floating inside
-  station"). Block 1 visual is "hero".
+  station"); never the same visual two blocks in a row. Block 1 visual is "hero".
 - Title: max 70 characters. Name the subject plainly so people searching for it find it (e.g.
   "Saturn's rings are disappearing"), make it match the video, no clickbait lies, no hashtags, and
   don't start every title the same way.
@@ -66,7 +87,7 @@ is not clearly about that, do NOT write a Short for it; answer {{"hero": <hero n
 for it instead. A loose link ("the steel in this mill is also in your blood") is not enough.
 
 Answer with only a JSON array, one object per hero shot, in the same order:
-[{{"hero": <hero number>, {format_field}"topic": "...", "blocks": [{{"text": "...", "visual": "..."}}],
+[{{"hero": <hero number>, {format_field}"topic": "...", "hook_drafts": ["...", "...", "..."], "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", {screen_title_field}"description": "...", "tags": ["..."], "mood": "..."}}]
 

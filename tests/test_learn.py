@@ -36,3 +36,15 @@ def test_retention_note_finds_the_block_that_loses_people(conn):
     worst = note.split("lost viewers fastest:")[1].split("held them best")[0]
     assert "boring part" in worst and "payoff" not in worst
     assert learn.retention_note(conn, "other") == ""
+
+
+def test_retention_note_ranks_hooks_by_viewers_kept(conn):
+    for i in range(6):
+        keep = 0.5 + 0.08 * i  # hook i keeps more viewers the higher i is
+        curve = [[0, 1.0], [0.34, keep], [1.0, keep - 0.2]]
+        short(conn, f"T{i}", 30, 1000 + i, curve, texts=(f"Hook {i}", f"middle {i}", f"payoff {i}"))
+    note = learn.retention_note(conn, "space")
+    best = note.split("kept the most viewers:")[1].split("lost the most:")[0]
+    worst = note.split("lost the most:")[1].split("Blocks that")[0]
+    assert '"Hook 5"' in best and '"Hook 0"' not in best
+    assert '"Hook 0"' in worst and '"Hook 5"' not in worst

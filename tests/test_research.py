@@ -55,7 +55,7 @@ def test_prompt_offers_formats_and_saves_claudes_pick(library, settings, channel
     ch = replace(channel, formats=[f for f in channel.formats if f["id"] == "what_youre_seeing"])
     ch.formats.append({"id": "myth_vs_fact", "title": "Myth vs fact", "brief": "b"})
     sid = script.write_scripts(library, settings, ch, None, heroes)[0]
-    assert '"format": "<format id>"' in seen["prompt"] and "LAST block is the payoff" in seen["prompt"]
+    assert '"format": "<format id>"' in seen["prompt"] and "PAYOFF (the LAST block)" in seen["prompt"]
     assert library.execute("SELECT format_id FROM shorts WHERE id=?", (sid,)).fetchone()[0] == "myth_vs_fact"
 
 

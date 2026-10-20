@@ -369,7 +369,7 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         inputs += ["-stream_loop", "-1", "-i", str(music)]
         filters.append(
             f"[{idx}:a]atrim=start={picked[1]:.2f}:duration={total:.3f},asetpts=PTS-STARTPTS,"
-            f"afade=t=in:d=0.3,afade=t=out:st={max(total - END_FADE, 0):.3f}:d={END_FADE},"
+            f"afade=t=in:d=0.05,afade=t=out:st={max(total - END_FADE, 0):.3f}:d={END_FADE},"
             f"loudnorm=I={-24 if voiced else -14}:TP=-1.5:LRA=11,{stereo}[mus]"
         )
         idx += 1
@@ -411,13 +411,13 @@ SFX_VOLUME = 0.12  # whoosh and hit sit well under the music and voice
 
 def sound_effects(blocks: list[dict], plans: list[dict | None]) -> list[str]:
     """Filters making [sfx]: a soft whoosh into every cut to another shot and a low hit under each
-    punch-in, both made by ffmpeg itself (filtered noise, a decaying low sine): no files, no licence.
-    [] when there is nothing to put a sound on."""
+    punch-in and under the payoff (the last block lands), both made by ffmpeg itself (filtered noise,
+    a decaying low sine): no files, no licence. [] when there is nothing to put a sound on."""
     whooshes, hits, t = [], [], 0.0
     for i, b in enumerate(blocks):
         if i and b["scene_id"] != blocks[i - 1]["scene_id"]:
             whooshes.append(max(t - 0.22, 0.0))  # the whoosh peaks on the cut
-        if plans[i] and plans[i]["kind"] == "punch":
+        if (plans[i] and plans[i]["kind"] == "punch") or (i and i == len(blocks) - 1):
             hits.append(t)
         t += b["seconds"]
     if not whooshes and not hits:

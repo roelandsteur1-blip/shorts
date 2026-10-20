@@ -89,6 +89,14 @@ def test_plan_motion():
     assert all(1.0 <= p["z0"] <= render.MAX_ZOOM and 1.0 <= p["z1"] <= render.MAX_ZOOM for p in plans)
 
 
+
+def test_sound_effects_land_the_payoff():
+    blocks = [{"text": "Hook", "scene_id": 1, "seconds": 2.0}, {"text": "middle", "scene_id": 1, "seconds": 2.0},
+              {"text": "payoff", "scene_id": 1, "seconds": 2.0}]
+    sfx = render.sound_effects(blocks, [None] * 3)  # one shot, no zoom plan: only the payoff hit
+    hits = [f for f in sfx if f.startswith("sine=")]
+    assert len(hits) == 1 and "adelay=4000" in hits[0]
+
 def test_next_slots_respects_per_day(conn, channel):
     now = datetime(2026, 10, 16, 12, 0, tzinfo=timezone.utc)
     slots = upload.next_slots(conn, channel, 3, now=now)

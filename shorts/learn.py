@@ -109,9 +109,14 @@ def retention_note(conn: sqlite3.Connection, channel: str) -> str:
     later = [r for r in rows if r["idx"] > 0]
     worst = sorted(later, key=lambda r: -r["drop"])[:SHOWN]
     best = sorted(later, key=lambda r: r["drop"])[:SHOWN]
+    hooks = sorted((r for r in rows if r["idx"] == 0), key=lambda r: -r["end"])
+    n = min(SHOWN, len(hooks) // 2)
+    hook = lambda r: f'- "{r["text"]}" ({r["end"] * 100:.0f}% still watching after it)'  # noqa: E731
     line = lambda r: f'- "{r["text"]}" (block {r["idx"] + 1} of the Short with hook "{r["hook"]}")'  # noqa: E731
     return (f"Where viewers stop watching on this channel ({len(shorts)} Shorts): after the hook a median "
-            f"{np.median(after_hook) * 100:.0f}% are still there. Blocks that lost viewers fastest:\n"
+            f"{np.median(after_hook) * 100:.0f}% are still there. Hooks that kept the most viewers:\n"
+            + "\n".join(map(hook, hooks[:n])) + "\nHooks that lost the most:\n" + "\n".join(map(hook, hooks[-n:]))
+            + "\nBlocks that lost viewers fastest:\n"
             + "\n".join(map(line, worst)) + "\nBlocks that held them best:\n" + "\n".join(map(line, best))
             + "\nWrite blocks like the ones that held.\n\n")
 
