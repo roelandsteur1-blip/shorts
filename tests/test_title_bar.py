@@ -1,6 +1,8 @@
 """The title bar at the top of a Short (render/looks) and the screen title the script writes."""
 from dataclasses import replace
 
+import pytest
+
 from shorts import channels as chans, hero, looks, render, script
 
 
@@ -39,6 +41,12 @@ def test_screen_title_cleaned_and_saved(library, settings, channel, monkeypatch)
             "title": "T", "screen_title": "Saturn's *rings*"}
     sid = script.save_script(library, channel, "what_youre_seeing", h, data)
     assert library.execute("SELECT screen_title FROM shorts WHERE id=?", (sid,)).fetchone()[0] == "Saturn's *rings*"
+    # A hook that asks a question needs an answer, or the script is skipped.
+    asks = data | {"blocks": [{"text": "What does shift shift?"}] + data["blocks"][1:]}
+    with pytest.raises(ValueError, match="no answer"):
+        script.save_script(library, channel, "what_youre_seeing", h, asks)
+    script.save_script(library, channel, "what_youre_seeing", h, asks | {"answer": "The type basket."})
+    assert '"answer"' in prompt and "A vague gesture at" in prompt
 
 
 def test_title_bars_assigned_in_turn(tmp_path, settings, channel):

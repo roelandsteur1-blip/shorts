@@ -37,6 +37,9 @@ HOOK (block 1): stop the scroll.
   question about what is on screen, a number or everyday comparison), then use the strongest as
   block 1. Strongest = most concrete (a number, a name, a scale anyone can picture), tied to what
   the viewer is looking at, and opening a question that only the last block answers.
+- Then write "answer": the full answer to that hook in one plain sentence (what exactly, which
+  part, how or why), BEFORE writing the other blocks. The whole Short is built to deliver it. If
+  the archive text and sure general knowledge can't give a concrete answer, use another hook.
 - Readable in one glance: one screen, at most {max_words} words, the subject named or obvious.
 - Honest emotion (awe, danger, strangeness). No date or background first ("In 1969..."), no
   "Did you know", "You won't believe", "Wait for it", and never a promise the Short doesn't keep.
@@ -50,11 +53,17 @@ BODY (the middle blocks): give no reason to swipe.
   ("But...") that reopens the question.
 - Concrete beats general: numbers, names and comparisons to everyday things ("as tall as a
   40-storey building", "faster than a rifle bullet").
-- Use the fewest blocks the story needs: cut any block the payoff doesn't need.
+- Every block is a step toward the answer: something the viewer needs to understand it, or a
+  clue that builds toward it. Nothing else the archive video happens to show (other lessons,
+  other scenes, other features) gets a block, however true. Cut any block the payoff doesn't need.
 
 PAYOFF (the LAST block): the reward for watching.
-- It answers the hook's question directly, reusing the hook's key word, so the viewer feels the
-  loop close. It is the single most surprising fact of the Short: no earlier block gives it away.
+- It states the "answer" concretely, in words a viewer who knows nothing about the subject
+  understands, reusing the hook's key word, so the question is fully closed. A vague gesture at
+  the answer is not a payoff. Bad: "What does shift actually shift?" ... "Shift physically moved
+  parts." Good: "Shift *lifted* the whole type basket, so the capital letter struck the paper." If
+  the answer needs more than {max_words} words, the last two blocks carry it together.
+- It is the single most surprising fact of the Short: no earlier block gives it away.
 - Short and complete: a full, punchy sentence with its key word highlighted, never a fragment
   that only makes sense on a replay.
 - Nothing after it: no summary, no "comment below", no "follow for more", no "and that's why".
@@ -87,7 +96,7 @@ is not clearly about that, do NOT write a Short for it; answer {{"hero": <hero n
 for it instead. A loose link ("the steel in this mill is also in your blood") is not enough.
 
 Answer with only a JSON array, one object per hero shot, in the same order:
-[{{"hero": <hero number>, {format_field}"topic": "...", "hook_drafts": ["...", "...", "..."], "blocks": [{{"text": "...", "visual": "..."}}],
+[{{"hero": <hero number>, {format_field}"topic": "...", "hook_drafts": ["...", "...", "..."], "answer": "...", "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", {screen_title_field}"description": "...", "tags": ["..."], "mood": "..."}}]
 
@@ -300,6 +309,8 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     blocks = normalise_blocks(data.get("blocks") or [], channel)
     if len(blocks) < 3:
         raise ValueError("script too short")
+    if "?" in str((data.get("blocks") or [{}])[0].get("text", "")) and not str(data.get("answer") or "").strip():
+        raise ValueError("the hook asks a question but the script gives no answer")
     tags = taglayers.pick(data.get("tags") or [])
     cur = conn.execute(
         """INSERT INTO shorts (channel, format_id, hero_scene_id, topic, hook, title, description,
