@@ -301,3 +301,13 @@ def test_hidden_subscriber_count(conn, settings, channel, yt):
     yt.subscribers = {"subscriberCount": "0", "hiddenSubscriberCount": True}
     sync(conn, settings, channel)
     assert conn.execute("SELECT subscribers FROM yt_sync").fetchone()[0] is None
+
+
+def test_channel_avg_viewed_weighted_by_views(client, conn, settings, channel, yt):
+    from shorts.web import stats as stats_page
+    yt.add("big", views=1000); yt.add("small", views=10); yt.add("old", views=0)  # noqa: E702
+    yt.analytics = {"big": [900, 450, 80.0, 20.0, 9, 0, 1], "small": [100, 50, 20.0, 5.0, 1, 0, 0]}
+    sync(conn, settings, channel)  # "old" isn't in Analytics: zeros, which must not count as 0% viewed
+    with client.application.app_context():
+        card = stats_page.channel_cards(conn, None)[0]
+    assert round(card["pct"]) == 74 and card["engaged"] == 0.5  # (80*900 + 20*100) / 1000, not (80+20+0)/3

@@ -39,7 +39,8 @@ def summarise(rows: list[dict]) -> dict | None:
     views = sum(r["views"] or 0 for r in rows)
     return {"shorts": len(rows), "views": median(r["views"] or 0 for r in rows),
             "engaged": sum(r["engaged_views"] or 0 for r in rows) / views if views else 0.0,
-            "viewed": sum(r["avg_view_pct"] or 0 for r in rows) / len(rows),
+            # weighted by views, like YouTube Studio
+            "viewed": sum((r["avg_view_pct"] or 0) * (r["views"] or 0) for r in rows) / views if views else 0.0,
             "subs": 1000 * sum(r["subs_gained"] or 0 for r in rows) / views if views else 0.0}
 
 
@@ -125,7 +126,10 @@ def channel_cards(c: sqlite3.Connection, selected: str | None) -> list[dict]:
                   SUM(CASE WHEN state = 'live' AND NOT hidden THEN views END) AS views,
                   SUM(CASE WHEN state = 'live' AND NOT hidden THEN engaged_views END) * 1.0
                       / NULLIF(SUM(CASE WHEN state = 'live' AND NOT hidden AND engaged_views IS NOT NULL THEN an_views END), 0) AS engaged,
-                  AVG(CASE WHEN state = 'live' AND NOT hidden THEN avg_view_pct END) AS pct,
+                  -- weighted by Analytics views like YouTube Studio does; a Short without views (or not
+                  -- in Analytics: zeros) doesn't drag the channel down
+                  SUM(CASE WHEN state = 'live' AND NOT hidden THEN avg_view_pct * an_views END)
+                      / NULLIF(SUM(CASE WHEN state = 'live' AND NOT hidden AND avg_view_pct IS NOT NULL THEN an_views END), 0) AS pct,
                   SUM(CASE WHEN state = 'live' AND NOT hidden THEN subs_gained END) AS subs,
                   SUM(state = 'live' AND NOT hidden AND engaged_views IS NULL) AS waiting
              FROM yt_videos WHERE is_short GROUP BY channel""")}
@@ -160,7 +164,8 @@ def index():
                              ORDER BY v.state != 'scheduled', CASE WHEN v.state = 'scheduled' THEN v.publish_at END,
                                       v.publish_at DESC LIMIT 100""", (selected, selected)).fetchall()
     hidden = c.execute(f"{VIDEOS} AND v.hidden ORDER BY v.publish_at DESC", (selected, selected)).fetchall()
-    by_format = c.execute("""SELECT v.channel, s.format_id, COUNT(*) AS shorts, AVG(v.views) AS views, AVG(v.avg_view_pct) AS pct
+    by_format = c.execute("""SELECT v.channel, s.format_id, COUNT(*) AS shorts, AVG(v.views) AS views,
+                                    SUM(v.avg_view_pct * v.an_views) / NULLIF(SUM(CASE WHEN v.avg_view_pct IS NOT NULL THEN v.an_views END), 0) AS pct
                                FROM yt_videos v JOIN shorts s ON s.id = v.short_id
                               WHERE v.state = 'live' AND NOT v.hidden AND v.is_short AND (? IS NULL OR v.channel = ?)
                               GROUP BY v.channel, s.format_id ORDER BY v.channel, views DESC""", (selected, selected)).fetchall()
