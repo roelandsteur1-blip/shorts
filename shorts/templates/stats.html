@@ -22,7 +22,8 @@ so a channel that started earlier doesn't look better. Small numbers: change fro
 <span class="stat"><b>{{ t.live or 0 }}</b>live</span><span class="stat"><b>{{ t.scheduled or 0 }}</b>scheduled</span>
 <span class="stat"><b>{{ '{:,}'.format(t.views or 0) }}</b>views</span>
 <span class="stat"><b>{{ '%.0f%%'|format(t.engaged * 100) if t.engaged is not none else '–' }}</b>engaged</span><span class="stat"><b>{{ '%.0f%%'|format(t.pct) if t.pct is not none else '–' }}</b>avg viewed</span>
-<span class="stat"><b>{{ t.subs if t.subs is not none else '–' }}</b>subscribers</span>
+<span class="stat" title="The channel's count on YouTube (rounded to 3 digits above 1,000)"><b>{{ '{:,}'.format(t.subscribers) if t.subscribers is not none else '–' }}</b>subscribers</span>
+<span class="stat" title="YouTube Analytics: subscribers gained on the Shorts' watch pages (1-3 days behind, unsubscribes not taken off)"><b>{{ t.subs if t.subs is not none else '–' }}</b>subs from Shorts</span>
 <br><small class="muted">{% if t.next_at %}Next goes live {{ t.next_at[:16]|replace('T', ' ') }} UTC · {% endif %}{% if t.gone %}{{ t.gone }} deleted · {% endif %}{% if t.waiting %}{{ t.waiting }} not in Analytics yet · {% endif %}{% if t.through %}Analytics up to {{ t.through }} · {% endif %}updated {{ t.ok }}</small>
 {% if t.error %}<br><small class="bad">Last fetch failed ({{ t.error_at }}): {{ t.error }}</small>{% endif %}</div>{% endfor %}</div>
 {% if by_format %}<h3>Per format</h3><table><tr><th>Channel</th><th>Format</th><th>Shorts</th><th>Avg views</th><th>Avg viewed</th></tr>

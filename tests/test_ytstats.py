@@ -28,6 +28,7 @@ class FakeYouTube:
     def __init__(self):
         self.videos, self.playlist, self.analytics, self.calls = {}, None, {}, []
         self.channel_id, self.through, self.fail = "UCspace", "2026-10-17", None
+        self.subscribers = {"subscriberCount": "1234", "hiddenSubscriberCount": False}
 
     def add(self, vid, privacy="public", publish_at=None, views=0, duration="PT45S", title=None, status="processed"):
         self.videos[vid] = {"id": vid, "snippet": {"title": title or f"Video {vid}", "publishedAt": "2026-10-10T10:00:00Z"},
@@ -50,7 +51,8 @@ class FakeYouTube:
         if self.fail:
             raise RuntimeError(self.fail)
         if kw.get("mine"):
-            return _Req(lambda: {"items": [{"id": self.channel_id, "contentDetails": {"relatedPlaylists": {"uploads": "UU"}}}]})
+            return _Req(lambda: {"items": [{"id": self.channel_id, "contentDetails": {"relatedPlaylists": {"uploads": "UU"}},
+                                                  "statistics": self.subscribers}]})
         if "playlistId" in kw:
             ids = list(self.videos) if self.playlist is None else self.playlist
             page = int(kw.get("pageToken") or 0)
@@ -222,6 +224,8 @@ def test_stats_page(client, conn, settings, channel, yt):
     assert "Made by hand" in live and "not from pipeline" in live and "Tonight" not in live
     assert "Tonight" in page[page.index("Not live"):] and "Scheduled" in page
     assert "3</b>live" in page and "1</b>scheduled" in page and "Analytics up to 2026-10-17" in page
+    # the channel's real count, not the Shorts' Analytics subscribersGained (6 here)
+    assert "1,234</b>subscribers" in page and "6</b>subs from Shorts" in page
     page = client.get("/stats?sort=newest").data.decode()
     assert page.index("Small one") < page.index("Big one") < page.index("Made by hand")
     # Hide, then show again
@@ -252,7 +256,8 @@ def test_home_schedule_comes_from_youtube(conn, settings, channel, client, yt):
     yt.add("byhand", privacy="private", publish_at=soon)
     yt.add("studio", privacy="private", publish_at=later)  # beyond 7 days
     yt.add("live1", views=5)
-    assert [v["youtube_id"] for v in ytstats.scheduled(settings, channel, ["ours"])] == ["byhand", "studio"]
+    videos, subs = ytstats.scheduled(settings, channel, ["ours"])
+    assert [v["youtube_id"] for v in videos] == ["byhand", "studio"] and subs == 1234
 
     (settings.secrets_dir / "token-space.json").write_text("{}")
     with client.application.app_context():
@@ -261,7 +266,7 @@ def test_home_schedule_comes_from_youtube(conn, settings, channel, client, yt):
 
 def _check_home(home, channel, yt):
     card = home.channel_card(channel, home.youtube_schedule([channel])["space"])
-    assert card["from_youtube"] and card["scheduled_week"] == 1
+    assert card["from_youtube"] and card["scheduled_week"] == 1 and card["subscribers"] == 1234
     calls = len(yt.calls)
     home.youtube_schedule([channel])
     assert len(yt.calls) == calls  # cached
@@ -290,3 +295,9 @@ def test_home_schedule_counts_fresh_uploads_missing_from_the_playlist(conn, sett
         conn.execute("UPDATE shorts SET uploaded_at='2026-10-21T10:00:00Z'"); conn.commit()
         home.youtube_schedule([channel])
         assert len(yt.calls) > calls  # a new upload refreshes the cache
+
+
+def test_hidden_subscriber_count(conn, settings, channel, yt):
+    yt.subscribers = {"subscriberCount": "0", "hiddenSubscriberCount": True}
+    sync(conn, settings, channel)
+    assert conn.execute("SELECT subscribers FROM yt_sync").fetchone()[0] is None

@@ -61,11 +61,21 @@ def state_of(item: dict, now: datetime) -> str:
     return "live"  # public or unlisted
 
 
-def channel_videos(yt, known: list[str], part: str = "snippet,status,statistics,contentDetails") -> tuple[str, dict[str, dict]]:
-    """(YouTube channel id, {video id: videos.list item}) for every upload on the logged-in channel,
-    plus the ids we know from our own database (so scheduled ones are covered even if the uploads
-    playlist leaves them out). Ids YouTube doesn't return are gone."""
-    ch = _exec(yt.channels().list(part="id,contentDetails", mine=True)).get("items") or []
+def subscribers(ch: dict) -> int | None:
+    """The channel's subscriber count as YouTube shows it (None when the channel hides it). The API
+    rounds it to 3 significant figures above 1,000, like the public channel page."""
+    st = ch.get("statistics") or {}
+    if st.get("hiddenSubscriberCount") or "subscriberCount" not in st:
+        return None
+    return int(st["subscriberCount"])
+
+
+def channel_videos(yt, known: list[str], part: str = "snippet,status,statistics,contentDetails"
+                   ) -> tuple[str, dict[str, dict], int | None]:
+    """(YouTube channel id, {video id: videos.list item}, subscribers) for every upload on the
+    logged-in channel, plus the ids we know from our own database (so scheduled ones are covered even
+    if the uploads playlist leaves them out). Ids YouTube doesn't return are gone."""
+    ch = _exec(yt.channels().list(part="id,contentDetails,statistics", mine=True)).get("items") or []
     if not ch:
         raise RuntimeError("this YouTube login has no channel")
     uploads = ch[0]["contentDetails"]["relatedPlaylists"]["uploads"]
@@ -83,12 +93,14 @@ def channel_videos(yt, known: list[str], part: str = "snippet,status,statistics,
         res = _exec(yt.videos().list(part=part, id=",".join(want[i:i + 50]),
                                      maxResults=50))
         items.update({it["id"]: it for it in res.get("items", [])})
-    return ch[0]["id"], items
+    return ch[0]["id"], items, subscribers(ch[0])
 
 
-def scheduled(settings: Settings, channel: Channel, known: list[str], now: datetime | None = None) -> list[dict]:
+def scheduled(settings: Settings, channel: Channel, known: list[str], now: datetime | None = None
+              ) -> tuple[list[dict], int | None]:
     """The channel's scheduled videos as YouTube has them now (not what the pipeline remembers):
-    [{youtube_id, title, publish_at}], soonest first. Never opens a browser to log in."""
+    [{youtube_id, title, publish_at}], soonest first, and its subscriber count. Never opens a
+    browser to log in."""
     from googleapiclient.discovery import build
 
     from . import upload
@@ -96,13 +108,13 @@ def scheduled(settings: Settings, channel: Channel, known: list[str], now: datet
     now = now or datetime.now(timezone.utc)
     yt = build("youtube", "v3", credentials=upload.credentials(settings, channel, interactive=False),
                cache_discovery=False)
-    yt_channel, items = channel_videos(yt, known, part="snippet,status")
+    yt_channel, items, subs = channel_videos(yt, known, part="snippet,status")
     if channel.youtube_channel_id and yt_channel != channel.youtube_channel_id:
         raise RuntimeError(f"the YouTube login for '{channel.name}' is for another channel ({yt_channel})")
     out = [{"youtube_id": vid, "title": it.get("snippet", {}).get("title"),
             "publish_at": _iso(parse_time(it["status"]["publishAt"]))}
            for vid, it in items.items() if state_of(it, now) == "scheduled"]
-    return sorted(out, key=lambda v: v["publish_at"])
+    return sorted(out, key=lambda v: v["publish_at"]), subs
 
 
 def channel_analytics(yta, start: date, end: date) -> dict[str, list]:
@@ -167,7 +179,7 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
     today = now.date()
     ours = {r["youtube_id"]: r for r in conn.execute(
         "SELECT id, youtube_id, publish_at, status FROM shorts WHERE channel=? AND youtube_id IS NOT NULL", (channel.id,))}
-    yt_channel, items = channel_videos(yt, list(ours))
+    yt_channel, items, subs = channel_videos(yt, list(ours))
     if channel.youtube_channel_id and yt_channel != channel.youtube_channel_id:
         raise RuntimeError(f"the YouTube login for '{channel.name}' is for another channel ({yt_channel}): "
                            "use Connect YouTube on its Settings page")
@@ -276,10 +288,12 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
         conn.execute("""DELETE FROM stats WHERE short_id IN (SELECT id FROM shorts WHERE channel=? AND publish_at IS NOT NULL)
                           AND fetched_at < replace(substr((SELECT publish_at FROM shorts WHERE id=short_id), 1, 19), 'T', ' ')""",
                      (channel.id,))
-        conn.execute("""INSERT INTO yt_sync (channel, ok_at, error, error_at, analytics_through, yt_channel_id)
-                        VALUES (?, datetime('now'), NULL, NULL, ?, ?)
+        conn.execute("""INSERT INTO yt_sync (channel, ok_at, error, error_at, analytics_through, yt_channel_id,
+                                             subscribers, subscribers_at)
+                        VALUES (?, datetime('now'), NULL, NULL, ?, ?, ?, datetime('now'))
                         ON CONFLICT(channel) DO UPDATE SET ok_at=excluded.ok_at, error=NULL, error_at=NULL,
                             analytics_through=COALESCE(excluded.analytics_through, yt_sync.analytics_through),
-                            yt_channel_id=excluded.yt_channel_id""",
-                     (channel.id, through, yt_channel))
+                            yt_channel_id=excluded.yt_channel_id, subscribers=excluded.subscribers,
+                            subscribers_at=excluded.subscribers_at""",
+                     (channel.id, through, yt_channel, subs))
     return sum(1 for v in live if v["is_short"])

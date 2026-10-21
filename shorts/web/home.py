@@ -52,9 +52,14 @@ def youtube_schedule(chs) -> dict[str, list[dict] | None]:
     if todo:
         with ThreadPoolExecutor(max_workers=min(len(todo), 5)) as pool:
             for (ch, _, last), res in zip(todo, pool.map(fetch, todo)):
-                out[ch.id] = res
+                out[ch.id] = res and res[0]
                 if res is not None:
-                    _yt_cache[ch.id] = (time.monotonic(), last, res)
+                    _yt_cache[ch.id] = (time.monotonic(), last, res[0])
+                    # the same answer carries the subscriber count: keep it for the card and Stats
+                    c.execute("""INSERT INTO yt_sync (channel, subscribers, subscribers_at) VALUES (?, ?, datetime('now'))
+                                 ON CONFLICT(channel) DO UPDATE SET subscribers=excluded.subscribers,
+                                     subscribers_at=excluded.subscribers_at""", (ch.id, res[1]))
+        c.commit()
     return out
 
 
@@ -73,6 +78,7 @@ def channel_card(ch, yt: list[dict] | None = None) -> dict:
     week = sum(start <= p < end for p in planned)
     left, videos = shorts_left(c, settings(), ch.id, fits=ch)
     last_job = c.execute("SELECT * FROM jobs WHERE channel=? ORDER BY id DESC LIMIT 1", (ch.id,)).fetchone()
+    subs = c.execute("SELECT subscribers FROM yt_sync WHERE channel=?", (ch.id,)).fetchone()
     return {
         "ch": ch,
         "connected": token_path(settings(), ch.id).exists(),
@@ -88,6 +94,7 @@ def channel_card(ch, yt: list[dict] | None = None) -> dict:
         "footage_videos": videos,
         "categories": [(cat, shorts_left(c, settings(), ch.id, [cat], fits=ch)[0]) for cat in ch.categories],
         "last_job": last_job,
+        "subscribers": subs[0] if subs else None,
     }
 
 

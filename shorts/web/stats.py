@@ -139,7 +139,7 @@ def channel_cards(c: sqlite3.Connection, selected: str | None) -> list[dict]:
         sy = sync.get(ch.id, {})
         out.append({"channel": ch.id, "name": ch.name, **t, "ok": ago(sy.get("ok_at")), "error": sy.get("error"),
                     "error_at": ago(sy.get("error_at")) if sy.get("error") else None,
-                    "through": sy.get("analytics_through")})
+                    "through": sy.get("analytics_through"), "subscribers": sy.get("subscribers")})
     return out
 
 

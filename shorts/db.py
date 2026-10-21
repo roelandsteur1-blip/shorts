@@ -149,7 +149,9 @@ CREATE TABLE IF NOT EXISTS yt_sync (
     error              TEXT,
     error_at           TEXT,
     analytics_through  TEXT,
-    yt_channel_id      TEXT
+    yt_channel_id      TEXT,
+    subscribers        INTEGER,
+    subscribers_at     TEXT
 );
 
 -- Each Short's first 1, 3 and 7 days (YouTube Analytics, fetched once the days are final), so
@@ -321,6 +323,8 @@ ADDED_COLUMNS = [
     ("stats", "live_views", "INTEGER"),                    # Data API view count at fetch time (Analytics lags days)
     ("stats", "live_likes", "INTEGER"),
     ("shorts", "say", "TEXT"),                             # JSON {"on screen": "spoken"} for the voice (spoken.py)
+    ("yt_sync", "subscribers", "INTEGER"),                 # channel subscriber count (Data API; None = hidden)
+    ("yt_sync", "subscribers_at", "TEXT"),
 ]
 
 
