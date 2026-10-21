@@ -271,3 +271,22 @@ def _check_home(home, channel, yt):
     assert home.youtube_schedule([channel]) == {"space": None}
     card = home.channel_card(channel, None)
     assert not card["from_youtube"] and card["scheduled_week"] == 1  # our own data
+
+
+def test_home_schedule_counts_fresh_uploads_missing_from_the_playlist(conn, settings, channel, client, yt):
+    from datetime import timedelta
+
+    from shorts.web import home
+    home._yt_cache.clear()
+    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
+    add_short(conn, status="uploaded", youtube_id="fresh", publish_at=soon)  # our status out of date
+    yt.add("fresh", privacy="private", publish_at=soon)
+    yt.add("old", privacy="private", publish_at=soon)
+    yt.playlist = ["old"]  # YouTube's uploads list doesn't have the fresh upload yet
+    (settings.secrets_dir / "token-space.json").write_text("{}")
+    with client.application.app_context():
+        assert len(home.youtube_schedule([channel])["space"]) == 2
+        calls = len(yt.calls)
+        conn.execute("UPDATE shorts SET uploaded_at='2026-10-21T10:00:00Z'"); conn.commit()
+        home.youtube_schedule([channel])
+        assert len(yt.calls) > calls  # a new upload refreshes the cache

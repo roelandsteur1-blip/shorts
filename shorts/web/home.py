@@ -16,7 +16,7 @@ bp = Blueprint("home", __name__)
 log = logging.getLogger(__name__)
 
 YT_CACHE_SECONDS = 600  # Home asks YouTube for the schedule at most this often per channel
-_yt_cache: dict[str, tuple[float, list[dict]]] = {}
+_yt_cache: dict[str, tuple[float, str | None, list[dict]]] = {}
 
 
 def youtube_schedule(chs) -> dict[str, list[dict] | None]:
@@ -28,16 +28,21 @@ def youtube_schedule(chs) -> dict[str, list[dict] | None]:
     for ch in chs:
         if not token_path(s, ch.id).exists():
             continue
+        # A new upload (by a job in another process) makes the cached answer stale at once.
+        last = c.execute("SELECT MAX(uploaded_at) FROM shorts WHERE channel=?", (ch.id,)).fetchone()[0]
         hit = _yt_cache.get(ch.id)
-        if hit and time.monotonic() - hit[0] < YT_CACHE_SECONDS:
-            out[ch.id] = hit[1]
+        if hit and hit[1] == last and time.monotonic() - hit[0] < YT_CACHE_SECONDS:
+            out[ch.id] = hit[2]
         else:
-            known = [r[0] for r in c.execute("SELECT youtube_id FROM shorts WHERE channel=? AND status='scheduled'"
-                                             " AND youtube_id IS NOT NULL", (ch.id,))]
-            todo.append((ch, known))
+            # Every video id we know for the channel, not only ones we think are scheduled: YouTube's
+            # uploads list can lag behind fresh uploads, and a status here can be out of date.
+            known = [r[0] for r in c.execute(
+                """SELECT youtube_id FROM shorts WHERE channel=? AND youtube_id IS NOT NULL
+                   UNION SELECT youtube_id FROM yt_videos WHERE channel=?""", (ch.id, ch.id))]
+            todo.append((ch, known, last))
 
     def fetch(job):
-        ch, known = job
+        ch, known, _ = job
         try:
             return ytstats.scheduled(s, ch, known)
         except Exception as e:  # noqa: BLE001 - offline, expired login, quota: show our own data
@@ -46,10 +51,10 @@ def youtube_schedule(chs) -> dict[str, list[dict] | None]:
 
     if todo:
         with ThreadPoolExecutor(max_workers=min(len(todo), 5)) as pool:
-            for (ch, _), res in zip(todo, pool.map(fetch, todo)):
+            for (ch, _, last), res in zip(todo, pool.map(fetch, todo)):
                 out[ch.id] = res
                 if res is not None:
-                    _yt_cache[ch.id] = (time.monotonic(), res)
+                    _yt_cache[ch.id] = (time.monotonic(), last, res)
     return out
 
 
@@ -76,6 +81,8 @@ def channel_card(ch, yt: list[dict] | None = None) -> dict:
         "failed": counts.get("failed", 0),
         "scheduled_week": week,
         "planned": planned,
+        "week_times": ", ".join(datetime.fromisoformat(p.replace("Z", "+00:00")).strftime("%a %H:%M")
+                                for p in sorted(planned) if start <= p < end),
         "from_youtube": yt is not None,
         "footage_left": left,
         "footage_videos": videos,
