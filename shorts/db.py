@@ -320,6 +320,7 @@ ADDED_COLUMNS = [
     ("shorts", "screen_title", "TEXT"),                    # title bar at the top of the video (render.py)
     ("stats", "live_views", "INTEGER"),                    # Data API view count at fetch time (Analytics lags days)
     ("stats", "live_likes", "INTEGER"),
+    ("shorts", "say", "TEXT"),                             # JSON {"on screen": "spoken"} for the voice (spoken.py)
 ]
 
 

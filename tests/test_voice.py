@@ -119,3 +119,56 @@ def test_whole_sentences_are_spoken_in_one_go(conn, settings, channel):
 def test_block_cuts_fall_back_to_letters():
     cuts = voice.block_cuts(["aaaa bbbb", "cccc"], 3.0, [("aaaa", 0, 1)])  # timings don't match the words
     assert cuts == [2.0]
+
+
+def test_spoken_form_reads_like_a_person():
+    from shorts import spoken
+    assert spoken.text("The *.50 cal* fired 800 rounds a minute.") == \
+        "The fifty cal fired eight hundred rounds a minute."
+    assert spoken.text("In WWII, the B-17 flew at 300 mph") == \
+        "In World War Two, the B seventeen flew at three hundred miles an hour"
+    assert spoken.text("It cost $3 million in 1969.") == "It cost three million dollars in nineteen sixty nine."
+    assert spoken.text("By the 1960s, 40% of homes") == "By the nineteen sixties, forty percent of homes"
+    assert spoken.text("Dr. Smith, 21st floor, 1 km up") == "Doctor Smith, twenty first floor, one kilometer up"
+    assert spoken.text("3 in 10 people, 2,000 tons, -40°F") == \
+        "three in ten people, two thousand tons, minus forty degrees Fahrenheit"
+    assert spoken.text("That answer was no.") == "That answer was no."
+    # The script's "say" map wins, and words stay matched to the caption words.
+    say = {"Henry VIII": "Henry the Eighth", "747": "seven forty-seven"}
+    assert spoken.words("*Henry VIII* flew a 747.", say) == ["Henry the Eighth", "", "flew", "a", "seven forty seven."]
+
+
+def test_voice_says_spoken_form_but_captions_keep_the_text(conn, settings, channel):
+    import json
+    conn.execute("""INSERT INTO shorts (id, channel, format_id, status, voice, say)
+                    VALUES (1, 'space', 'f', 'checked', 'am_michael', ?)""", (json.dumps({"Henry VIII": "Henry the Eighth"}),))
+    texts = ["*Henry VIII* had a .50 cal", "in 1969."]
+    for i, t in enumerate(texts):
+        conn.execute("INSERT INTO blocks (short_id, idx, text, seconds) VALUES (1, ?, ?, 2)", (i, t))
+    conn.commit()
+    channel.min_seconds = 0
+    fake = TimedVoice()
+    voice.set_engine(fake)
+    voice.prepare(conn, settings, channel, 1)
+    assert [t for t, _ in fake.calls] == ["Henry the Eighth had a fifty cal in nineteen sixty nine."]
+    assert [r[0] for r in conn.execute("SELECT text FROM blocks WHERE short_id=1 ORDER BY idx")] == texts
+    # One timing per caption word: "Henry" spans "Henry the Eighth", "VIII" shares it, "1969" spans 3 words.
+    words = voice.word_timings(voice_work(settings, channel))
+    assert [len(w) for w in words] == [len(t.split()) for t in texts]
+    assert words[0][0] == words[0][1] and words[0][0][1] > 1.0
+    assert words[1][1][1] - words[1][1][0] > 1.3
+
+
+def voice_work(settings, channel):
+    from shorts.render import work_dir
+    return work_dir(settings, channel, 1)
+
+
+def test_script_keeps_say_map(conn, channel):
+    from shorts import script
+    channel.voice = "am_michael"
+    assert '"say"' in script.build_prompt(channel, channel.enabled_formats, [], [])
+    channel.voice = None
+    assert '"say"' not in script.build_prompt(channel, channel.enabled_formats, [], [])
+    assert script.clean_say({"WWII": " World  War Two ", "x": ""}) == '{"WWII": "World War Two"}'
+    assert script.clean_say("nope") is None and script.clean_say({}) is None

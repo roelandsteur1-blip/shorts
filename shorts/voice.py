@@ -9,7 +9,8 @@ and a pause in the middle. Kokoro's word timings say where each block's words li
 
 assign() records the channel's voice on a new Short. prepare() speaks every block into
 <render folder>/voice.wav right before footage is picked (the footage search needs each block's
-length), and again when a text block is edited. A generic narrator over real footage needs no
+length), and again when a text block is edited. The voice reads each block as a person would say it
+(shorts/spoken.py: ".50 cal" -> "fifty cal"); the captions keep the text as written. A generic narrator over real footage needs no
 'altered or synthetic' label; we never imitate a real person's voice."""
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import spoken as spokenlib
 from .config import Channel, Settings
 
 log = logging.getLogger(__name__)
@@ -31,7 +33,7 @@ log = logging.getLogger(__name__)
 SR = 24000          # Kokoro's sample rate
 GAP = 0.25          # seconds of silence after each spoken sentence
 MIN_BLOCK = 0.8     # a block mid-sentence is on screen at least this long (else a short pause is added)
-VERSION = 2         # voice.json from before whole-sentence speech gets spoken again
+VERSION = 3         # voice.json from before spoken-form text (shorts/spoken.py) gets spoken again
 # English voices (a = American, b = British; f/m = female/male). Kokoro has more; these sound best.
 VOICES = ["am_michael", "am_fenrir", "am_puck", "af_heart", "af_bella", "af_nicole",
           "bm_george", "bm_fable", "bf_emma", "bf_isabella"]
@@ -149,8 +151,33 @@ def _speakable(text: str) -> str:
     return text.replace("*", "").strip()
 
 
-def _key(blocks: list[dict], voice: str, speed: float) -> str:
-    return hashlib.sha1(json.dumps([[b["text"] for b in blocks], voice, speed, VERSION]).encode()).hexdigest()
+def _key(said: list[list[str]], voice: str, speed: float) -> str:
+    return hashlib.sha1(json.dumps([said, voice, speed, VERSION]).encode()).hexdigest()
+
+
+def load_say(conn: sqlite3.Connection, short_id: int) -> dict:
+    """The script's {"on screen": "spoken"} pronunciations for this Short."""
+    row = conn.execute("SELECT say FROM shorts WHERE id=?", (short_id,)).fetchone()
+    try:
+        say = json.loads(row["say"]) if row and row["say"] else {}
+    except ValueError:
+        return {}
+    return say if isinstance(say, dict) else {}
+
+
+def caption_timings(said: list[str], words: list) -> list:
+    """Spoken-word timings -> one (start, end) per caption word. said[k] is what is said for
+    caption word k (shorts/spoken.words); a word said as several ("1969") spans all of them, a
+    word folded into the phrase before it ("VIII" in "Henry VIII") shares that phrase's span."""
+    out, n = [], 0
+    for k, w in enumerate(said):
+        c = len(w.split())
+        if c:
+            out.append((words[n][1], words[n + c - 1][2]))
+        else:
+            out.append(out[-1] if out else (words[0][1], words[0][1]))
+        n += c
+    return out
 
 
 def sentences(blocks: list[dict]) -> list[list[int]]:
@@ -211,7 +238,10 @@ def prepare(conn: sqlite3.Connection, settings: Settings, channel: Channel, shor
     blocks = [dict(r) for r in conn.execute("SELECT * FROM blocks WHERE short_id=? ORDER BY idx", (short_id,))]
     work = work_dir(settings, channel, short_id)
     wav, meta = work / "voice.wav", work / "voice.json"
-    key = _key(blocks, s["voice"], channel.voice_speed)
+    say = spokenlib.parse_say(load_say(conn, short_id))
+    # Per block, per caption word: what the narrator says for it (the screen keeps the text).
+    said = [spokenlib.words(b["text"], say) for b in blocks]
+    key = _key(said, s["voice"], channel.voice_speed)
     if wav.exists() and meta.exists() and json.loads(meta.read_text(encoding="utf-8")).get("key") == key:
         return wav
     eng = engine()
@@ -220,7 +250,7 @@ def prepare(conn: sqlite3.Connection, settings: Settings, channel: Channel, shor
         conn.commit()
         return None
     groups = sentences(blocks)
-    texts = [_speakable(b["text"]) for b in blocks]
+    texts = [_speakable(" ".join(w for w in ws if w)) for ws in said]
     with _lock:
         try:
             spoken = [speak_words(eng, " ".join(texts[i] for i in g), s["voice"], channel.voice_speed) for g in groups]
@@ -243,7 +273,8 @@ def prepare(conn: sqlite3.Connection, settings: Settings, channel: Channel, shor
             count = len(texts[i].split())
             if matched:
                 off = edges[k] / SR
-                timings[i] = [[round(max(w[1] - off, 0), 3), round(w[2] - off, 3)] for w in matched[n:n + count]]
+                timings[i] = [[round(max(a - off, 0), 3), round(z - off, 3)]
+                              for a, z in caption_timings(said[i], matched[n:n + count])]
             n += count
             piece = audio[edges[k]:edges[k + 1]]
             tail = GAP if k == len(g) - 1 else max(0.0, MIN_BLOCK - len(piece) / SR)
@@ -283,7 +314,7 @@ def sample(settings: Settings, v: str, speed: float = 1.0, text: str | None = No
     """One wav for the Voices page play buttons, made once and kept in <data_dir>/voice-test."""
     if v not in VOICES:
         raise ValueError(f"unknown voice {v}")
-    text = _speakable(text or SAMPLE_TEXT)
+    text = _speakable(spokenlib.text(text or SAMPLE_TEXT))
     out = settings.data_dir / "voice-test"
     h = hashlib.sha1(text.encode()).hexdigest()[:8]
     path = out / f"sample-{v}-{speed:g}-{h}.wav"

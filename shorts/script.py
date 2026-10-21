@@ -85,7 +85,7 @@ Rules:
 - Title: max 70 characters. Name the subject plainly so people searching for it find it (e.g.
   "Saturn's rings are disappearing"), make it match the video, no clickbait lies, no hashtags, and
   don't start every title the same way.
-{screen_title_rule}- Description: 1-2 sentences in plain English expanding on the Short.
+{screen_title_rule}{say_rule}- Description: 1-2 sentences in plain English expanding on the Short.
 - Tags: exactly 3 search tags about this exact Short, what someone would type to find it (for a
   Short about a bicep workout: "bicep curl", "bicep workout", "arm workout"). Not the channel's
   niche in general and not generic words like "viral" or "shorts" (those are added separately).
@@ -98,7 +98,7 @@ for it instead. A loose link ("the steel in this mill is also in your blood") is
 Answer with only a JSON array, one object per hero shot, in the same order:
 [{{"hero": <hero number>, {format_field}"topic": "...", "hook_drafts": ["...", "...", "..."], "answer": "...", "blocks": [{{"text": "...", "visual": "..."}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
-  "title": "...", {screen_title_field}"description": "...", "tags": ["..."], "mood": "..."}}]
+  "title": "...", {screen_title_field}"description": "...", "tags": ["..."], "mood": "..."{say_field}}}]
 
 {lessons}Topics we already covered (do not repeat them): {past_topics}
 {other_topics}
@@ -112,6 +112,14 @@ SCREEN_TITLE_RULE = """- Screen title: shown at the top of the video, so a viewe
   *vanishing* rings", "The *loudest* sound ever").
 """
 SCREEN_TITLE_CHARS = 40
+
+SAY_RULE = """- Say: the narrator reads the on-screen text out loud. Numbers, years, money, units, ordinals
+  and common abbreviations are turned into words for it automatically. Anything else it would read
+  wrong (roman numerals, an acronym said as a word or letter by letter, aircraft or gun names, a
+  foreign or unusual name) goes in "say": on-screen words -> how a person says them, e.g.
+  {"Henry VIII": "Henry the Eighth", "747": "seven forty-seven", "NATO": "nay toe"}. The screen
+  keeps the text as written. Use {} when nothing needs it.
+"""
 
 LANGS = {"en": "English", "nl": "Dutch", "de": "German", "es": "Spanish", "fr": "French"}
 
@@ -258,6 +266,8 @@ def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], p
         archives=", ".join(dict.fromkeys(h.get("archive", "NASA") for h in heroes)),
         screen_title_rule=SCREEN_TITLE_RULE if looks.title_bar(channel.style) != "off" else "",
         screen_title_field='"screen_title": "...", ' if looks.title_bar(channel.style) != "off" else "",
+        say_rule=SAY_RULE if channel_voice(channel) else "",
+        say_field=', "say": {"...": "..."}' if channel_voice(channel) else "",
     )
 
 
@@ -314,13 +324,14 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     tags = taglayers.pick(data.get("tags") or [])
     cur = conn.execute(
         """INSERT INTO shorts (channel, format_id, hero_scene_id, topic, hook, title, description,
-                               tags, status, duration, mood, screen_title)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?, ?, ?)""",
+                               tags, status, duration, mood, screen_title, say)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?, ?, ?, ?)""",
         (channel.id, fmt_id, hero["scene_id"], data.get("topic"), blocks[0]["text"],
          (data.get("title") or "")[:100], data.get("description") or "", json.dumps(tags),
          sum(b["seconds"] for b in blocks),
          data.get("mood") if data.get("mood") in MOODS else None,
-         clean_screen_title(data.get("screen_title")) if looks.title_bar(channel.style) != "off" else None),
+         clean_screen_title(data.get("screen_title")) if looks.title_bar(channel.style) != "off" else None,
+         clean_say(data.get("say"))),
     )
     short_id = cur.lastrowid
     conn.executemany(
@@ -338,6 +349,15 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     from . import voice
     voice.assign(conn, channel, short_id)
     return short_id
+
+
+def clean_say(say) -> str | None:
+    """The script's {"on screen": "spoken"} map as JSON, or None when there is nothing in it."""
+    if not isinstance(say, dict):
+        return None
+    say = {" ".join(str(k).split()): " ".join(str(v).split()) for k, v in say.items()
+           if str(k).strip() and str(v or "").strip()}
+    return json.dumps(say, ensure_ascii=False) if say else None
 
 
 def clean_screen_title(text) -> str | None:
