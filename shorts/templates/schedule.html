@@ -15,9 +15,9 @@
 <form method="post" action="/jobs/start" style="margin-top:8px"><input type="hidden" name="command" value="upload"><input type="hidden" name="channel" value="{{ r.ch.id }}">
 <button class="primary">Schedule approved now</button> <span class="muted">uploads them as private with these publish times; YouTube publishes them by itself</span></form>
 {% else %}<p class="muted">Nothing approved. <a href="/review?channel={{ r.ch.id }}">Review</a></p>{% endif %}
-<h3>Scheduled</h3>
+<h3>Scheduled <span class="muted" style="font-size:14px">{{ 'as YouTube has it' if r.from_youtube else 'from our own data: YouTube not connected or not reachable' }}</span></h3>
 {% for day, shorts in r.days %}<p style="margin-bottom:2px"><b>{{ day }}</b></p>
-{% for s in shorts %}<p style="margin:0 0 0 14px">{{ s.publish_at[11:16] }} UTC · <a href="/short/{{ s.id }}">{{ s.title }}</a> · <a href="https://youtu.be/{{ s.youtube_id }}" target="_blank" rel="noopener">youtu.be/{{ s.youtube_id }}</a></p>{% endfor %}
+{% for s in shorts %}<p style="margin:0 0 0 14px">{{ s.publish_at[11:16] }} UTC · {% if s.id %}<a href="/short/{{ s.id }}">{{ s.title }}</a>{% else %}{{ s.title }} <small class="muted">not from pipeline</small>{% endif %} · <a href="https://youtu.be/{{ s.youtube_id }}" target="_blank" rel="noopener">youtu.be/{{ s.youtube_id }}</a></p>{% endfor %}
 {% else %}<p class="muted">Nothing scheduled.</p>{% endfor %}
 {% if r.published %}<h3>Published / uploaded</h3>
 {% for s in r.published %}<p style="margin:0">{{ (s.publish_at or s.uploaded_at or '')[:16].replace('T', ' ') }} · <a href="https://youtu.be/{{ s.youtube_id }}" target="_blank" rel="noopener">{{ s.title }}</a>{% if s.status == 'uploaded' %} <span class="muted">(private, no publish time)</span>{% endif %}</p>{% endfor %}{% endif %}

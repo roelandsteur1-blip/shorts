@@ -311,3 +311,22 @@ def test_channel_avg_viewed_weighted_by_views(client, conn, settings, channel, y
     with client.application.app_context():
         card = stats_page.channel_cards(conn, None)[0]
     assert round(card["pct"]) == 74 and card["engaged"] == 0.5  # (80*900 + 20*100) / 1000, not (80+20+0)/3
+
+
+def test_schedule_page_follows_youtube(conn, settings, channel, client, yt):
+    from datetime import timedelta
+
+    from shorts.web import home
+    home._yt_cache.clear()
+    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
+    moved = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT21:00:00Z")
+    sid = add_short(conn, status="uploaded", youtube_id="ours", title="Ours", publish_at=soon)  # status out of date
+    yt.add("ours", privacy="private", publish_at=moved, title="Ours")  # time changed in Studio
+    yt.add("byhand", privacy="private", publish_at=soon, title="Made in Studio")
+    (settings.secrets_dir / "token-space.json").write_text("{}")
+    page = client.get("/schedule").data.decode()
+    sched = page[page.index("<h3>Scheduled"):]
+    assert "as YouTube has it" in sched and "Made in Studio" in sched and "not from pipeline" in sched
+    assert sched.index("Made in Studio") < sched.index("Ours")
+    row = conn.execute("SELECT status, publish_at FROM shorts WHERE id=?", (sid,)).fetchone()
+    assert tuple(row) == ("scheduled", moved)
