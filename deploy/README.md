@@ -63,3 +63,19 @@ Install Tailscale on the laptop and phone with the same account; the dashboard i
   `scp -i KEY SERVER:shorts-data/backups/<newest>.db D:\shorts-backups\`.
 - Connect a YouTube channel: run `ssh -i KEY -L 8765:localhost:8765 SERVER` on the laptop, click
   Connect YouTube on the dashboard and open the login link from the job page in the laptop's browser.
+
+## Clip quality bench (research, optional)
+
+`shorts/bench` measures which ways of finding, timing and cropping clips work best (plan in the
+project files: plan/clip-quality-research-plan.md). It has its own venv (`~/bench-venv`), works on
+a copy of the database and runs at the lowest CPU priority on 4 cores; the judge (Claude) waits
+4 minutes between calls so the daily run keeps enough of the Pro limit.
+
+```bash
+bash deploy/bench.sh smoke    # first time: sets up the venv, then a short trial run
+bash deploy/bench.sh start    # the real run in the background (continues where it stopped)
+bash deploy/bench.sh status
+```
+
+Progress and results also show on the dashboard at `/bench`, with a page to check Claude's labels.
+Results: `~/shorts-data/bench/report.md`.

@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% block title %}Bench{% endblock %}{% block body %}
+<h1>Clip quality bench</h1>
+<p class="muted">Which ways of finding, timing, cropping and judging clips work best. A research run, separate from the daily pipeline (started on the server with <code>bash deploy/bench.sh start</code>).</p>
+<div class="card">
+{% for p in progress.values() %}<p style="margin:4px 0"><b>{{ p.stage }}</b>: {{ p.done }} / {{ p.total }} <span class="muted">{{ p.note }}</span></p>
+<div class="bar"><div style="width:{{ p.done|pct(p.total) }}%"></div></div>
+{% else %}Not started yet.{% endfor %}
+</div>
+<div class="card"><h3 style="margin-top:0">Check the judge</h3>
+{% if total %}<p>Claude labelled every clip. Rate {{ total }} of them yourself (about 20 minutes, one at a time), so the report can say how often Claude agrees with you. {{ done }} of {{ total }} done.</p>
+<a class="button primary" href="/bench/check">{{ 'Continue' if done else 'Start' }}</a>
+{% else %}<p class="muted">Available once Claude has labelled the clips.</p>{% endif %}
+</div>
+{% if report %}<div class="card"><h3 style="margin-top:0">Results so far</h3><pre class="log" style="max-height:none">{{ report }}</pre></div>{% endif %}
+{% endblock %}
