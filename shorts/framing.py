@@ -7,7 +7,14 @@ is made (spectral residual: what stands out from the rest of the picture), plus 
 the background, plus faces, which count most. The crop window is put where it holds the most of
 that map, per frame; the windows over time become a slow pan when the subject moves, else a fixed
 position. Runs at render time on small frames (a few hundred ms per block), cached in the render
-folder, so every scene in the library benefits without a new scenes pass."""
+folder, so every scene in the library benefits without a new scenes pass.
+
+Saliency doesn't know what an aircraft or a planet is, so it can lock onto stars, waves or text.
+When the block says what it shows ("fighter jet taking off"), CLIP scores a row of 9:16 windows
+across the frame against those words (text_guide): the crop is then pulled to where the words
+match, and saliency only fine-tunes inside that area. When the whole frame matches the words
+clearly better than any window, the subject doesn't fit in 9:16 (a plane side-on, a skyline) and
+the render shows the whole frame on a blurred background instead of cutting it."""
 from __future__ import annotations
 
 import json
@@ -28,6 +35,11 @@ MOTION_WEIGHT = 0.7
 STILL_RANGE = 0.03      # subject moves less than this (fraction of the frame width): no pan
 UNSURE = 1.15          # the best window holds barely more than an even share: no subject
 MAX_PAN = 0.6           # never pan further than this many window widths in one block
+GUIDE_WINDOWS = 7       # 9:16 windows across the frame that CLIP compares with the block's words
+GUIDE_FRAMES = 3        # frames of the block they are scored on
+GUIDE_SPREAD = 0.012    # best minus worst window below this: the words don't single out a spot
+GUIDE_PRIOR = 0.12      # how tightly the crop stays around the words' spot (fraction of the frame)
+WHOLE_MARGIN = 0.02     # whole frame beats the best window by this much: show it whole
 _local = threading.local()  # one face detector per thread: OpenCV's isn't safe to share
 
 
@@ -131,21 +143,22 @@ def saliency_map(frame: np.ndarray, prev: np.ndarray | None, faces: list | None 
     return sal
 
 
-def best_window(profile: np.ndarray, frac: float, prior: float = 0.25) -> tuple[float, float]:
+def best_window(profile: np.ndarray, frac: float, prior: float = 0.25, centre: float = 0.5) -> tuple[float, float]:
     """(centre 0..1, share of the profile inside) of the window `frac` wide holding the most of
-    `profile`. A wide, mild pull to the middle decides when the picture is evenly busy."""
+    `profile`. A wide, mild pull to the middle decides when the picture is evenly busy; with a
+    text guide the pull is to where the block's words match, and tighter."""
     n = profile.size
     if frac >= 1 or n < 2:
         return 0.5, 1.0
     xs = (np.arange(n) + 0.5) / n
-    weighted = profile * np.exp(-((xs - 0.5) ** 2) / (2 * prior ** 2))
+    weighted = profile * np.exp(-((xs - centre) ** 2) / (2 * prior ** 2))
     k = max(1, round(frac * n))
     sums = np.convolve(weighted, np.ones(k), mode="valid")
     i = int(np.argmax(sums))
     total = float(profile.sum())
     inside = float(profile[i:i + k].sum()) / total if total > 0 else frac
     if inside < frac * UNSURE:  # nothing stands out (dark sky, sea, fog): keep the middle
-        return 0.5, inside
+        return centre, inside
     return (i + k / 2) / n, inside
 
 
@@ -156,10 +169,38 @@ def window_fraction(width: int, height: int) -> tuple[float, float]:
     return (target / aspect, 1.0) if aspect >= target else (1.0, aspect / target)
 
 
-def analyse(frames: list[np.ndarray], width: int, height: int) -> dict:
+def text_guide(frames: list[np.ndarray], fw: float, query: str, encoder) -> dict | None:
+    """Where across the frame the block's words match best: CLIP similarity of GUIDE_WINDOWS
+    windows (fw wide) and of the whole frame, averaged over a few frames. None when the crop is
+    not sideways, there is nothing to go on, or the encoder can't take images in memory."""
+    if fw >= 1 or not frames or not query or not hasattr(encoder, "arrays"):
+        return None
+    picked = [frames[int(i)] for i in np.linspace(0, len(frames) - 1, min(GUIDE_FRAMES, len(frames)))]
+    centres = np.linspace(fw / 2, 1 - fw / 2, GUIDE_WINDOWS)
+    crops = []
+    for fr in picked:
+        w = fr.shape[1]
+        cw = max(1, round(fw * w))
+        for c in centres:
+            x = int(np.clip(round((c - fw / 2) * w), 0, w - cw))
+            crops.append(fr[:, x:x + cw])
+        crops.append(fr)
+    vecs = encoder.arrays(crops)
+    q = encoder.texts([query])[0]
+    sims = (vecs @ q).reshape(len(picked), GUIDE_WINDOWS + 1).mean(axis=0)
+    windows, whole = sims[:-1], float(sims[-1])
+    best = int(np.argmax(windows))
+    return {"centre": float(centres[best]), "spread": float(windows.max() - windows.min()),
+            "best": float(windows[best]), "whole": whole}
+
+
+def analyse(frames: list[np.ndarray], width: int, height: int, guide: dict | None = None) -> dict:
     """{'x0', 'x1', 'y0', 'y1'}: subject centre (fractions of the source frame) at the start
-    and end of the block, plus 'fx', 'fy' (where the subject sits for zooming) and 'fit'."""
+    and end of the block, plus 'fx', 'fy' (where the subject sits for zooming) and 'fit'.
+    guide: text_guide()'s answer; adds 'whole' (show the whole frame) when the subject won't fit."""
     fw, fh = window_fraction(width, height)
+    aim = guide is not None and guide["spread"] >= GUIDE_SPREAD
+    prior, centre_x = (GUIDE_PRIOR, guide["centre"]) if aim else (0.25, 0.5)
     centres, ys, fits, moves = [], [], [], []
     faces = 0
     prev = None
@@ -170,7 +211,7 @@ def analyse(frames: list[np.ndarray], width: int, height: int) -> dict:
         faces += len(found)
         sal = saliency_map(fr, prev, found)
         prev = fr
-        cx, fit_x = best_window(sal.sum(axis=0), fw)
+        cx, fit_x = best_window(sal.sum(axis=0), fw, prior, centre_x)
         cy, fit_y = best_window(sal.sum(axis=1), fh)
         # Vertical spot of the subject inside the chosen columns: used to aim zooms.
         n = sal.shape[1]
@@ -180,8 +221,10 @@ def analyse(frames: list[np.ndarray], width: int, height: int) -> dict:
         centres.append((cx, cy))
         ys.append(sy)
         fits.append(min(fit_x, fit_y))
+    whole = guide is not None and guide["whole"] - guide["best"] >= WHOLE_MARGIN and not faces
     if not centres:
-        return {"x0": 0.5, "x1": 0.5, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0, "motion": None, "faces": 0}
+        return {"x0": 0.5, "x1": 0.5, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0, "motion": None, "faces": 0,
+                "whole": whole}
     c = np.array(centres)
     t = np.linspace(0, 1, len(c))
     path = []
@@ -205,7 +248,7 @@ def analyse(frames: list[np.ndarray], width: int, height: int) -> dict:
         path += [float(np.clip(a, lo, hi)), float(np.clip(b, lo, hi))]
     return {"x0": path[0], "x1": path[1], "y0": path[2], "y1": path[3],
             "fy": float(np.clip(np.median(ys), 0.25, 0.75)), "fit": float(np.mean(fits)),
-            "motion": float(np.mean(moves)) if moves else None, "faces": faces}
+            "motion": float(np.mean(moves)) if moves else None, "faces": faces, "whole": whole}
 
 
 def read_frames(path: str, start: float, seconds: float, width: int, height: int) -> list[np.ndarray]:
@@ -216,22 +259,31 @@ def read_frames(path: str, start: float, seconds: float, width: int, height: int
 
 
 def subject_path(path: str, start: float, seconds: float, width: int, height: int,
-                 fallback_x: float = 0.5, cache: dict | None = None) -> dict:
+                 fallback_x: float = 0.5, cache: dict | None = None, query: str | None = None,
+                 encoder=None) -> dict:
     """analyse() for the part of `path` from `start` that a block shows, cached by position.
+    query + encoder: the block's subject in words and CLIP, to aim the crop (text_guide).
     Any failure (unreadable file, no frames) falls back to the scene's stored crop centre."""
-    key = f"{path}|{start:.2f}|{seconds:.2f}"
+    key = f"{path}|{start:.2f}|{seconds:.2f}" + (f"|{query}" if query and encoder is not None else "")
     if cache is not None and key in cache:
         return cache[key]
     try:
         frames = read_frames(path, start, seconds, width, height)
-        res = analyse(frames, width, height) if frames else None
+        guide = None
+        if frames and query and encoder is not None:
+            try:
+                guide = text_guide(frames, window_fraction(width, height)[0], query, encoder)
+            except Exception as e:  # noqa: BLE001 - without the words, saliency still frames it
+                log.warning("text-guided framing failed for %s: %s", path, e)
+        res = analyse(frames, width, height, guide) if frames else None
     except Exception as e:  # noqa: BLE001 - framing is a nicety, a render must not fail on it
         log.warning("framing failed for %s at %.1fs: %s", path, start, e)
         res = None
     if res is None:
         fw, _ = window_fraction(width, height)
         x = float(np.clip(fallback_x, fw / 2, 1 - fw / 2))
-        res = {"x0": x, "x1": x, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0, "motion": None, "faces": 0}
+        res = {"x0": x, "x1": x, "y0": 0.5, "y1": 0.5, "fy": 0.5, "fit": 0.0, "motion": None, "faces": 0,
+               "whole": False}
     if cache is not None:
         cache[key] = res
     return res

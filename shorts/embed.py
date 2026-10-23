@@ -48,6 +48,22 @@ class ClipEncoder:
         with self.torch.no_grad():
             return self._norm(self.model.encode_image(batch))
 
+    def arrays(self, images: list[np.ndarray]) -> np.ndarray:
+        """BGR images (OpenCV) of any shape, padded to a square with black first: CLIP's own
+        preprocessing would cut a tall crop or a wide frame to its middle square."""
+        from PIL import Image
+
+        def square(img: np.ndarray) -> Image.Image:
+            h, w = img.shape[:2]
+            n = max(h, w)
+            out = np.zeros((n, n, 3), np.uint8)
+            out[(n - h) // 2:(n - h) // 2 + h, (n - w) // 2:(n - w) // 2 + w] = img[:, :, ::-1]
+            return Image.fromarray(out)
+
+        batch = self.torch.stack([self.preprocess(square(i)) for i in images])
+        with self.torch.no_grad():
+            return self._norm(self.model.encode_image(batch))
+
     def texts(self, texts: list[str]) -> np.ndarray:
         tokens = self.tokenizer(texts)
         with self.torch.no_grad():

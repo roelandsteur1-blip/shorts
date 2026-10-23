@@ -4,6 +4,7 @@ background music (shorts/music.py) at -14 LUFS. Original footage audio is never 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -12,6 +13,8 @@ from urllib.parse import urlsplit
 
 from . import db, looks, media, tags as taglayers
 from .config import Channel, Settings
+
+log = logging.getLogger(__name__)
 
 W, H, FPS = 1080, 1920, 30
 END_FADE = 0.3  # seconds: end sharply on the payoff, no long music fade (research/shorts-studies.md)
@@ -294,7 +297,8 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     Returns (work folder, args, seconds, music)."""
     media.require_ffmpeg()
     blocks = [dict(r) for r in conn.execute(
-        """SELECT b.idx, b.text, b.seconds, b.scene_id, sc.start, sc.end, sc.crop_x, a.path, a.width, a.height, a.source
+        """SELECT b.idx, b.text, b.seconds, b.scene_id, b.visual, sc.start, sc.end, sc.crop_x, a.path, a.width,
+                  a.height, a.source
              FROM blocks b JOIN scenes sc ON sc.id = b.scene_id JOIN assets a ON a.id = sc.asset_id
             WHERE b.short_id = ? ORDER BY b.idx""", (short_id,))]
     if not blocks:
@@ -331,7 +335,8 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         b["avail"] = max(b["end"] - start, 0.1)
 
     plans = plan_motion(blocks) if settings.render_zoom else [None] * len(blocks)
-    frames = _subject_paths(work, blocks)
+    topic = conn.execute("SELECT topic FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
+    frames = _subject_paths(work, blocks, settings if settings.render_subject_crop else None, topic)
     for i, b in enumerate(blocks):
         if i and b["scene_id"] == blocks[i - 1]["scene_id"]:
             # Same shot as the block before: start where its window ended (no jump on the cut).
@@ -345,7 +350,8 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         need = b["seconds"] * speed + 0.2
         hold = (need - avail) / speed if avail < need else 0.0
         inputs += ["-ss", f"{b['src_start']:.3f}", "-t", f"{min(need, avail):.3f}", "-i", b["path"]]
-        mode = choose_mode(b["width"] or W, b["height"] or H)
+        # The subject is wider than a 9:16 window (framing.py): show the whole frame, don't cut it.
+        mode = "blur" if frames[i].get("whole") else choose_mode(b["width"] or W, b["height"] or H)
         filters.append(_segment_filter(i, b["seconds"], frames[i], b["width"] or W, b["height"] or H,
                                        mode, plans[i], hold,
                                        settings.render_grade and old_film(b["source"], b["height"] or 0), speed))
@@ -439,17 +445,33 @@ def sound_effects(blocks: list[dict], plans: list[dict | None]) -> list[str]:
     return out
 
 
-def _subject_paths(work: Path, blocks: list[dict]) -> list[dict]:
+def block_subject(b: dict, topic: str | None) -> str | None:
+    """In words, what a block's crop should aim at: its visual, or the Short's topic on the hero shot."""
+    visual = (b.get("visual") or "").strip()
+    return visual if visual and visual.lower() != "hero" else (topic or None)
+
+
+def _subject_paths(work: Path, blocks: list[dict], settings: Settings | None = None,
+                   topic: str | None = None) -> list[dict]:
     """shorts/framing.py's subject path for every block (a few at once: each is one small ffmpeg
-    read), cached in the render folder so a re-render doesn't read them again."""
+    read), cached in the render folder so a re-render doesn't read them again. settings: aim each
+    crop at the block's subject with CLIP (None: saliency only)."""
     from concurrent.futures import ThreadPoolExecutor
     from . import framing
     cache = framing.load_cache(work)
+    encoder = None
+    if settings is not None:
+        from . import embed
+        try:
+            encoder = embed.get_encoder(settings)
+        except Exception as e:  # noqa: BLE001 - no CLIP: saliency still frames the shot
+            log.warning("CLIP not available for framing: %s", e)
 
     def one(b: dict) -> dict:
         return framing.subject_path(b["path"], b["src_start"], min(b["seconds"], b["avail"]),
                                     b["width"] or W, b["height"] or H,
-                                    b["crop_x"] if b["crop_x"] is not None else 0.5, cache)
+                                    b["crop_x"] if b["crop_x"] is not None else 0.5, cache,
+                                    block_subject(b, topic) if encoder is not None else None, encoder)
 
     with ThreadPoolExecutor(max_workers=max(1, min(4, len(blocks), os.cpu_count() or 1))) as pool:
         out = list(pool.map(one, blocks))

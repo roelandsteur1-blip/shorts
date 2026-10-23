@@ -7,7 +7,7 @@ import math
 import re
 import sqlite3
 
-from . import formats as fmtlib, learn, llm, looks, progress, tags as taglayers
+from . import db, formats as fmtlib, learn, llm, looks, menu, progress, tags as taglayers
 from .config import Channel, Settings
 from .music import MOODS
 from .voice import channel_voice
@@ -27,7 +27,7 @@ Language: {language_name}.
 
 For EACH hero shot below, write one Short built around that shot. The hero shot is the first thing
 the viewer sees; the first text block is the hook and must make sense on top of that image.
-
+{frames_note}
 Every Short is a tiny story that teaches ONE specific thing, never a list of loose facts over
 footage (YouTube does not recommend or pay for templated, mass-produced Shorts). Viewers decide in
 the first second whether to swipe, so the three parts each have one job:
@@ -79,10 +79,7 @@ Rules:
   description given below (source "archive" + the exact supporting quote). If a fact is general
   knowledge not in that text, give a specific, real {url_hint} URL you are
   sure exists, and the quote it supports; do not invent URLs. When in doubt, leave the fact out.
-- For blocks after the first, "visual" describes in 3-8 plain words what footage should show,
-  preferring one clear subject close up (e.g. "Saturn rings close up", "astronaut floating inside
-  station"); never the same visual two blocks in a row. Block 1 visual is "hero".
-- Title: max 70 characters. Name the subject plainly so people searching for it find it (e.g.
+{footage_rule}- Title: max 70 characters. Name the subject plainly so people searching for it find it (e.g.
   "Saturn's rings are disappearing"), make it match the video, no clickbait lies, no hashtags, and
   don't start every title the same way.
 {screen_title_rule}{say_rule}- Description: 1-2 sentences in plain English expanding on the Short.
@@ -96,7 +93,7 @@ is not clearly about that, do NOT write a Short for it; answer {{"hero": <hero n
 for it instead. A loose link ("the steel in this mill is also in your blood") is not enough.
 
 Answer with only a JSON array, one object per hero shot, in the same order:
-[{{"hero": <hero number>, {format_field}"topic": "...", "hook_drafts": ["...", "...", "..."], "answer": "...", "blocks": [{{"text": "...", "visual": "..."}}],
+[{{"hero": <hero number>, {format_field}"topic": "...", "hook_drafts": ["...", "...", "..."], "answer": "...", "blocks": [{{"text": "...", "visual": "..."{clip_field}}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", {screen_title_field}"description": "...", "tags": ["..."], "mood": "..."{say_field}}}]
 
@@ -104,6 +101,26 @@ Answer with only a JSON array, one object per hero shot, in the same order:
 {other_topics}
 Hero shots:
 {heroes}
+"""
+
+VISUAL_RULE = """- For blocks after the first, "visual" describes in 3-8 plain words what footage should show,
+  preferring one clear subject close up (e.g. "Saturn rings close up", "astronaut floating inside
+  station"); never the same visual two blocks in a row. Block 1 visual is "hero".
+"""
+
+FRAMES_NOTE = """Each hero has one attached image (image 1 for Hero 1, and so on): its top row (HERO) is three
+frames of the hero shot, the rows below are that hero's clip menu (C1, C2, ...). The hook and the
+first blocks must fit what the HERO frames really show; never describe something that isn't there.
+"""
+
+CLIP_RULE = """- Footage for blocks after the first: "clip" is the clip from THAT hero's menu (e.g. "C3") whose
+  frame clearly shows what the block says, "hero" to stay on the hero shot, or "none" when nothing
+  on the menu fits. A wrong or only loosely related picture is worse than staying on the hero
+  shot. Prefer clips from the same video; use each clip at most once per Short; a block's clip
+  should be about as long as the block (about 2-3 s), longer is fine.
+- "visual" names in 3-8 plain words the subject the viewer must see in that block (e.g. "Saturn
+  rings close up", "fighter jet taking off"); the 9:16 crop is aimed at it, and with "clip": "none"
+  it is searched for. Block 1 visual is "hero" and has no clip.
 """
 
 SCREEN_TITLE_RULE = """- Screen title: shown at the top of the video, so a viewer knows at a glance what this Short is
@@ -236,6 +253,7 @@ def format_results(conn: sqlite3.Connection, channel: str) -> dict:
 def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], past_topics: list[str],
                  lessons: str = "", other_topics: list[str] | None = None,
                  format_use: dict[str, int] | None = None, format_results: dict | None = None) -> str:
+    seen = bool(heroes) and all(h.get("menu", {}).get("image") for h in heroes)  # Claude sees the footage
     max_blocks = max(3, math.floor(channel.max_seconds / 2.6))
     min_blocks = max(3, math.ceil(channel.min_seconds / 3.0))
     hero_text = "\n\n".join(
@@ -247,6 +265,7 @@ def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], p
         f"  Description: {(h.get('description') or '').strip()[:2500]}\n"
         f"  The hero shot is {h['end'] - h['start']:.1f}s taken from {h['start']:.0f}s into this video."
         + sibling_note(h)
+        + (f"\n  Clip menu (image {i + 1}): " + "; ".join(h["menu"]["lines"]) if h.get("menu", {}).get("lines") else "")
         for i, h in enumerate(heroes)
     )
     return PROMPT.format(
@@ -258,7 +277,9 @@ def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], p
                       f"{'; '.join(other_topics[-60:])}\n" if other_topics else ""),
         min_blocks=min_blocks, max_blocks=max_blocks, max_words=MAX_WORDS,
         past_topics="; ".join(past_topics[-80:]) or "(none yet)",
-        heroes=hero_text, url_hint=url_hint(channel), moods=", ".join(MOODS), lessons=lessons,
+        heroes=hero_text, frames_note=FRAMES_NOTE if seen else "",
+        footage_rule=CLIP_RULE if seen else VISUAL_RULE, clip_field=', "clip": "..."' if seen else "",
+        url_hint=url_hint(channel), moods=", ".join(MOODS), lessons=lessons,
         voice_line=("A narrator voice reads every text block out loud, and the same text is on screen: write "
                     "lines that sound natural spoken and read well, over real archive footage"
                     if channel_voice(channel) else
@@ -298,8 +319,9 @@ def normalise_blocks(raw_blocks: list[dict], channel: Channel) -> list[dict]:
         visual = "hero" if i == 0 else (b.get("visual") or "").strip()
         for j, part in enumerate(split_block(b.get("text", ""), style=looks.resolve(channel.style))):
             if part:
+                # A split block's parts stay on its clip (render continues where the part before stopped).
                 blocks.append({"text": part, "visual": visual if j == 0 else (visual or "hero"),
-                               "seconds": block_seconds(part)})
+                               "seconds": block_seconds(part), "scene_id": b.get("scene_id") if i else None})
     total = sum(b["seconds"] for b in blocks)
     # Stretch short scripts to the minimum length; never squeeze reading time below the rule.
     if blocks and total < channel.min_seconds:
@@ -316,7 +338,7 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     """fmt_id: the format, or the ids Claude could choose from (its "format" field picks one)."""
     if isinstance(fmt_id, list):
         fmt_id = data.get("format") if data.get("format") in fmt_id else fmt_id[0]
-    blocks = normalise_blocks(data.get("blocks") or [], channel)
+    blocks = normalise_blocks(pick_clips(conn, hero, data.get("blocks") or []), channel)
     if len(blocks) < 3:
         raise ValueError("script too short")
     if "?" in str((data.get("blocks") or [{}])[0].get("text", "")) and not str(data.get("answer") or "").strip():
@@ -336,7 +358,7 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     short_id = cur.lastrowid
     conn.executemany(
         "INSERT INTO blocks (short_id, idx, text, seconds, visual, scene_id) VALUES (?,?,?,?,?,?)",
-        [(short_id, i, b["text"], b["seconds"], b["visual"], hero["scene_id"] if i == 0 else None)
+        [(short_id, i, b["text"], b["seconds"], b["visual"], hero["scene_id"] if i == 0 else b.get("scene_id"))
          for i, b in enumerate(blocks)],
     )
     conn.executemany(
@@ -349,6 +371,27 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     from . import voice
     voice.assign(conn, channel, short_id)
     return short_id
+
+
+def pick_clips(conn: sqlite3.Connection, hero: dict, raw_blocks: list) -> list[dict]:
+    """The script's "clip" per block -> scene_id, from that hero's menu only. "hero" stays on the
+    hero shot; "none", an unknown label, a clip used twice or one another Short took meanwhile
+    leave the block to shorts/shots.py, which searches for its "visual"."""
+    clips = (hero.get("menu") or {}).get("clips") or {}
+    used = db.used_scene_ids(conn, None) if clips else set()
+    out, in_short = [], set()
+    for i, b in enumerate(raw_blocks):
+        if not isinstance(b, dict):
+            continue
+        b = dict(b)
+        label = str(b.get("clip") or "").strip().upper()
+        if i and label == "HERO":
+            b["visual"] = "hero"
+        elif i and label in clips and clips[label] not in in_short and clips[label] not in used:
+            b["scene_id"] = clips[label]
+            in_short.add(clips[label])
+        out.append(b)
+    return out
 
 
 def clean_say(say) -> str | None:
@@ -407,13 +450,19 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
     for i in range(0, len(hero_scene_ids), batch_size):
         progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
+        taken: set[int] = set()  # one clip on one hero's menu only, so two Shorts never pick it both
+        for h in heroes:
+            h["menu"] = menu.build(conn, settings, channel, h["scene_id"], taken) if settings.script_sees_footage \
+                else {"clips": {}, "lines": [], "image": None}
+        images = [h["menu"]["image"] for h in heroes]
+        images = images if all(images) else None
         prompt = build_prompt(channel, fmt, heroes, past_topics(conn, channel.id),
                               winners_note(conn, channel.id) + rejects_note(conn, channel.id)
                               + learn.retention_note(conn, channel.id) + learn.patterns_note(conn, channel.id),
                               other_topics(conn, channel.id), format_use(conn, channel.id),
                               format_results(conn, channel.id))
         try:
-            replies = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude script")
+            replies = llm.ask_json(prompt, settings.claude_cmd, conn=conn, stage="claude script", images=images)
         except llm.LLMLimitError:
             break  # the heroes not written stay unused and are picked again next run
         batch_ids: list[int] = []

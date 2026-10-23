@@ -32,6 +32,8 @@ class Settings:
     render_sfx: bool = True           # render: soft whoosh on cuts, low hit on punch-ins (made by ffmpeg)
     render_grade: bool = True         # render: light colour grade per channel, cleanup of old SD film
     render_speed_ramps: bool = True   # render: nearly still shots without people play at 1.2x
+    render_subject_crop: bool = True  # render: aim the 9:16 crop at the block's subject (CLIP), whole frame if it won't fit
+    script_sees_footage: bool = True  # script: Claude sees the hero frames and a clip menu, and picks a clip per block
     scene_detector: str = "fast"      # "fast" = one ffmpeg pass per video; "pyscenedetect" = the old way
     scene_fps: float = 10.0           # frames per second the fast scene detector looks at
     clip_model: str = "ViT-B-32"
