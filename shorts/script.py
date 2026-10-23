@@ -32,6 +32,17 @@ Every Short is a tiny story that teaches ONE specific thing, never a list of loo
 footage (YouTube does not recommend or pay for templated, mass-produced Shorts). Viewers decide in
 the first second whether to swipe, so the three parts each have one job:
 
+CRYSTAL CLEAR (above everything else): a small child who knows nothing about the subject must
+understand what this Short is about and what it shows.
+- First write "plain_topic": what the Short is about in one sentence a five-year-old understands
+  (e.g. "This is a giant storm on Jupiter that is bigger than the Earth"). Every block serves it.
+- Name the subject with the everyday word in the hook, or in block 2 at the latest: "this plane",
+  "this volcano", "this whale", never only "it", "this" or a code name. A model, place or person
+  name comes WITH what it is ("the P-51, a fighter plane").
+- Easy, everyday words and short sentences. A hard word or number gets an everyday picture right
+  away ("a crater as wide as 10 football fields"). No jargon, no acronym without saying what it is.
+- One idea per block, one subject per Short. Never jump to a second subject.
+
 HOOK (block 1): stop the scroll.
 - First write three different hooks in "hook_drafts" (e.g. a startling concrete claim, a sharp
   question about what is on screen, a number or everyday comparison), then use the strongest as
@@ -40,7 +51,8 @@ HOOK (block 1): stop the scroll.
 - Then write "answer": the full answer to that hook in one plain sentence (what exactly, which
   part, how or why), BEFORE writing the other blocks. The whole Short is built to deliver it. If
   the archive text and sure general knowledge can't give a concrete answer, use another hook.
-- Readable in one glance: one screen, at most {max_words} words, the subject named or obvious.
+- Readable in one glance: one screen, at most {max_words} words, the subject named in plain words
+  or plain to see in the hero shot.
 - Honest emotion (awe, danger, strangeness). No date or background first ("In 1969..."), no
   "Did you know", "You won't believe", "Wait for it", and never a promise the Short doesn't keep.
 
@@ -93,7 +105,7 @@ is not clearly about that, do NOT write a Short for it; answer {{"hero": <hero n
 for it instead. A loose link ("the steel in this mill is also in your blood") is not enough.
 
 Answer with only a JSON array, one object per hero shot, in the same order:
-[{{"hero": <hero number>, {format_field}"topic": "...", "hook_drafts": ["...", "...", "..."], "answer": "...", "blocks": [{{"text": "...", "visual": "..."{clip_field}}}],
+[{{"hero": <hero number>, {format_field}"plain_topic": "...", "topic": "...", "hook_drafts": ["...", "...", "..."], "answer": "...", "blocks": [{{"text": "...", "visual": "..."{clip_field}}}],
   "facts": [{{"claim": "...", "source": "archive" or "https://...", "quote": "..."}}],
   "title": "...", {screen_title_field}"description": "...", "tags": ["..."], "mood": "..."{say_field}}}]
 
@@ -125,8 +137,9 @@ CLIP_RULE = """- Footage for blocks after the first: "clip" is the clip from THA
 
 SCREEN_TITLE_RULE = """- Screen title: shown at the top of the video, so a viewer knows at a glance what this Short is
   about (many watch muted). 2 to 6 words, at most 32 characters, no question mark needed. Wrap the 1
-  or 2 key words in *asterisks*. It names the subject, it does not repeat the hook (e.g. "Saturn's
-  *vanishing* rings", "The *loudest* sound ever").
+  or 2 key words in *asterisks*. It names the subject in everyday words a child knows, it does not
+  repeat the hook (e.g. "Saturn's *vanishing* rings", "The *loudest* sound ever", "A *tornado* up
+  close"; not "The *Tri-State* event").
 """
 SCREEN_TITLE_CHARS = 40
 
