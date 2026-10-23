@@ -12,9 +12,12 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+import numpy as np
+
 from . import load, root, save, snapshot, status_line
 
 log = logging.getLogger(__name__)
+RATE = 16000
 
 
 def run(settings, ts: dict, model_size: str = "base", threads: int = 4, max_assets: int | None = None,
@@ -45,19 +48,33 @@ def run(settings, ts: dict, model_size: str = "base", threads: int = 4, max_asse
             continue
         t0 = time.perf_counter()
         with tempfile.TemporaryDirectory() as tmp:
-            wav = Path(tmp) / "a.wav"
-            proc = subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-i", row["file_url"], "-vn",
-                                   "-ac", "1", "-ar", "16000", str(wav)], capture_output=True, text=True,
-                                  timeout=1800)
+            # Raw 16 kHz mono samples, handed to Whisper as an array: a file path would make
+            # faster-whisper decode it with PyAV, whose newer versions it can't call.
+            raw = Path(tmp) / "a.raw"
+            try:
+                proc = subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-i", row["file_url"], "-vn",
+                                       "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(RATE),
+                                       str(raw)], capture_output=True, text=True, timeout=1800)
+                ok = proc.returncode == 0
+            except subprocess.TimeoutExpired:
+                ok = False
             fetch = time.perf_counter() - t0
-            if proc.returncode != 0 or not wav.exists() or wav.stat().st_size < 10_000:
+            if not ok or not raw.exists() or raw.stat().st_size < 10_000:
                 meta[str(aid)] = {"error": "no audio", "fetch_s": fetch}
                 save(meta_path, meta)
                 continue
-            t1 = time.perf_counter()
-            segments, info = model.transcribe(str(wav), vad_filter=True, beam_size=1)
+            audio = np.fromfile(raw, np.int16).astype(np.float32) / 32768.0
+        t1 = time.perf_counter()
+        try:
+            segments, info = model.transcribe(audio, vad_filter=True, beam_size=1)
             segs = [(s.start, s.end, s.text) for s in segments]
-            asr_s = time.perf_counter() - t1
+        except Exception as e:  # one bad video must not stop the run
+            log.warning("narration of video %s failed: %s", aid, e)
+            meta[str(aid)] = {"error": f"{type(e).__name__}: {e}"[:300], "fetch_s": fetch}
+            save(meta_path, meta)
+            continue
+        asr_s = time.perf_counter() - t1
+        del audio
         for sid, start, end in by_asset[aid]:
             words = " ".join(t for a, b, t in segs if b >= start - 1 and a <= end + 1).strip()
             if words:

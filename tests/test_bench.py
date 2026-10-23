@@ -163,3 +163,38 @@ def test_crop_letters_merge_same_crops():
     groups = sorted(sorted(v) for v in letters.values())
     assert groups == [["a", "b"], ["c"], ["d", "e"]]
     assert json.dumps(letters)  # stored in clips.json
+
+
+def test_narration_reads_audio_without_pyav(bench_run, shorts_made, tmp_path, monkeypatch):
+    """faster-whisper gets the samples as an array (a file path would go through PyAV), and one
+    video that fails doesn't stop the others."""
+    import sys
+    import types
+
+    from shorts.bench import asr
+
+    conn = shorts_made
+    for n, (aid,) in enumerate(conn.execute("SELECT id FROM assets ORDER BY id").fetchall()):
+        conn.execute("UPDATE assets SET file_url=? WHERE id=?", (str(tmp_path / f"raw{n}" / "raw.mp4"), aid))
+    conn.commit()
+    calls = []
+
+    class Model:
+        def __init__(self, *a, **kw):
+            pass
+
+        def transcribe(self, audio, **kw):
+            assert isinstance(audio, np.ndarray) and audio.dtype == np.float32
+            calls.append(len(audio))
+            if len(calls) == 2:
+                raise RuntimeError("broken audio")
+            seg = types.SimpleNamespace(start=0.0, end=30.0, text="the rings of Saturn")
+            return iter([seg]), types.SimpleNamespace(duration=len(audio) / asr.RATE, language="en")
+
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(WhisperModel=Model))
+    ts = testset.build(bench_run, 4, 50)
+    texts = asr.run(bench_run, ts)
+    meta = bench.load(bench.root(bench_run) / "asr-meta.json")
+    assert len(calls) == 2 and abs(calls[0] / asr.RATE - 24) < 1  # the 24 s test film, 16 kHz
+    assert sorted(m.get("error", "ok")[:12] for m in meta.values()) == ["RuntimeError", "ok"]
+    assert texts and set(texts.values()) == {"the rings of Saturn"}
