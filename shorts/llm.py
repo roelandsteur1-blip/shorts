@@ -144,6 +144,12 @@ def limit_reached() -> bool:
     return _limit_hit is not None
 
 
+def reset_limit() -> None:
+    """Call Claude again (a long-running job that waited for the limit to reset)."""
+    global _limit_hit
+    _limit_hit = None
+
+
 def extract_json(text: str):
     """Parse the first JSON object/array in a reply (Claude sometimes wraps it in ```json)."""
     fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)

@@ -92,6 +92,26 @@ def pace(seconds: float, last: list[float]) -> None:
     last[:] = [time.monotonic()]
 
 
+LIMIT_WAIT = 30 * 60          # a usage limit resets within 5 hours: try again every half hour
+LIMIT_GIVE_UP = 24 * 3600     # ...but stop after a day (a weekly limit)
+
+
+def ask(settings, prompt: str, images: list[bytes], waited: list[float]):
+    """llm.ask_json, but a Claude usage limit is waited out: the run is unattended for a day or
+    more, and stopping would leave it idle until someone starts it again."""
+    while True:
+        try:
+            return llm.ask_json(prompt, settings.claude_cmd, stage="bench-judge", images=images)
+        except llm.LLMLimitError:
+            if waited[0] >= LIMIT_GIVE_UP:
+                raise
+            log.warning("Claude usage limit: trying again in %d minutes", LIMIT_WAIT // 60)
+            status_line(settings, "judge waiting", 0, 0, "Claude usage limit reached, trying again every 30 min")
+            time.sleep(LIMIT_WAIT)
+            waited[0] += LIMIT_WAIT
+            llm.reset_limit()
+
+
 def run_topic(settings, ts: dict, pools: dict[str, list[int]], limit: int | None = None,
               every: float = 0.0) -> dict:
     path = root(settings) / "judge.json"
@@ -102,6 +122,7 @@ def run_topic(settings, ts: dict, pools: dict[str, list[int]], limit: int | None
         todo = todo[:limit]
     rng = random.Random(SEED)
     last: list[float] = []
+    waited = [0.0]
     for n, b in enumerate(todo):
         key = str(b["id"])
         have = labels.get(key, {})
@@ -111,10 +132,9 @@ def run_topic(settings, ts: dict, pools: dict[str, list[int]], limit: int | None
         status_line(settings, "judge topic", n, len(todo), f"block {key}")
         pace(every, last)
         try:
-            ans = llm.ask_json(prompt, settings.claude_cmd, stage="bench-judge",
-                               images=topic_sheets(settings, sids))
+            ans = ask(settings, prompt, topic_sheets(settings, sids), waited)
         except llm.LLMLimitError:
-            log.warning("Claude usage limit: judging stops here; run again after it resets")
+            log.warning("Claude usage limit for a day: judging stops here; run again after it resets")
             break
         except llm.LLMError as e:
             log.warning("judge failed for block %s: %s", key, e)

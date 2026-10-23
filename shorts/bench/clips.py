@@ -18,7 +18,7 @@ from .. import framing, llm
 from . import SEED, load, root, save, status_line
 from .detect import box_to_crop, load_finder
 from .frames import dense, read_at
-from .judge import FH, FW, grid, jpeg, label_box, pace, strip
+from .judge import FH, FW, ask, grid, jpeg, label_box, pace, strip
 from .models import MODELS, Encoder, emb_path
 
 log = logging.getLogger(__name__)
@@ -266,6 +266,7 @@ def run_judge(settings, ts: dict, limit: int | None = None, every: float = 0.0) 
     if limit is not None:
         todo = todo[:limit]
     last: list[float] = []
+    waited = [0.0]
     for n, key in enumerate(todo):
         d, b = data[key], blocks[key]
         s = ts["scenes"][str(d["sid"])]
@@ -297,9 +298,9 @@ def run_judge(settings, ts: dict, limit: int | None = None, every: float = 0.0) 
         status_line(settings, "judge clips", n, len(todo), f"block {key}")
         pace(every, last)
         try:
-            ans = llm.ask_json(prompt, settings.claude_cmd, stage="bench-judge", images=[jpeg(sheet1), jpeg(sheet2)])
+            ans = ask(settings, prompt, [jpeg(sheet1), jpeg(sheet2)], waited)
         except llm.LLMLimitError:
-            log.warning("Claude usage limit: judging stops here; run again after it resets")
+            log.warning("Claude usage limit for a day: judging stops here; run again after it resets")
             break
         except llm.LLMError as e:
             log.warning("clip judge failed for block %s: %s", key, e)

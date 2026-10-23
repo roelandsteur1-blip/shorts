@@ -138,11 +138,28 @@ def test_judge_survives_the_usage_limit(bench_run, monkeypatch):
     ts = testset.build(settings, blocks=4, library=1000)
     frames.extract(settings, ts, workers=1)
 
-    def limit(*a, **k):
+    slept = []
+    monkeypatch.setattr(judge.time, "sleep", slept.append)
+    calls = []
+
+    def limit_once(*a, **k):  # the limit resets after one wait: judging goes on
+        calls.append(1)
+        if len(calls) == 1:
+            raise llm.LLMLimitError("limit")
+        return {"1": [2, 3], "2": [0, 1], "3": [1, 2]}
+    monkeypatch.setattr(llm, "ask_json", limit_once)
+    pools = {str(b["id"]): [int(s) for s in list(ts["scenes"])[:3]] for b in ts["blocks"]}
+    labels = judge.run_topic(settings, ts, pools)
+    assert slept == [judge.LIMIT_WAIT] and len(labels) == len(pools)
+    assert all(len(v) == 3 for v in labels.values())
+
+    def limit(*a, **k):  # a limit that lasts a day: stop, keep what is done
         raise llm.LLMLimitError("limit")
     monkeypatch.setattr(llm, "ask_json", limit)
-    pools = {str(b["id"]): [int(s) for s in list(ts["scenes"])[:3]] for b in ts["blocks"]}
+    monkeypatch.setattr(bench, "FOLDER", "bench-test-2")
+    slept.clear()
     assert judge.run_topic(settings, ts, pools) == {}
+    assert len(slept) == judge.LIMIT_GIVE_UP // judge.LIMIT_WAIT
 
 
 def test_metrics():
