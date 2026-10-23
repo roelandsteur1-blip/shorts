@@ -158,3 +158,18 @@ def test_render_aims_each_block_at_its_visual_or_the_topic():
     assert block_subject({"visual": "fighter jet"}, "Jets") == "fighter jet"
     assert block_subject({"visual": "hero"}, "Jets") == "Jets"
     assert block_subject({"visual": None}, None) is None
+
+
+def test_subject_path_reads_real_frames(tmp_path, monkeypatch):
+    """The crop must come from the video itself: a failing frame read used to be swallowed and
+    every render quietly fell back to the old stored crop centre."""
+    from conftest import make_video
+    video = tmp_path / "v.mp4"
+    make_video(video, seconds=6)
+    assert len(framing.read_frames(str(video), 1.0, 2.0, 1280, 720)) >= 3
+    warnings = []
+    monkeypatch.setattr(framing.log, "warning", lambda *a: warnings.append(a))
+    res = framing.subject_path(str(video), 1.0, 2.0, 1280, 720, fallback_x=0.123,
+                               query="red", encoder=ColourEncoder())
+    assert not warnings
+    assert res["motion"] is not None and res["x0"] != 0.123

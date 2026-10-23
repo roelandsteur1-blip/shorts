@@ -254,8 +254,7 @@ def analyse(frames: list[np.ndarray], width: int, height: int, guide: dict | Non
 def read_frames(path: str, start: float, seconds: float, width: int, height: int) -> list[np.ndarray]:
     from .scenes import FRAME_W, _ffmpeg_frames, _frame_height
     fps = max(SAMPLE_FPS, MIN_SAMPLES / max(seconds, 0.1))
-    return list(_ffmpeg_frames(path, start, max(seconds, 0.2), fps, FRAME_W,
-                               _frame_height(width, height), "cpu"))
+    return list(_ffmpeg_frames(path, start, max(seconds, 0.2), fps, FRAME_W, _frame_height(width, height)))
 
 
 def subject_path(path: str, start: float, seconds: float, width: int, height: int,
