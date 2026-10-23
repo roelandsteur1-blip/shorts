@@ -8,6 +8,8 @@
 #   bash deploy/bench.sh status    how far it is, and the last log lines
 #   bash deploy/bench.sh stop
 set -euo pipefail
+# The Claude CLI (the judge) lives here; ssh and nohup shells don't have it on PATH.
+export PATH="$HOME/.local/bin:$PATH"
 cd "$(dirname "$0")/.."
 REPO=$(pwd)
 VENV="$HOME/bench-venv"
