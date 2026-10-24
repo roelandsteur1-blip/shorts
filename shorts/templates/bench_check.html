@@ -2,15 +2,15 @@
 <h1>Check the judge <span class="muted">{{ done + 1 }} / {{ total }}</span></h1>
 <div class="card">
 <p class="muted">The Short is about: {{ item.topic or '?' }}</p>
-<p style="font-size:18px">On screen: <b>{{ item.text }}</b></p>
-<p class="muted">The writer asked for: {{ item.visual }}</p>
+<p class="muted">Caption in the Short at this moment: "{{ item.text }}"</p>
+<p style="font-size:18px">The writer asked for footage of: <b>{{ item.visual }}</b></p>
 <img src="/bench/strip/{{ item.sid }}.jpg" alt="start, middle and end of the clip" style="width:100%;max-width:900px;border-radius:8px;background:#000">
 <p class="muted">Start, middle and end of one clip.</p>
 <form method="post" action="/bench/check">
 <input type="hidden" name="block" value="{{ item.block }}"><input type="hidden" name="sid" value="{{ item.sid }}">
-<p><b>Does it show what the text talks about?</b></p>
-<label><input type="radio" name="topic" value="2" required> Yes, clearly</label>
-<label><input type="radio" name="topic" value="1"> Related, but not the thing itself</label>
+<p><b>Does it show what this moment is about?</b></p>
+<label><input type="radio" name="topic" value="2" required> Yes, clearly (the thing itself, recognisable)</label>
+<label><input type="radio" name="topic" value="1"> Related (same theme, place or kind of thing), but not the thing itself</label>
 <label><input type="radio" name="topic" value="0"> No (or unusable)</label>
 <p><b>Would you keep watching this clip?</b></p>
 <label><input type="radio" name="watch" value="1" required> Yes</label>
