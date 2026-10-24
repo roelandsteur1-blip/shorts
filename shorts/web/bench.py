@@ -23,8 +23,8 @@ def _sample() -> list[dict]:
         return sample
     labels = load(r / "judge.json", {})
     ts = load(r / "testset.json", {})
-    if not labels or not ts:
-        return []
+    if not labels or not ts or len(labels) < 0.9 * len(ts["blocks"]):
+        return []  # not before the judge is (nearly) done: the sample must spread over all blocks
     blocks = {str(b["id"]): b for b in ts["blocks"]}
     by_label: dict[int, list] = {0: [], 1: [], 2: []}
     for key, per in labels.items():

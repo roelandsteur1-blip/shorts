@@ -123,7 +123,14 @@ def test_bench_end_to_end(bench_run, monkeypatch):
     # A person checks the judge on the dashboard, one clip at a time; the report compares.
     from shorts.web import create_app
     client = create_app(settings, start_runner=False).test_client()
-    assert b"Check the judge" in client.get("/bench").data
+    # Not while Claude is still judging: the sample must spread over all blocks.
+    path = bench.root(settings) / "judge.json"
+    full = path.read_text()
+    path.write_text(json.dumps(dict(list(json.loads(full).items())[:1])))
+    assert b'href="/bench/check"' not in client.get("/bench").data
+    assert not (bench.root(settings) / "human-sample.json").exists()
+    path.write_text(full)
+    assert b'href="/bench/check"' in client.get("/bench").data
     page = client.get("/bench/check")
     assert page.status_code == 200 and b"/bench/strip/" in page.data
     item = json.loads((bench.root(settings) / "human-sample.json").read_text())[0]
