@@ -325,6 +325,8 @@ ADDED_COLUMNS = [
     ("shorts", "say", "TEXT"),                             # JSON {"on screen": "spoken"} for the voice (spoken.py)
     ("yt_sync", "subscribers", "INTEGER"),                 # channel subscriber count (Data API; None = hidden)
     ("yt_sync", "subscribers_at", "TEXT"),
+    ("blocks", "clip_start", "REAL"),                      # where in the source video a b-roll block starts (inpoint.py)
+    ("scenes", "pe", "BLOB"),                              # 3 Perception Encoder vectors, float16 (embed.py); b'' = unreadable
 ]
 
 

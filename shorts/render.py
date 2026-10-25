@@ -275,6 +275,10 @@ def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     looks.ensure_fonts({looks.resolve(channel.style).get("font")})
     lim = speed.limits()
     enc = media.video_encoder_args(settings.x264_preset, lim.x264_threads)
+    if settings.render_best_seconds:
+        from . import inpoint
+        with timing.timed(conn, "inpoint", short=short_id):
+            inpoint.fill(conn, settings, short_id)
     work, args, total, music = build_render(conn, settings, channel, short_id, enc)
     out = work / "short.mp4"
     with timing.timed(conn, "render", short=short_id, seconds_of_video=round(total, 1), encoder=enc[1]):
@@ -297,8 +301,8 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
     Returns (work folder, args, seconds, music)."""
     media.require_ffmpeg()
     blocks = [dict(r) for r in conn.execute(
-        """SELECT b.idx, b.text, b.seconds, b.scene_id, b.visual, sc.start, sc.end, sc.crop_x, a.path, a.width,
-                  a.height, a.source
+        """SELECT b.idx, b.text, b.seconds, b.scene_id, b.visual, b.clip_start, sc.start, sc.end, sc.crop_x, a.path,
+                  a.width, a.height, a.source
              FROM blocks b JOIN scenes sc ON sc.id = b.scene_id JOIN assets a ON a.id = sc.asset_id
             WHERE b.short_id = ? ORDER BY b.idx""", (short_id,))]
     if not blocks:
@@ -324,19 +328,19 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
 
     inputs, filters, offsets = [], [], {}
     for b in blocks:
-        # Consecutive blocks on the same scene continue where the previous one stopped.
-        off = offsets.get(b["scene_id"], 0.0)
-        start = b["start"] + off
+        # Consecutive blocks on the same scene continue where the previous one stopped. A b-roll
+        # clip's first block starts at its best seconds (inpoint.py), else at the scene start.
+        first = b["clip_start"] if settings.render_best_seconds and b["clip_start"] is not None else b["start"]
+        start = offsets.get(b["scene_id"], min(max(first, b["start"]), b["end"]))
         if start + b["seconds"] > b["end"] + 0.05:
             start = max(b["start"], b["end"] - b["seconds"])
-        offsets[b["scene_id"]] = off + b["seconds"]
+        offsets[b["scene_id"]] = start + b["seconds"]
         b["src_start"] = start
         # Never read past the scene's end: that is a cut to another shot (or a title card).
         b["avail"] = max(b["end"] - start, 0.1)
 
     plans = plan_motion(blocks) if settings.render_zoom else [None] * len(blocks)
-    topic = conn.execute("SELECT topic FROM shorts WHERE id=?", (short_id,)).fetchone()[0]
-    frames = _subject_paths(work, blocks, settings if settings.render_subject_crop else None, topic)
+    frames = _subject_paths(work, blocks, settings.render_subject_crop)
     for i, b in enumerate(blocks):
         if i and b["scene_id"] == blocks[i - 1]["scene_id"]:
             # Same shot as the block before: start where its window ended (no jump on the cut).
@@ -445,33 +449,26 @@ def sound_effects(blocks: list[dict], plans: list[dict | None]) -> list[str]:
     return out
 
 
-def block_subject(b: dict, topic: str | None) -> str | None:
-    """In words, what a block's crop should aim at: its visual, or the Short's topic on the hero shot."""
-    visual = (b.get("visual") or "").strip()
-    return visual if visual and visual.lower() != "hero" else (topic or None)
-
-
-def _subject_paths(work: Path, blocks: list[dict], settings: Settings | None = None,
-                   topic: str | None = None) -> list[dict]:
+def _subject_paths(work: Path, blocks: list[dict], follow: bool = True) -> list[dict]:
     """shorts/framing.py's subject path for every block (a few at once: each is one small ffmpeg
-    read), cached in the render folder so a re-render doesn't read them again. settings: aim each
-    crop at the block's subject with CLIP (None: saliency only)."""
+    read), cached in the render folder so a re-render doesn't read them again. Saliency and
+    faces only: aiming the crop at the block's words with CLIP (framing.text_guide) missed the
+    subject more often in the clip-quality research. follow=False: the scene's stored centre."""
     from concurrent.futures import ThreadPoolExecutor
     from . import framing
+    if not follow:
+        out = []
+        for b in blocks:
+            fw, _ = framing.window_fraction(b["width"] or W, b["height"] or H)
+            x = float(min(max(b["crop_x"] if b["crop_x"] is not None else 0.5, fw / 2), 1 - fw / 2))
+            out.append({"x0": x, "x1": x, "y0": 0.5, "y1": 0.5, "fy": 0.5, "whole": False})
+        return out
     cache = framing.load_cache(work)
-    encoder = None
-    if settings is not None:
-        from . import embed
-        try:
-            encoder = embed.get_encoder(settings)
-        except Exception as e:  # noqa: BLE001 - no CLIP: saliency still frames the shot
-            log.warning("CLIP not available for framing: %s", e)
 
     def one(b: dict) -> dict:
         return framing.subject_path(b["path"], b["src_start"], min(b["seconds"], b["avail"]),
                                     b["width"] or W, b["height"] or H,
-                                    b["crop_x"] if b["crop_x"] is not None else 0.5, cache,
-                                    block_subject(b, topic) if encoder is not None else None, encoder)
+                                    b["crop_x"] if b["crop_x"] is not None else 0.5, cache)
 
     with ThreadPoolExecutor(max_workers=max(1, min(4, len(blocks), os.cpu_count() or 1))) as pool:
         out = list(pool.map(one, blocks))

@@ -32,12 +32,16 @@ class Settings:
     render_sfx: bool = True           # render: soft whoosh on cuts, low hit on punch-ins (made by ffmpeg)
     render_grade: bool = True         # render: light colour grade per channel, cleanup of old SD film
     render_speed_ramps: bool = True   # render: nearly still shots without people play at 1.2x
-    render_subject_crop: bool = True  # render: aim the 9:16 crop at the block's subject (CLIP), whole frame if it won't fit
+    render_subject_crop: bool = True  # render: the 9:16 crop follows what stands out (saliency, faces), not the centre
+    render_best_seconds: bool = True  # render: a b-roll clip starts at its seconds that best match the block, not at the scene start
     script_sees_footage: bool = True  # script: Claude sees the hero frames and a clip menu, and picks a clip per block
     scene_detector: str = "fast"      # "fast" = one ffmpeg pass per video; "pyscenedetect" = the old way
     scene_fps: float = 10.0           # frames per second the fast scene detector looks at
     clip_model: str = "ViT-B-32"
     clip_pretrained: str = "laion2b_s34b_b79k"
+    pe_model: str = "PE-Core-B-16"    # Perception Encoder (open_clip): the new footage search and best seconds
+    pe_pretrained: str = "meta"
+    search_pe: bool = True            # footage search with PE on 3 frames per scene, once 90% of the library has them
     default_channel: str = "space"
     footage_root: Path | None = None  # 'footage_dir' in settings: downloaded videos (big); default data_dir/footage
     min_free_gb: float = 20.0         # downloads stop when the footage drive has less free space than this

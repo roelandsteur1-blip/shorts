@@ -9,7 +9,7 @@ from ..config import load_settings
 from . import load, root
 
 STAGES = ["testset", "frames", "embed", "asr", "rank", "judge", "clips", "clip-judge", "interest", "chains",
-          "report"]
+          "report", "calibrate"]
 # 'all': narration is only fetched for the videos some method ranks in its top 20 (re-reading
 # every video's audio from the archives would take hours), then everything is ranked again.
 ALL = ["frames", "embed", "rank", "asr", "rank", "judge", "clips", "clip-judge", "interest", "chains", "report"]
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     from ..server import load_env
     load_env(settings)  # the Claude token on the server, for the judge
     from .. import llm
-    from . import asr, chains, clips, frames, interest, judge, models, rank, report, testset
+    from . import asr, calibrate, chains, clips, frames, interest, judge, models, rank, report, testset
 
     if a.stage == "status":
         lines = load(root(settings) / "progress.json", {}) or {"-": {"stage": "not started", "done": 0, "total": 0}}
@@ -106,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
                        finder=chains.FINDER if chains.FINDER in a.finders.split(",") else None)
         elif stage == "report":
             print(report.build(settings))
+        elif stage == "calibrate":
+            calibrate.run(settings, ts)
         if stage in ("judge", "clip-judge") and llm.limit_reached():
             # Later stages on half the labels would only have to be redone: stop, continue later.
             logging.warning("Claude usage limit reached: stopping here. Start again after it resets; "

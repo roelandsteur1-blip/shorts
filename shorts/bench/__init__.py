@@ -16,6 +16,8 @@ database, so the daily run is never touched. Everything lands in data_dir/bench/
     chains    step 4: a sample of moments rendered three ways (today, winner, cheap) for a blind
               review on the dashboard (/bench/review)
     report    one table per job, with CPU cost (report.md)
+    calibrate (after the run, not in 'all') the new search's minimum match for shots.py, from
+              the judge's labels (calibrate.json)
 
 Each stage keeps its results in files and skips work already done, so a stopped run (or a Claude
 usage limit) continues where it was. `python -m shorts.bench status` says how far it is."""

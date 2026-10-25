@@ -22,6 +22,9 @@ class FakeEncoder:
     def images(self, paths):
         return np.stack([self._vec(str(Path(p).parent.name) + Path(p).name) for p in paths])
 
+    def arrays(self, images, pad=True):
+        return np.stack([self._vec("frame %d" % int(np.mean(i) // 8)) for i in images])
+
     def texts(self, texts):
         return np.stack([self._vec(t) for t in texts])
 
@@ -65,8 +68,10 @@ def no_clap():
 @pytest.fixture(autouse=True)
 def fake_encoder():
     embed.set_encoder(FakeEncoder())
+    embed.set_pe(FakeEncoder())
     yield
     embed.set_encoder(None)
+    embed.set_pe(None)
 
 
 def make_video(path: Path, seconds: int = 24) -> None:

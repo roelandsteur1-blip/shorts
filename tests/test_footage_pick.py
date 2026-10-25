@@ -1,6 +1,6 @@
 """On-topic footage and subject crop: the script writer sees a contact sheet and picks clips
 (shorts/menu.py, script.pick_clips), the fallback search never takes a poor match from another
-video (shots.MIN_MATCH), and the crop follows the block's words (framing.text_guide)."""
+video (shots.MIN_MATCH), and framing.text_guide (the bench still measures it; renders no longer use it)."""
 import json
 
 import cv2
@@ -122,7 +122,7 @@ class ColourEncoder:
         v = np.array([r, 1 - r], dtype=np.float32) + 1e-6
         return v / np.linalg.norm(v)
 
-    def arrays(self, images):
+    def arrays(self, images, pad=True):
         return np.stack([self._v(float(np.mean((i[:, :, 2] > 200) & (i[:, :, 1] < 50)))) for i in images])
 
     def texts(self, texts):
@@ -153,13 +153,6 @@ def test_whole_frame_when_the_subject_is_wider_than_the_window():
     assert framing.text_guide(frames, 1.0, "red", ColourEncoder()) is None  # nothing to aim sideways
 
 
-def test_render_aims_each_block_at_its_visual_or_the_topic():
-    from shorts.render import block_subject
-    assert block_subject({"visual": "fighter jet"}, "Jets") == "fighter jet"
-    assert block_subject({"visual": "hero"}, "Jets") == "Jets"
-    assert block_subject({"visual": None}, None) is None
-
-
 def test_subject_path_reads_real_frames(tmp_path, monkeypatch):
     """The crop must come from the video itself: a failing frame read used to be swallowed and
     every render quietly fell back to the old stored crop centre."""
@@ -173,3 +166,55 @@ def test_subject_path_reads_real_frames(tmp_path, monkeypatch):
                                query="red", encoder=ColourEncoder())
     assert not warnings
     assert res["motion"] is not None and res["x0"] != 0.123
+
+
+def test_in_point_is_the_best_matching_stretch():
+    from shorts import inpoint
+    times = [i * 0.5 for i in range(9)]                       # 0.0 .. 4.0
+    sims = np.array([0.1, 0.1, 0.1, 0.9, 0.9, 0.8, 0.1, 0.1, 0.1])
+    assert inpoint.best_start(times, sims, 4.5, 1.0) == 1.5   # frames at 1.5 and 2.0 score best
+    # The stretch must fit before the scene ends: a late peak pulls it as far as it can go.
+    late = np.array([0.1] * 8 + [0.9])
+    assert inpoint.best_start(times, late, 4.5, 2.0) == 2.5
+    assert inpoint.words("hero", "Saturn") == "Saturn" and inpoint.words("jet", "x") == "jet"
+
+
+def test_in_point_finds_the_subject_in_a_real_clip(tmp_path):
+    """3 s of grey, then 3 s of red: a 2 s block that asks for red starts where the red does."""
+    import subprocess
+    from shorts import inpoint
+    video = tmp_path / "v.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=gray:s=320x180:r=10:d=3",
+                    "-f", "lavfi", "-i", "color=c=red:s=320x180:r=10:d=3", "-filter_complex",
+                    "[0:v][1:v]concat=n=2:v=1[v]", "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    str(video)], check=True)
+    start = inpoint.choose(str(video), 0.0, 6.0, 2.0, "red", ColourEncoder(), 320, 180)
+    assert 2.5 <= start <= 3.5
+    assert inpoint.choose(str(video), 0.0, 2.3, 2.0, "red", ColourEncoder(), 320, 180) == 0.0  # no room
+
+
+def test_render_starts_b_roll_at_its_in_point(library, settings, channel, monkeypatch):
+    from conftest import fake_claude
+    from shorts import pipeline, render
+    fake_claude(monkeypatch)
+    sid = pipeline.make(library, settings, channel, count=1)[0]
+    rows = library.execute(
+        """SELECT b.idx, b.scene_id, b.clip_start, b.seconds, sc.start, sc.end, s.hero_scene_id
+             FROM blocks b JOIN scenes sc ON sc.id = b.scene_id JOIN shorts s ON s.id = b.short_id
+            WHERE b.short_id=? ORDER BY b.idx""", (sid,)).fetchall()
+    assert rows[0]["clip_start"] is None                       # the hook keeps the hero's timing
+    broll = [r for r in rows if r["scene_id"] != r["hero_scene_id"]]
+    assert broll and all(r["clip_start"] is not None and r["start"] <= r["clip_start"] <= r["end"]
+                         for r in broll)
+    # Render reads the clip from there (when the block fits before the scene ends).
+    b = next(r for r in broll if r["end"] - r["start"] >= r["seconds"] + 1)
+    at = b["start"] + 0.75
+    library.execute("UPDATE blocks SET clip_start=? WHERE short_id=? AND idx=?", (at, sid, b["idx"]))
+    library.commit()
+
+    def starts():
+        args = render.build_render(library, settings, channel, sid, ["-c:v", "libx264"])[1]
+        return [float(args[i + 1]) for i, a in enumerate(args) if a == "-ss"]
+    assert abs(starts()[b["idx"]] - min(at, b["end"] - b["seconds"])) < 0.01
+    settings.render_best_seconds = False
+    assert abs(starts()[b["idx"]] - b["start"]) < 0.01

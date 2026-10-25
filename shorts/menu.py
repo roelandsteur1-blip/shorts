@@ -49,14 +49,14 @@ def library_scenes(conn: sqlite3.Connection, settings: Settings, channel: Channe
         return []
     a = conn.execute("SELECT title, keywords FROM assets WHERE id=?", (hero["asset_id"],)).fetchone()
     text = f"{a['title'] or ''}. {(a['keywords'] or '')[:150]}".strip(". ")
-    q = embed.get_encoder(settings).texts([text or "archive footage"])[0]
-    if hero["embedding"] is not None:
-        img = np.frombuffer(hero["embedding"], dtype=np.float32)
-        if img.shape == q.shape:
-            q = q + img
-            q = q / (np.linalg.norm(q) or 1.0)
+    space = embed.search_space(conn, settings)
+    q = embed.query_encoder(settings, space).texts([text or "archive footage"])[0]
+    img = embed.scene_vector(conn, space, hero["id"])
+    if img is not None and img.shape == q.shape:
+        q = q + img
+        q = q / (np.linalg.norm(q) or 1.0)
     allowed = fit.allowed_scenes(conn, channel) if channel else None
-    hits = embed.search(conn, settings, text, k=want * 6, exclude=exclude, allowed=allowed, qvec=q)
+    hits = embed.search(conn, settings, text, k=want * 6, exclude=exclude, allowed=allowed, qvec=q, space=space)
     if not hits:
         return []
     ids = [sid for sid, _ in hits]

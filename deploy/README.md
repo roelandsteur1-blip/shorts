@@ -64,6 +64,20 @@ Install Tailscale on the laptop and phone with the same account; the dashboard i
 - Connect a YouTube channel: run `ssh -i KEY -L 8765:localhost:8765 SERVER` on the laptop, click
   Connect YouTube on the dashboard and open the login link from the job page in the laptop's browser.
 
+## New footage search (once)
+
+The footage search uses Perception Encoder B/16 on 3 frames per scene (the clip-quality research's
+winner, project files: research/clip-quality.md). The library needs its vectors once, about a day
+on this server at the lowest CPU priority; search switches over by itself at 90%, and new footage
+gets its vectors when it comes in. The Library page shows how far it is.
+
+```bash
+bash deploy/pe-embed.sh start     # continues where a stopped run was
+bash deploy/pe-embed.sh status
+```
+
+Turn it off with `search_pe = false` in settings (CLIP search as before).
+
 ## Clip quality bench (research, optional)
 
 `shorts/bench` measures which ways of finding, timing and cropping clips work best (plan in the

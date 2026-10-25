@@ -1,5 +1,7 @@
 {% extends "base.html" %}{% block title %}Library{% endblock %}{% block body %}
 <h1>Footage library</h1>
+<p class="muted" id="search-model">Footage search: {% if space == "pe" %}the new search (Perception Encoder, 3 frames per scene){% else %}CLIP{% endif %}.
+{% if pe.share < 1 %}New search ready for {{ pe.ready }} of {{ pe.scenes }} scenes ({{ (pe.share * 100) | round | int }}%){% if space != "pe" %}; it takes over at {{ (pe_ready * 100) | int }}%{% endif %}.{% endif %}</p>
 <h2>Per channel</h2>
 <p class="muted">Claude sorts every video against each channel's niche (one call per 40 videos, for all channels at once).
 A channel only uses videos that fit it; categories below only decide where new footage is searched.</p>

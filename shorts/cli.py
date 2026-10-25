@@ -43,7 +43,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("dedupe", help="1. find re-published copies already in the library (run once after updating)")
     sub.add_parser("scenes", help="1. cut downloaded videos into scenes and score them")
-    sub.add_parser("embed", help="1. make scenes searchable (CLIP)")
+    pe = sub.add_parser("embed", help="1. make scenes searchable (CLIP, and the new search for new scenes)")
+    pe.add_argument("--pe", action="store_true",
+                    help="the new search's vectors for every scene that lacks them (once, ~a day: deploy/pe-embed.sh)")
+    pe.add_argument("--pe-status", action="store_true", help="how much of the library the new search covers")
+    pe.add_argument("--threads", type=int, help="with --pe: CPU threads for the model")
+    pe.add_argument("--limit", type=int, help="with --pe: at most this many scenes")
 
     pm = sub.add_parser("make", help="2-5. hero shots -> scripts -> footage -> render")
     pm.add_argument("-n", "--count", type=int, default=5)
@@ -146,8 +151,19 @@ def main(argv: list[str] | None = None) -> int:
         from .scenes import process_all
         print(f"{process_all(conn, settings)} scenes")
     elif args.cmd == "embed":
-        from .embed import embed_pending
-        print(f"embedded {embed_pending(conn, settings)} scenes")
+        from . import embed
+        if args.pe_status:
+            st = embed.pe_status(conn)
+            print(f"new search: {st['ready']} of {st['scenes']} scenes ready ({st['share']:.0%} done, "
+                  f"{st['unreadable']} unreadable); search uses it from {embed.PE_READY:.0%} on, "
+                  f"now: {embed.search_space(conn, settings)}")
+        elif args.pe:
+            if n := embed.import_bench_pe(conn, settings):
+                print(f"took {n} scenes' vectors from the clip-quality bench")
+            n = embed.embed_pe(conn, settings, limit=args.limit, threads=args.threads)
+            print(f"embedded {n} scenes for the new search")
+        else:
+            print(f"embedded {embed.embed_pending(conn, settings)} scenes")
     elif args.cmd == "make":
         from .pipeline import make
         done = make(conn, settings, channel, args.count, args.format_id, restock=not args.no_restock)

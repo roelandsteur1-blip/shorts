@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, send_file, url_for
 
-from .. import categorize, fit
+from .. import categorize, embed, fit
 from ..library import shorts_left
 from .common import channels, conn, settings
 from .jobs import start_job
@@ -37,7 +37,8 @@ def index():
         per_channel.append({"ch": ch, "fits": yes, "no": no, "left": shorts_left(c, settings(), ch),
                             "waiting": sum(ch in v for v in waiting.values())})
     return render_template("library.html", cats=cats, counts=counts, left=left,
-                           unsorted=unsorted, methods=methods, per_channel=per_channel)
+                           unsorted=unsorted, methods=methods, per_channel=per_channel,
+                           pe=embed.pe_status(c), space=embed.search_space(c, settings()), pe_ready=embed.PE_READY)
 
 
 @bp.get("/library/channel/<cid>")
