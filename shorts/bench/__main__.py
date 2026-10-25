@@ -8,10 +8,11 @@ import sys
 from ..config import load_settings
 from . import load, root
 
-STAGES = ["testset", "frames", "embed", "asr", "rank", "judge", "clips", "clip-judge", "interest", "report"]
+STAGES = ["testset", "frames", "embed", "asr", "rank", "judge", "clips", "clip-judge", "interest", "chains",
+          "report"]
 # 'all': narration is only fetched for the videos some method ranks in its top 20 (re-reading
 # every video's audio from the archives would take hours), then everything is ranked again.
-ALL = ["frames", "embed", "rank", "asr", "rank", "judge", "clips", "clip-judge", "interest", "report"]
+ALL = ["frames", "embed", "rank", "asr", "rank", "judge", "clips", "clip-judge", "interest", "chains", "report"]
 POOL_SIZE = 30
 
 
@@ -31,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--blocks", type=int, default=60)
     p.add_argument("--library", type=int, default=4000, help="scenes in the bench library")
     p.add_argument("--clips", type=int, default=40, help="clips for the seconds and crop tests")
+    p.add_argument("--moments", type=int, default=20, help="moments rendered three ways for the blind review")
     p.add_argument("--threads", type=int, default=4, help="CPU threads for the models (leave some for the daily run)")
     p.add_argument("--models", help="comma separated, default: all (see shorts/bench/models.py)")
     p.add_argument("--finders", default="yoloe,yoloworld,omdet,u2netp")
@@ -46,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     from .. import bench
     if a.smoke:
         bench.FOLDER = "bench-smoke"
-        a.blocks, a.library, a.clips = 4, 300, 3
+        a.blocks, a.library, a.clips, a.moments = 4, 300, 3, 2
         a.models = a.models or "clip-b32,siglip2-b16"
         a.finders = "u2netp"
         a.judge_limit = 2 if a.judge_limit is None else a.judge_limit
@@ -56,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     from ..server import load_env
     load_env(settings)  # the Claude token on the server, for the judge
     from .. import llm
-    from . import asr, clips, frames, interest, judge, models, rank, report, testset
+    from . import asr, chains, clips, frames, interest, judge, models, rank, report, testset
 
     if a.stage == "status":
         lines = load(root(settings) / "progress.json", {}) or {"-": {"stage": "not started", "done": 0, "total": 0}}
@@ -93,6 +95,15 @@ def main(argv: list[str] | None = None) -> int:
             clips.run_judge(settings, ts, a.judge_limit, a.judge_every)
         elif stage == "interest":
             interest.run(settings, ts, load(root(settings) / "judge.json", {}), a.threads)
+        elif stage == "chains":
+            names_ok = [n for n in names if models.emb_path(settings, n).exists()]
+            if not names_ok:
+                logging.warning("no embeddings yet: run the embed stage first")
+                continue
+            search = chains.SEARCH if chains.MATCH in names_ok else f"{names_ok[-1]}/max3+meta"
+            match = chains.MATCH if chains.MATCH in names_ok else names_ok[-1]
+            chains.run(settings, ts, a.moments, a.threads, search, match,
+                       finder=chains.FINDER if chains.FINDER in a.finders.split(",") else None)
         elif stage == "report":
             print(report.build(settings))
         if stage in ("judge", "clip-judge") and llm.limit_reached():

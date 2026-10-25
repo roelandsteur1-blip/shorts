@@ -169,6 +169,16 @@ def build(settings) -> str:
                   f"\"clearly on topic or not\": {_f(same2)}. Judge's interest for clips Roeland would keep "
                   f"watching: {np.mean(yes) if yes else float('nan'):.1f}, for the rest: "
                   f"{np.mean(no) if no else float('nan'):.1f}.", ""]
+    picks = load(r / "review.json", {})
+    if picks:
+        n = len(picks)
+        counts = {c: sum(1 for v in picks.values() if v == c) for c in ("today", "winner", "cheap", "same")}
+        lines += ["## Blind review: which version Roeland picked", "",
+                  "today = the pipeline's clip from the start of the scene, text-guided crop; winner = PE B/16 "
+                  "search, best-matching seconds, YOLOE crop; cheap = same clip, middle seconds, saliency crop.", "",
+                  "| Version | picked |", "|---|---|"]
+        lines += [f"| {c} | {counts[c]} of {n} ({_f(counts[c] / n)}) |" for c in counts]
+        lines.append("")
     asr_meta = load(r / "asr-meta.json", {})
     if asr_meta:
         ok = [m for m in asr_meta.values() if "asr_s" in m]

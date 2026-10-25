@@ -11,5 +11,9 @@
 <a class="button primary" href="/bench/check">{{ 'Continue' if done else 'Start' }}</a>
 {% else %}<p class="muted">Available once Claude has labelled the clips.</p>{% endif %}
 </div>
+{% if review_total %}<div class="card"><h3 style="margin-top:0">Blind review</h3>
+<p>{{ review_total }} moments from your Shorts, each shown three ways (which clip, which seconds, which crop) in a shuffled order. Pick the one you'd rather have in the Short, about 10 minutes. {{ review_done }} of {{ review_total }} done.</p>
+{% if review_done < review_total %}<a class="button primary" href="/bench/review">{{ 'Continue' if review_done else 'Start' }}</a>{% endif %}
+</div>{% endif %}
 {% if report %}<div class="card"><h3 style="margin-top:0">Results so far</h3><pre class="log" style="max-height:none">{{ report }}</pre></div>{% endif %}
 {% endblock %}

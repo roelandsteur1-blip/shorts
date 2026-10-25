@@ -13,6 +13,8 @@ database, so the daily run is never touched. Everything lands in data_dir/bench/
     clips     for ~40 good clips: which seconds and which 9:16 crop each method picks
     clip-judge  Claude rates those seconds and crops
     interest  cheap "worth watching" scores vs Claude's interest ratings
+    chains    step 4: a sample of moments rendered three ways (today, winner, cheap) for a blind
+              review on the dashboard (/bench/review)
     report    one table per job, with CPU cost (report.md)
 
 Each stage keeps its results in files and skips work already done, so a stopped run (or a Claude

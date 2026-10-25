@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% block title %}Blind review{% endblock %}{% block body %}
+<h1>Blind review <span class="muted">{{ done + 1 }} / {{ total }}</span></h1>
+<div class="card">
+<p class="muted">The Short is about: {{ item.topic or '?' }}</p>
+<p style="font-size:18px">The writer asked for footage of: <b>{{ item.visual }}</b></p>
+<p class="muted">Caption in the Short at this moment: "{{ item.text }}"</p>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:720px">
+{% for l in letters %}<div style="text-align:center"><video src="/bench/clip/{{ key }}/{{ l }}.mp4" autoplay loop muted playsinline style="width:100%;border-radius:8px;background:#000"></video><b>{{ l }}</b></div>
+{% endfor %}</div>
+<p class="muted">The same moment three ways, each as long as it lasts in the Short, on a loop.</p>
+<form method="post" action="/bench/review">
+<input type="hidden" name="block" value="{{ key }}">
+<p><b>Which one would you rather have in the Short?</b></p>
+{% for l in letters %}<label><input type="radio" name="best" value="{{ l }}" required> {{ l }}</label>
+{% endfor %}<label><input type="radio" name="best" value="same"> About the same</label>
+<p><button class="primary">Next</button> <a href="/bench" class="muted">stop for now</a></p>
+</form>
+</div>
+{% endblock %}

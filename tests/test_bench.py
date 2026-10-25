@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from shorts import bench, llm
-from shorts.bench import clips, frames, interest, judge, metrics, models, rank, report, testset
+from shorts.bench import chains, clips, frames, interest, judge, metrics, models, rank, report, testset
 
 
 class FakeModel:
@@ -48,6 +48,7 @@ def bench_run(settings, shorts_made, monkeypatch):
     monkeypatch.setattr(bench, "FOLDER", "bench-test")
     monkeypatch.setattr(models, "Encoder", FakeModel)
     monkeypatch.setattr(clips, "Encoder", FakeModel)
+    monkeypatch.setattr(chains, "Encoder", FakeModel)
     monkeypatch.setattr(models, "MODELS", {"clip-b32": models.MODELS["clip-b32"],
                                            "siglip2-b16": models.MODELS["siglip2-b16"]})
     monkeypatch.setattr(clips, "MODELS", models.MODELS)
@@ -115,6 +116,19 @@ def test_bench_end_to_end(bench_run, monkeypatch):
     res = interest.run(settings, ts, labels, threads=1, aesthetic=False)
     assert "sharpness" in res["scores"] and "prompts:siglip2-b16" in res["scores"]
 
+    # Step 4: moments rendered three ways for the blind review.
+    class Finder:
+        def find(self, frames, words):
+            return (0.1, 0.2, 0.3, 0.8, 0.9)
+    monkeypatch.setattr(chains, "load_finder", lambda name: Finder())
+    made = chains.run(settings, ts, n=2, threads=1, search="siglip2-b16/max3+meta", match="siglip2-b16")
+    assert made and all(set(m["chains"]) == set(chains.CHAINS) for m in made.values())
+    for key, m in made.items():
+        assert m["chains"]["winner"]["crop"]["found"] and m["chains"]["winner"]["sid"] == m["chains"]["cheap"]["sid"]
+        for c in chains.CHAINS:
+            assert chains.clip_file(settings, key, c).stat().st_size > 1000
+    assert chains.run(settings, ts, n=2, threads=1, search="siglip2-b16/max3+meta", match="siglip2-b16") == made
+
     text = report.build(settings)
     for heading in ("On topic", "The right seconds", "The right crop", "Visually interesting"):
         assert heading in text
@@ -138,6 +152,20 @@ def test_bench_end_to_end(bench_run, monkeypatch):
     r = client.post("/bench/check", data={"block": item["block"], "sid": item["sid"], "topic": "2", "watch": "1"})
     assert r.status_code == 302
     assert "agree with Roeland" in report.build(settings)
+
+    # The blind review: letters only, every moment once, the pick lands in the report.
+    assert b'href="/bench/review"' in client.get("/bench").data
+    for _ in made:
+        page = client.get("/bench/review")
+        key = page.data.split(b'name="block" value="')[1].split(b'"')[0].decode()
+        assert b"winner" not in page.data and b"today" not in page.data
+        r = client.get(f"/bench/clip/{key}/A.mp4")
+        assert r.status_code == 200 and r.mimetype == "video/mp4"
+        letter = next(k for k, v in chains.letters(key).items() if v == "winner")
+        assert client.post("/bench/review", data={"block": key, "best": letter}).status_code == 302
+    assert client.get("/bench/review").status_code == 302
+    assert client.get("/bench/clip/1/Z.mp4").status_code == 404
+    assert f"| winner | {len(made)} of {len(made)}" in report.build(settings)
 
 
 def test_judge_survives_the_usage_limit(bench_run, monkeypatch):

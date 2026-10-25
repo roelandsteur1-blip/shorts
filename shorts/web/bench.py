@@ -49,8 +49,10 @@ def index():
     r = root(settings())
     report = (r / "report.md").read_text(encoding="utf-8") if (r / "report.md").exists() else None
     human = load(r / "human.json", {})
+    from ..bench import chains
     return render_template("bench.html", progress=load(r / "progress.json", {}), report=report,
-                           done=len(human), total=len(_sample()))
+                           done=len(human), total=len(_sample()),
+                           review_done=len(load(r / "review.json", {})), review_total=len(load(chains.path(settings()), {})))
 
 
 @bp.get("/bench/check")
@@ -84,3 +86,44 @@ def strip_image(sid: int):
     if not any(f is not None for f in frames):
         abort(404)
     return jpeg(strip(frames, "")), 200, {"Content-Type": "image/jpeg", "Cache-Control": "max-age=86400"}
+
+
+@bp.get("/bench/review")
+def review():
+    """Step 4: the same moment three ways (shorts/bench/chains.py), under letters only."""
+    from ..bench import chains
+    data = load(chains.path(settings()), {})
+    picks = load(root(settings()) / "review.json", {})
+    todo = [k for k in data if k not in picks]
+    if not todo:
+        return redirect(url_for("bench.index"))
+    key = todo[0]
+    return render_template("bench_review.html", key=key, item=data[key], letters=sorted(chains.letters(key)),
+                           done=len(data) - len(todo), total=len(data))
+
+
+@bp.post("/bench/review")
+def save_review():
+    from ..bench import chains
+    key, best = request.form.get("block", ""), request.form.get("best", "")
+    order = chains.letters(key)
+    if best != "same" and best not in order:
+        abort(400)
+    path = root(settings()) / "review.json"
+    picks = load(path, {})
+    picks[key] = order.get(best, "same")
+    save(path, picks)
+    return redirect(url_for("bench.review"))
+
+
+@bp.get("/bench/clip/<int:block>/<letter>.mp4")
+def review_clip(block: int, letter: str):
+    """By letter, not by version name: the address must not give the answer away."""
+    from flask import send_file
+
+    from ..bench import chains
+    chain = chains.letters(block).get(letter)
+    f = chains.clip_file(settings(), block, chain) if chain else None
+    if f is None or not f.exists():
+        abort(404)
+    return send_file(f, mimetype="video/mp4", conditional=True, max_age=86400)

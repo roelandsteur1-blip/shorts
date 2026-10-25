@@ -5,6 +5,7 @@
 #
 #   bash deploy/bench.sh smoke     set up (first time) + a 5-10 minute trial run on 4 blocks
 #   bash deploy/bench.sh start     the real run (all stages; continues where a stopped run was)
+#   bash deploy/bench.sh review    the blind-review clips after a finished run (/bench/review)
 #   bash deploy/bench.sh status    how far it is, and the last log lines
 #   bash deploy/bench.sh stop
 set -euo pipefail
@@ -51,6 +52,13 @@ case "${1:-status}" in
     nohup nice -n 19 "$PY" -m shorts.bench all >> "$LOG" 2>&1 &
     echo "Started in the background. Progress: bash deploy/bench.sh status"
     ;;
+  review)
+    # Step 4 after a finished run: the blind-review clips (shorts/bench/chains.py).
+    setup
+    if running; then echo "Already running. bash deploy/bench.sh status"; exit 0; fi
+    nohup nice -n 19 "$PY" -m shorts.bench chains >> "$LOG" 2>&1 &
+    echo "Rendering the blind review in the background. Progress: bash deploy/bench.sh status"
+    ;;
   status)
     if running; then echo "RUNNING"; else echo "not running"; fi
     [ -x "$PY" ] && "$PY" -m shorts.bench status || true
@@ -60,6 +68,6 @@ case "${1:-status}" in
     pkill -f -- "-m shorts\.bench" && echo "stopped" || echo "was not running"
     ;;
   *)
-    echo "usage: bash deploy/bench.sh smoke|start|status|stop"; exit 1
+    echo "usage: bash deploy/bench.sh smoke|start|review|status|stop"; exit 1
     ;;
 esac
