@@ -14,9 +14,10 @@ SAME_VIDEO_BONUS = 0.05  # preference for staying with the hero's video (same su
 MIN_MATCH = 0.22  # CLIP text-image similarity below which a scene from another video isn't on topic
 # (ViT-B-32: matching pairs score about 0.25-0.35, unrelated ones 0.10-0.20). Below it, the block
 # stays in the hero's own video, or on the hero shot.
-MIN_MATCH_PE = 0.10  # the same for the Perception Encoder search: keeps as many of the clips the
-# bench's judge rated clearly on topic as CLIP's 0.22 did (python -m shorts.bench calibrate)
-BONUS_SCALE = {"clip": 1.0, "pe": 1.0}  # the bonuses above in each search's score spread
+MIN_MATCH_PE = 0.208  # the same for the Perception Encoder search. Measured on 1,793 clips the
+# bench's judge labelled (python -m shorts.bench calibrate, 25 Oct): CLIP's 0.22 keeps 98% of the
+# clearly on-topic ones and 80% of the off-topic ones; this keeps 98% and 75%.
+BONUS_SCALE = {"clip": 1.0, "pe": 0.79}  # PE scores spread 0.79x as wide as CLIP's per query
 
 
 def assign(conn: sqlite3.Connection, settings: Settings, short_id: int,
