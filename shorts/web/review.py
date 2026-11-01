@@ -43,6 +43,20 @@ def index():
                            channel=channel, channels=channels())
 
 
+@bp.post("/review/approve-all")
+def approve_all():
+    """Approve every Short waiting for review (only the chosen channel's when filtered)."""
+    channel = request.form.get("channel") or None
+    sql, args = "SELECT id FROM shorts WHERE status='rendered'", []
+    if channel:
+        sql += " AND channel=?"
+        args.append(channel)
+    c = conn()
+    for (sid,) in c.execute(sql, args).fetchall():
+        db.set_short(c, sid, status="approved")
+    return redirect(url_for("review.index", channel=channel))
+
+
 @bp.get("/short/<int:sid>")
 def short(sid: int):
     c = conn()

@@ -144,3 +144,19 @@ def test_sources_status_and_test_button(client, settings, monkeypatch):
     page = client.get("/sources").get_data(as_text=True)
     assert "Connected" in page and "Failing" in page and "Test all" in page
     assert "1 of 6 archives connected" in page
+
+
+def test_accept_all_approves_shorts_waiting_for_review(client, conn):
+    def add(channel, status):
+        return conn.execute("INSERT INTO shorts (channel, format_id, status) VALUES (?, 'f', ?)",
+                            (channel, status)).lastrowid
+    a, b, other, rej = add("space", "rendered"), add("space", "rendered"), add("history", "rendered"), add("space", "rejected")
+    conn.commit()
+    assert b"Accept all (3)" in client.get("/review").data
+    assert b"Accept all" not in client.get("/review?status=approved").data
+    r = client.post("/review/approve-all", data={"channel": "space"})
+    assert r.status_code == 302 and "channel=space" in r.headers["Location"]
+    status = dict(conn.execute("SELECT id, status FROM shorts").fetchall())
+    assert (status[a], status[b], status[other], status[rej]) == ("approved", "approved", "rendered", "rejected")
+    client.post("/review/approve-all", data={"channel": ""})
+    assert conn.execute("SELECT status FROM shorts WHERE id=?", (other,)).fetchone()[0] == "approved"

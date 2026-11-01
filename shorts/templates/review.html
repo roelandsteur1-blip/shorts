@@ -5,6 +5,11 @@
 <p>{% for st, label in [('rendered','To review'),('approved','Approved'),('scheduled','Scheduled'),('uploaded','Uploaded'),('rejected','Rejected'),('failed','Failed')] %}
 <a href="/review?status={{ st }}{% if channel %}&channel={{ channel }}{% endif %}" class="{{ 'on' if st == status }}">{{ label }} ({{ counts.get(st, 0) }})</a> &nbsp;
 {% endfor %}</p>
+{% if status == 'rendered' and shorts %}
+<form method="post" action="/review/approve-all"
+ onsubmit="return confirm('Approve all {{ shorts|length }} Shorts waiting for review{% if channel %} on this channel{% endif %}? They will be uploaded like any approved Short.')">
+<input type="hidden" name="channel" value="{{ channel or '' }}"><button class="primary">Accept all ({{ shorts|length }})</button></form>
+{% endif %}
 <table><tr><th>#</th><th>Channel</th><th>Title</th><th>Hook</th><th>Length</th></tr>
 {% for s in shorts %}<tr>
 <td><a href="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">{{ s.id }}</a></td><td>{{ s.channel }}</td>
