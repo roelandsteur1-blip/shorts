@@ -1,0 +1,38 @@
+# Searches that find which Shorts get the most views right now. Each search costs 100 API units.
+# niche = one of our 10 channels; "general" = any faceless format, to see the meta outside our niches.
+
+[[q]]
+niche = "space"
+terms = ["space facts", "universe planets black hole"]
+[[q]]
+niche = "history"
+terms = ["history facts", "ancient history rare photos"]
+[[q]]
+niche = "body"
+terms = ["human body facts", "what happens to your body"]
+[[q]]
+niche = "earthquake"
+terms = ["earthquake tsunami volcano", "natural disaster caught on camera"]
+[[q]]
+niche = "ocean"
+terms = ["deep sea creatures", "ocean facts"]
+[[q]]
+niche = "oldcity"
+terms = ["old city then and now", "ancient city history"]
+[[q]]
+niche = "warplane"
+terms = ["fighter jet military aircraft", "ww2 planes history"]
+[[q]]
+niche = "retrotech"
+terms = ["old technology retro", "vintage inventions how it worked"]
+[[q]]
+niche = "weather"
+terms = ["extreme weather tornado", "weather facts storm"]
+[[q]]
+niche = "planet"
+terms = ["wild animals facts", "nature planet earth animals"]
+[[q]]
+niche = "general"
+terms = ["what if", "did you know facts", "ai animation story", "top 5 ranking",
+         "pov you are living in", "satisfying process how it's made", "story time reddit",
+         "guess the quiz", "before and after transformation", "explained in 60 seconds"]
