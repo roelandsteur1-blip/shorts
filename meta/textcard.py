@@ -66,12 +66,15 @@ Write {n} posts. Rules:
   at the end.
 - The first words must create curiosity (e.g. "In 1977, a signal from deep space lasted 72 seconds...").
 - End on the most surprising part, so the viewer wants to watch again.
-- Each post needs an archive video that fits. Describe it as a short visual search query of what
-  can be SEEN (e.g. "radio telescope dish", "Saturn rings", "B-17 bomber in flight"), not an idea.
+- Each post needs an archive video that fits. Our library is mostly NASA, US government and
+  1920s-1970s public-domain film. Give two short visual search queries of what can be SEEN: a
+  specific one ("B-17 bomber in flight") and a broader one that old archive film surely has
+  ("WWII bomber plane"). Prefer subjects such footage can show.
 - Different subjects for every post. Avoid: {avoid}.
 
 Return JSON only:
-{{"posts": [{{"text": "...", "highlight": ["1-3 key words from the text"], "visual": "...",
+{{"posts": [{{"text": "...", "highlight": ["1-3 key words from the text"],
+"visual": "specific query", "visual_broad": "broader query",
 "title": "YouTube title, a question or claim, max 60 characters",
 "source": "where this fact is documented"}}]}}"""
 
@@ -137,19 +140,69 @@ def seconds_for(text: str) -> float:
     return max(6.0, min(15.0, len(text.split()) / 2.7 + 1.5))
 
 
-def find_clip(conn, settings, query: str, used: set[int], need: float):
-    """Best scene for the query whose video file exists and runs long enough from the scene start."""
+CHECK = """You check short "did you know" posts before they are published on a {topic} channel.
+For each post you get its text and up to {k} candidate video frames, labelled like P2-3 (post 2,
+candidate 3), in the order listed below.
+
+For every post:
+1. Fact check. Is every claim, name, date and number correct? If something is wrong but a small
+   edit makes the post correct, give the corrected full text in "fix". If unsure, facts_ok=false.
+2. Footage. Pick the candidate frame that clearly shows the post's subject, or exactly the kind of
+   thing it names (any WWII bomber is fine for a story about a WWII bomber; a ship is NOT fine for
+   a story about wind). A viewer must never feel the video is unrelated. If none fits, null.
+3. Duplicate: true if the post has the same subject as an earlier post in this list.
+
+Posts:
+{posts}
+
+Return JSON only: {{"checks": [{{"post": 1, "facts_ok": true, "fix": "", "clip": "P1-2", "duplicate": false}}]}}"""
+
+
+def find_clips(conn, settings, queries: list[str], used: set[int], need: float, per_query: int = 2) -> list[dict]:
+    """Up to per_query scenes for each query whose video file exists, is landscape and runs long
+    enough from the scene start."""
     from shorts import embed
-    for sid, score in embed.search(conn, settings, query, k=40, exclude=used):
-        r = conn.execute("""SELECT sc.id, sc.start, sc.end, a.path, a.duration, a.title, a.source, a.width,
-                                   a.height FROM scenes sc JOIN assets a ON a.id = sc.asset_id
-                             WHERE sc.id=?""", (sid,)).fetchone()
-        if not r or not r["path"] or not Path(r["path"]).exists():
-            continue
-        if (r["duration"] or 0) - r["start"] < need or (r["width"] or 0) < (r["height"] or 1):
-            continue
-        return dict(r) | {"score": round(score, 3)}
-    return None
+    out, seen = [], set(used)
+    for query in filter(None, queries):
+        got = 0
+        for sid, score in embed.search(conn, settings, query, k=40, exclude=seen):
+            r = conn.execute("""SELECT sc.id, sc.start, sc.end, sc.keyframe, a.path, a.duration, a.title,
+                                       a.source, a.width, a.height
+                                  FROM scenes sc JOIN assets a ON a.id = sc.asset_id WHERE sc.id=?""",
+                             (sid,)).fetchone()
+            if not r or not r["path"] or not Path(r["path"]).exists():
+                continue
+            if not r["keyframe"] or not Path(r["keyframe"]).exists():
+                continue
+            if (r["duration"] or 0) - r["start"] < need or (r["width"] or 0) < (r["height"] or 1):
+                continue
+            seen.add(sid)
+            out.append(dict(r) | {"score": round(score, 3), "query": query})
+            got += 1
+            if got >= per_query:
+                break
+    return out
+
+
+def black_bars(path: str, start: float) -> str | None:
+    """ffmpeg crop filter that removes black bars around old film, or None when there are none."""
+    import subprocess
+    p = subprocess.run(["ffmpeg", "-hide_banner", "-ss", f"{start + 0.5:.2f}", "-t", "2", "-i", path,
+                        "-vf", "cropdetect=limit=24:round=2", "-f", "null", "-"],
+                       capture_output=True, text=True, errors="replace")
+    found = re.findall(r"crop=(\d+):(\d+):(\d+):(\d+)", p.stderr)
+    if not found:
+        return None
+    w, h, x, y = map(int, found[-1])
+    probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                            "stream=width,height", "-of", "csv=p=0", path], capture_output=True, text=True)
+    try:
+        fw, fh = map(int, probe.stdout.strip().split(",")[:2])
+    except ValueError:
+        return None
+    if w * h > 0.96 * fw * fh or w < fw * 0.5 or h < fh * 0.5:
+        return None
+    return f"crop={w}:{h}:{x}:{y}"
 
 
 def pick_track(conn):
@@ -160,7 +213,11 @@ def pick_track(conn):
 
 def render(card: Image.Image, clip: dict, track, seconds: float, out: Path) -> None:
     from shorts import media
-    vid_h = int(W * clip["height"] / clip["width"]) // 2 * 2
+    crop = black_bars(clip["path"], clip["start"])
+    cw, ch = (clip["width"], clip["height"])
+    if crop:
+        cw, ch = map(int, crop.split("=")[1].split(":")[:2])
+    vid_h = min(int(W * ch / cw), 1000) // 2 * 2
     total = card.height + 24 + vid_h
     top = max(240, (H - total) // 2 - 60)  # a little above centre: bottom of the screen has the UI
     canvas = Image.new("RGB", (W, H), (0, 0, 0))
@@ -173,7 +230,7 @@ def render(card: Image.Image, clip: dict, track, seconds: float, out: Path) -> N
         args += ["-ss", f"{track['start'] or 0:.2f}", "-t", f"{seconds:.2f}", "-i", track["path"]]
     else:
         args += ["-f", "lavfi", "-t", f"{seconds:.2f}", "-i", "anullsrc=r=48000:cl=stereo"]
-    fc = (f"[1:v]scale={W}:{vid_h},setsar=1,fps=30[v];"
+    fc = (f"[1:v]{crop + ',' if crop else ''}scale={W}:{vid_h},setsar=1,fps=30[v];"
           f"[0:v][v]overlay=0:{top + card.height + 24}:shortest=1,format=yuv420p[out];"
           f"[2:a]volume=0.55,aresample=48000[a]")
     args += ["-filter_complex", fc, "-map", "[out]", "-map", "[a]", "-t", f"{seconds:.2f}",
@@ -199,33 +256,55 @@ def make(niche: str, n: int, seed_avoid: list[str]) -> list[dict]:
     done_file = OUT / "made.json"
     made = json.loads(done_file.read_text(encoding="utf-8")) if done_file.exists() else []
     avoid = [m["title"] for m in made if m["niche"] == niche] + seed_avoid
-    log(f"[{niche}] asking Claude for {n + 2} posts")
-    data = llm.ask_json(PROMPT.format(topic=topic, hot=hot, n=n + 2,
+    log(f"[{niche}] asking Claude for {n + 4} posts")
+    data = llm.ask_json(PROMPT.format(topic=topic, hot=hot, n=n + 4,
                                       avoid="; ".join(avoid[-40:]) or "nothing yet"),
                         settings.claude_cmd, retries=1)
     used = {m["scene_id"] for m in made}
     colour = random.Random(niche).choice([(232, 65, 24), (29, 155, 240), (0, 186, 124),
                                           (120, 86, 255), (249, 24, 128)])
+    posts = data.get("posts", [])
+    lines, images, cands = [], [], {}
+    for i, post in enumerate(posts, 1):
+        post["text"] = re.sub(r"\s+", " ", post["text"]).strip()
+        clips = find_clips(conn, settings, [post.get("visual"), post.get("visual_broad")], used,
+                           seconds_for(post["text"]))
+        labels = []
+        for j, c in enumerate(clips, 1):
+            cands[f"P{i}-{j}"] = c
+            labels.append(f"P{i}-{j}")
+            images.append(Path(c["keyframe"]).read_bytes())
+        lines.append(f"Post {i}: {post['text']}\n  Frames: {', '.join(labels) or 'none'}")
+    log(f"[{niche}] {len(posts)} posts, {len(cands)} candidate clips: asking Claude to check facts and footage")
+    checks = llm.ask_json(CHECK.format(topic=topic, k=4, posts="\n".join(lines)), settings.claude_cmd,
+                          retries=1, images=images).get("checks", [])
+    by_post = {int(c.get("post", 0)): c for c in checks}
     results = []
-    for post in data.get("posts", []):
+    for i, post in enumerate(posts, 1):
         if len(results) >= n:
             break
-        text = re.sub(r"\s+", " ", post["text"]).strip()
-        secs = seconds_for(text)
-        clip = find_clip(conn, settings, post["visual"], used, secs)
-        if not clip:
-            log(f"[{niche}] no fitting footage for '{post['visual']}', skipped")
+        c = by_post.get(i, {})
+        text = (c.get("fix") or "").strip() or post["text"]
+        why = ("duplicate subject" if c.get("duplicate") else
+               "fact check failed" if not (c.get("facts_ok") or c.get("fix")) else
+               "no footage that shows it" if c.get("clip") not in cands else "")
+        if why:
+            log(f"[{niche}] skipped post {i} ({why}): {post.get('title', '')}")
+            continue
+        clip = cands[c["clip"]]
+        if clip["id"] in used:
             continue
         used.add(clip["id"])
+        secs = seconds_for(text)
         idx = sum(1 for m in made if m["niche"] == niche) + len(results) + 1
         out = out_dir / f"{niche}-{idx:03d}.mp4"
-        card = card_image(text, post.get("highlight", []), f"{topic} Facts",
-                          f"@{niche}facts", colour)
+        card = card_image(text, post.get("highlight", []), f"{topic} Facts", f"@{niche}facts", colour)
         render(card, clip, pick_track(conn), secs, out)
         rec = {"niche": niche, "file": str(out), "title": post.get("title", ""), "text": text,
-               "visual": post["visual"], "scene_id": clip["id"], "footage": clip["title"],
-               "footage_source": clip["source"], "match": clip["score"], "seconds": round(secs, 1),
-               "fact_source": post.get("source", ""), "made_at": datetime.now().isoformat(timespec="seconds")}
+               "fixed": bool(c.get("fix")), "visual": clip["query"], "scene_id": clip["id"],
+               "footage": clip["title"], "footage_source": clip["source"], "match": clip["score"],
+               "seconds": round(secs, 1), "fact_source": post.get("source", ""),
+               "made_at": datetime.now().isoformat(timespec="seconds")}
         results.append(rec)
         log(f"[{niche}] {out.name}: {rec['title']} ({secs:.0f} s, footage: {clip['title'][:50]})")
     done_file.write_text(json.dumps(made + results, indent=1, ensure_ascii=False), encoding="utf-8")
