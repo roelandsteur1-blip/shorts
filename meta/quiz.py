@@ -16,7 +16,7 @@ from pathlib import Path
 
 from PIL import ImageDraw
 
-from .common import H, W, BAND_Y, blank, candidate_lines, candidates, log, open_library, pick_track, render_segments
+from .common import H, W, BAND_Y, blank, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
 from .textcard import font, wrap
 
 OUT = Path.home() / "meta-out" / "quiz"
@@ -45,10 +45,10 @@ THEMES = {
 PICK = """You make a "{question}" quiz Short in 3 levels about {theme}. Below are candidate archive
 clips; each has an archive title and one frame (the images, in the same order).
 
-Choose exactly 3 candidates where you are CERTAIN what the subject is, from the frame AND the
-archive title together, and where the subject is clearly visible in the frame. Never guess: a
-wrong answer ruins the Short. Order them from easy to hard. All 3 must be different subjects.
-If fewer than 3 qualify, return fewer.
+Choose up to 5 candidates where you are CERTAIN what the subject is and where the FRAME itself
+clearly shows it (the archive title is only a hint: a film titled "Paris" may show Notre-Dame,
+not the Eiffel Tower). Never guess: a wrong answer ruins the Short. Order them from easy to
+hard. All must be different subjects. If fewer qualify, return fewer.
 
 For each: "answer" (the name, max 4 words) and "fact" (one surprising TRUE fact about it, max 14
 plain words).
@@ -103,7 +103,13 @@ def make(niche: str, n: int) -> list[dict]:
         log(f"[{niche}] quiz {k + 1}: {len(cands)} candidate clips, asking Claude which it can name for sure")
         data = llm.ask_json(PICK.format(question=question, theme=theme, lines=lines), settings.claude_cmd,
                             retries=1, images=images)
-        rounds = [r for r in data.get("rounds", []) if r.get("clip") in cands][:3]
+        rounds = [r for r in data.get("rounds", []) if r.get("clip") in cands]
+        ok = verify(llm, settings, [(r["clip"], Path(cands[r["clip"]]["keyframe"]).read_bytes(), r["answer"])
+                                    for r in rounds])
+        for r in rounds:
+            if r["clip"] not in ok:
+                log(f"[{niche}] second look rejected '{r['answer']}'")
+        rounds = [r for r in rounds if r["clip"] in ok][:3]
         if len(rounds) < 3:
             log(f"[{niche}] Claude could name only {len(rounds)} clips for sure: skipped")
             break

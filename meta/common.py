@@ -43,6 +43,26 @@ def candidate_lines(cands: dict) -> tuple[str, list[bytes]]:
     return "\n".join(lines), [Path(c["keyframe"]).read_bytes() for c in cands.values()]
 
 
+VERIFY = """Look ONLY at each image below (ignore any title or caption you may know). For each, is
+the image clearly and unmistakably showing the named subject? Say yes only if you would bet on it:
+a different building, animal, plane or object that merely looks similar is a no.
+
+{lines}
+
+Return JSON only: {{"checks": [{{"label": "A", "ok": true}}]}}"""
+
+
+def verify(llm, settings, items: list[tuple[str, bytes, str]]) -> set[str]:
+    """Blind second look: [(label, keyframe JPEG, claimed name)] -> labels whose image really
+    shows that subject."""
+    if not items:
+        return set()
+    lines = "\n".join(f"Image {lab}: {name}" for lab, _, name in items)
+    data = llm.ask_json(VERIFY.format(lines=lines), settings.claude_cmd, retries=1,
+                        images=[img for _, img, _ in items])
+    return {c.get("label") for c in data.get("checks", []) if c.get("ok") is True}
+
+
 def band_height(clip: dict, crop: str | None) -> int:
     cw, ch = clip["width"], clip["height"]
     if crop:

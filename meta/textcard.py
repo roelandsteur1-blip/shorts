@@ -174,7 +174,8 @@ def find_clips(conn, settings, queries: list[str], used: set[int], need: float, 
                 continue
             if not r["keyframe"] or not Path(r["keyframe"]).exists():
                 continue
-            if (r["duration"] or 0) - r["start"] < need or (r["width"] or 0) < (r["height"] or 1):
+            # The whole clip must stay inside its own shot, or it cuts to an unrelated scene.
+            if r["end"] - r["start"] < need or (r["width"] or 0) < (r["height"] or 1):
                 continue
             seen.add(sid)
             out.append(dict(r) | {"score": round(score, 3), "query": query})

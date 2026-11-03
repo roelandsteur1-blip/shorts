@@ -5,3 +5,8 @@
 id = "2026-11-03-samples-1"
 name = "samples"
 n = 2
+
+[[job]]
+id = "2026-11-03-samples-2"
+name = "samples"
+n = 1

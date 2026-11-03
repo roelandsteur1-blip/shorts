@@ -17,7 +17,7 @@ from pathlib import Path
 
 from PIL import ImageDraw
 
-from .common import W, blank, candidate_lines, candidates, log, open_library, pick_track, render_segments
+from .common import W, blank, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
 from .quiz import THEMES
 from .textcard import font
 
@@ -37,8 +37,8 @@ PROPERTIES = {
 PICK = """You make a "ranking" Short about {theme}. Below are candidate archive clips; each has an
 archive title and one frame (the images, in the same order).
 
-Choose exactly 5 candidates where you are CERTAIN what the subject is, from the frame AND the
-archive title together, all different subjects that can be ranked by ONE measurable property:
+Choose up to 7 candidates where you are CERTAIN what the subject is and where the FRAME itself
+clearly shows it (the archive title is only a hint), all different subjects that can be ranked by ONE measurable property:
 {props}. Use only numbers you are sure of (well-documented figures). If fewer than 5 qualify,
 return fewer.
 
@@ -49,7 +49,7 @@ Candidates:
 {lines}
 
 Return JSON only: {{"title": "YouTube title, max 60 characters, e.g. 'Ranking WWII planes by speed'",
-"heading": "on-screen heading, max 5 words, e.g. 'Fastest WWII planes'",
+"heading": "on-screen heading, max 5 words, true for EVERY item, e.g. 'Ranked by top speed' (not 'Fastest animals' when a penguin is in the list)",
 "items": [{{"rank": 1, "clip": "C2", "name": "...", "value": "..."}}]}}"""
 
 
@@ -91,7 +91,13 @@ def make(niche: str, n: int) -> list[dict]:
         log(f"[{niche}] ranking {k + 1}: {len(cands)} candidate clips, asking Claude to pick and rank 5")
         data = llm.ask_json(PICK.format(theme=theme, props=PROPERTIES[niche], lines=lines),
                             settings.claude_cmd, retries=1, images=images)
-        items = [it for it in data.get("items", []) if it.get("clip") in cands][:5]
+        items = [it for it in data.get("items", []) if it.get("clip") in cands]
+        ok = verify(llm, settings, [(it["clip"], Path(cands[it["clip"]]["keyframe"]).read_bytes(), it["name"])
+                                    for it in items])
+        for it in items:
+            if it["clip"] not in ok:
+                log(f"[{niche}] second look rejected '{it['name']}'")
+        items = sorted((it for it in items if it["clip"] in ok), key=lambda x: int(x.get("rank", 99)))[:5]
         if len(items) < 5:
             log(f"[{niche}] Claude could rank only {len(items)} clips for sure: skipped")
             break
