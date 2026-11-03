@@ -56,7 +56,7 @@ plain words).
 Candidates:
 {lines}
 
-Return JSON only: {{"title": "YouTube title, max 60 characters, e.g. 'Only 1% can name all 3 planes'",
+Return JSON only: {{"title": "YouTube title, max 60 characters; the quiz always has exactly 3 levels, e.g. 'Only 1% can name all 3 planes'",
 "rounds": [{{"clip": "C3", "answer": "...", "fact": "..."}}]}}"""
 
 

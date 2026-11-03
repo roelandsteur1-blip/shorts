@@ -136,6 +136,9 @@ def card_image(text: str, highlight: list[str], name: str, handle: str, colour: 
     return im
 
 
+LOOP_MIN = 4.0  # a shot shorter than the card's time is looped; it must be at least this long
+
+
 def seconds_for(text: str) -> float:
     return max(6.0, min(15.0, len(text.split()) / 2.7 + 1.5))
 
@@ -158,9 +161,21 @@ Posts:
 Return JSON only: {{"checks": [{{"post": 1, "facts_ok": true, "fix": "", "clip": "P1-2", "duplicate": false}}]}}"""
 
 
-def find_clips(conn, settings, queries: list[str], used: set[int], need: float, per_query: int = 2) -> list[dict]:
-    """Up to per_query scenes for each query whose video file exists, is landscape and runs long
-    enough from the scene start."""
+def has_cut(path: str, start: float, seconds: float, threshold: float = 0.25) -> bool:
+    """True when the video cuts to another shot between start and start+seconds. The scene table's
+    boundaries miss some cuts (round 3: a crowd before the Eiffel Tower, a puppet after a jellyfish)."""
+    import subprocess
+    p = subprocess.run(["ffmpeg", "-hide_banner", "-ss", f"{start + 0.1:.2f}", "-t", f"{seconds:.2f}", "-i", path,
+                        "-vf", f"scale=160:-2,select='gt(scene,{threshold})',showinfo", "-an", "-f", "null", "-"],
+                       capture_output=True, text=True, errors="replace")
+    return "pts_time" in p.stderr
+
+
+def find_clips(conn, settings, queries: list[str], used: set[int], need: float, per_query: int = 2,
+               min_len: float | None = None) -> list[dict]:
+    """Up to per_query scenes for each query whose video file exists, is landscape and has one
+    unbroken shot of `need` seconds (or at least `min_len` seconds when the caller loops short
+    shots)."""
     from shorts import embed
     out, seen = [], set(used)
     for query in filter(None, queries):
@@ -175,7 +190,10 @@ def find_clips(conn, settings, queries: list[str], used: set[int], need: float, 
             if not r["keyframe"] or not Path(r["keyframe"]).exists():
                 continue
             # The whole clip must stay inside its own shot, or it cuts to an unrelated scene.
-            if r["end"] - r["start"] < need or (r["width"] or 0) < (r["height"] or 1):
+            shot = r["end"] - r["start"]
+            if shot < (min_len or need) or (r["width"] or 0) < (r["height"] or 1):
+                continue
+            if has_cut(r["path"], r["start"], min(shot, need)):
                 continue
             seen.add(sid)
             out.append(dict(r) | {"score": round(score, 3), "query": query})
@@ -225,8 +243,16 @@ def render(card: Image.Image, clip: dict, track, seconds: float, out: Path) -> N
     canvas.paste(card, (0, top))
     png = out.with_suffix(".png")
     canvas.save(png)
-    args = ["-loop", "1", "-i", str(png), "-ss", f"{clip['start']:.2f}", "-t", f"{seconds:.2f}",
-            "-i", clip["path"]]
+    shot = clip["end"] - clip["start"]
+    if shot < seconds:  # loop the one shot instead of running into the next one
+        loop = out.with_suffix(".shot.mp4")
+        media.run(["-ss", f"{clip['start']:.2f}", "-t", f"{shot - 0.1:.2f}", "-i", clip["path"], "-an",
+                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", str(loop)])
+        args = ["-loop", "1", "-i", str(png), "-stream_loop", "-1", "-t", f"{seconds:.2f}", "-i", str(loop)]
+    else:
+        loop = None
+        args = ["-loop", "1", "-i", str(png), "-ss", f"{clip['start']:.2f}", "-t", f"{seconds:.2f}",
+                "-i", clip["path"]]
     if track:
         args += ["-ss", f"{track['start'] or 0:.2f}", "-t", f"{seconds:.2f}", "-i", track["path"]]
     else:
@@ -239,6 +265,8 @@ def render(card: Image.Image, clip: dict, track, seconds: float, out: Path) -> N
              "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(out)]
     media.run(args)
     png.unlink(missing_ok=True)
+    if loop:
+        loop.unlink(missing_ok=True)
 
 
 def make(niche: str, n: int, seed_avoid: list[str]) -> list[dict]:
@@ -270,7 +298,7 @@ def make(niche: str, n: int, seed_avoid: list[str]) -> list[dict]:
     for i, post in enumerate(posts, 1):
         post["text"] = re.sub(r"\s+", " ", post["text"]).strip()
         clips = find_clips(conn, settings, [post.get("visual"), post.get("visual_broad")], used,
-                           seconds_for(post["text"]))
+                           seconds_for(post["text"]), min_len=LOOP_MIN)
         labels = []
         for j, c in enumerate(clips, 1):
             cands[f"P{i}-{j}"] = c

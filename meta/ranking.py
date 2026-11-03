@@ -39,8 +39,9 @@ archive title and one frame (the images, in the same order).
 
 Choose up to 7 candidates where you are CERTAIN what the subject is and where the FRAME itself
 clearly shows it (the archive title is only a hint), all different subjects that can be ranked by ONE measurable property:
-{props}. Use only numbers you are sure of (well-documented figures). If fewer than 5 qualify,
-return fewer.
+{props}. Every value must measure the SAME thing in the SAME unit (never mix width with height
+or length), and no two items may share a value. Use only numbers you are sure of
+(well-documented figures). If fewer than 5 qualify, return fewer.
 
 Rank them: #1 = the most/highest (or as stated above). Each item: "name" (max 4 words) and
 "value" (the number with unit, e.g. "703 km/h").

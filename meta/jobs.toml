@@ -10,3 +10,8 @@ n = 2
 id = "2026-11-03-samples-2"
 name = "samples"
 n = 1
+
+[[job]]
+id = "2026-11-03-samples-3"
+name = "samples"
+n = 1
