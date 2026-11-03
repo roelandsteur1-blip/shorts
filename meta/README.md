@@ -19,3 +19,9 @@ images and captions. Captions need `yt-dlp` in the venv (`.venv/bin/pip install 
 
 One Claude call per niche, footage from the shorts library (read-only), output in
 `~/meta-out/textcard/` and `~/meta-out/textcard.tar.gz`.
+
+## Quiz and ranking Shorts, and all samples in one go
+
+    .venv/bin/python -m meta.quiz --all -n 1       # "Can you name this?" in 3 levels, ~20 s
+    .venv/bin/python -m meta.ranking --all -n 1    # "Ranking X by Y", 5 items, ~18 s
+    .venv/bin/python -m meta.samples               # text cards + quizzes + rankings, new ones in ~/meta-out/samples.tar.gz
