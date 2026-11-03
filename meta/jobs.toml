@@ -1,0 +1,7 @@
+# Jobs for the server's meta runner (meta/runner.py). Only names on its ALLOWLIST run; each id
+# runs once. Claude adds jobs here; the runner picks them up within 5 minutes.
+
+[[job]]
+id = "2026-11-03-samples-1"
+name = "samples"
+n = 2

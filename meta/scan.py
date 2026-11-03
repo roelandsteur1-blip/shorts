@@ -53,8 +53,9 @@ def service(channel_id: str | None, api_key: str | None):
         return build("youtube", "v3", developerKey=api_key, cache_discovery=False)
     from shorts import upload
     from shorts.config import all_channels, load_settings
-    settings = load_settings()
-    chans = [c for c in all_channels() if channel_id in (None, c.id)]
+    from meta import config_dir
+    settings = load_settings(config_dir())
+    chans = [c for c in all_channels(config_dir()) if channel_id in (None, c.id)]
     for ch in chans:
         if upload.token_path(settings, ch.id).exists():
             log(f"reading with the saved YouTube login of channel '{ch.id}' (read-only calls)")

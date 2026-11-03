@@ -244,7 +244,8 @@ def make(niche: str, n: int, seed_avoid: list[str]) -> list[dict]:
     from shorts import db, llm
     from shorts.config import load_settings
     from shorts.server import load_env
-    settings = load_settings()
+    from . import config_dir
+    settings = load_settings(config_dir())
     load_env(settings)  # CLAUDE_CODE_OAUTH_TOKEN on the server, as `python -m shorts` does
     local_bin = str(Path.home() / ".local" / "bin")  # where the installer puts claude
     if local_bin not in os.environ.get("PATH", "").split(os.pathsep):

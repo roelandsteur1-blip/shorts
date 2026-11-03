@@ -20,7 +20,8 @@ def open_library():
     from shorts import db, llm
     from shorts.config import load_settings
     from shorts.server import load_env
-    settings = load_settings()
+    from . import config_dir
+    settings = load_settings(config_dir())
     load_env(settings)
     local_bin = str(Path.home() / ".local" / "bin")
     if local_bin not in os.environ.get("PATH", "").split(os.pathsep):
