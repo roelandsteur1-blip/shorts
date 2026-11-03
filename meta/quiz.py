@@ -16,7 +16,7 @@ from pathlib import Path
 
 from PIL import ImageDraw
 
-from .common import H, W, BAND_Y, blank, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
+from .common import H, W, BAND_Y, blank, clip_strip, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
 from .textcard import font, wrap
 
 OUT = Path.home() / "meta-out" / "quiz"
@@ -104,7 +104,7 @@ def make(niche: str, n: int) -> list[dict]:
         data = llm.ask_json(PICK.format(question=question, theme=theme, lines=lines), settings.claude_cmd,
                             retries=1, images=images)
         rounds = [r for r in data.get("rounds", []) if r.get("clip") in cands]
-        ok = verify(llm, settings, [(r["clip"], Path(cands[r["clip"]]["keyframe"]).read_bytes(), r["answer"])
+        ok = verify(llm, settings, [(r["clip"], clip_strip(cands[r["clip"]], need), r["answer"])
                                     for r in rounds])
         for r in rounds:
             if r["clip"] not in ok:

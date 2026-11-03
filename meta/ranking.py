@@ -17,7 +17,7 @@ from pathlib import Path
 
 from PIL import ImageDraw
 
-from .common import W, blank, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
+from .common import W, blank, clip_strip, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
 from .quiz import THEMES
 from .textcard import font
 
@@ -37,11 +37,11 @@ PROPERTIES = {
 PICK = """You make a "ranking" Short about {theme}. Below are candidate archive clips; each has an
 archive title and one frame (the images, in the same order).
 
-Choose up to 7 candidates where you are CERTAIN what the subject is and where the FRAME itself
+Choose up to 8 candidates where you are CERTAIN what the subject is and where the FRAME itself
 clearly shows it (the archive title is only a hint), all different subjects that can be ranked by ONE measurable property:
 {props}. Every value must measure the SAME thing in the SAME unit (never mix width with height
 or length), and no two items may share a value. Use only numbers you are sure of
-(well-documented figures). If fewer than 5 qualify, return fewer.
+(well-documented figures). If fewer than 4 qualify, return fewer.
 
 Rank them: #1 = the most/highest (or as stated above). Each item: "name" (max 4 words) and
 "value" (the number with unit, e.g. "703 km/h").
@@ -85,7 +85,7 @@ def make(niche: str, n: int) -> list[dict]:
     results = []
     for k in range(n):
         cands = candidates(conn, settings, queries, used, INTRO + ITEM + OUTRO + 0.5, per_query=2)
-        if len(cands) < 5:
+        if len(cands) < 4:
             log(f"[{niche}] not enough footage for a ranking")
             break
         lines, images = candidate_lines(cands)
@@ -93,13 +93,13 @@ def make(niche: str, n: int) -> list[dict]:
         data = llm.ask_json(PICK.format(theme=theme, props=PROPERTIES[niche], lines=lines),
                             settings.claude_cmd, retries=1, images=images)
         items = [it for it in data.get("items", []) if it.get("clip") in cands]
-        ok = verify(llm, settings, [(it["clip"], Path(cands[it["clip"]]["keyframe"]).read_bytes(), it["name"])
+        ok = verify(llm, settings, [(it["clip"], clip_strip(cands[it["clip"]], INTRO + ITEM + OUTRO), it["name"])
                                     for it in items])
         for it in items:
             if it["clip"] not in ok:
                 log(f"[{niche}] second look rejected '{it['name']}'")
         items = sorted((it for it in items if it["clip"] in ok), key=lambda x: int(x.get("rank", 99)))[:5]
-        if len(items) < 5:
+        if len(items) < 4:  # 4 is enough for a ranking; most runs only found 3-4 sure ones
             log(f"[{niche}] Claude could rank only {len(items)} clips for sure: skipped")
             break
         for i, it in enumerate(sorted(items, key=lambda x: int(x.get("rank", 99))), 1):

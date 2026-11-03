@@ -43,9 +43,12 @@ def candidate_lines(cands: dict) -> tuple[str, list[bytes]]:
     return "\n".join(lines), [Path(c["keyframe"]).read_bytes() for c in cands.values()]
 
 
-VERIFY = """Look ONLY at each image below (ignore any title or caption you may know). For each, is
-the image clearly and unmistakably showing the named subject? Say yes only if you would bet on it:
-a different building, animal, plane or object that merely looks similar is a no.
+VERIFY = """Each image below is ONE video clip: three frames from its start, middle and end, side
+by side. Look only at the frames (ignore any title you may know). Say ok only if ALL THREE frames
+clearly and unmistakably show the named subject as the main thing on screen, in one continuous
+shot. It is a no when: a frame shows something else (a cut to another scene, a title card, a
+crowd, a presenter or diagram taking over), or the subject is a different building, animal, plane
+or object that merely looks similar. Say yes only if you would bet on it.
 
 {lines}
 
@@ -61,6 +64,30 @@ def verify(llm, settings, items: list[tuple[str, bytes, str]]) -> set[str]:
     data = llm.ask_json(VERIFY.format(lines=lines), settings.claude_cmd, retries=1,
                         images=[img for _, img, _ in items])
     return {c.get("label") for c in data.get("checks", []) if c.get("ok") is True}
+
+
+def clip_strip(clip: dict, seconds: float) -> bytes:
+    """One JPEG with frames from the start, middle and end of the part of the clip we will show,
+    so the check sees cuts and title cards the scene table missed (round 3/4)."""
+    import io
+    frames = []
+    for t in (0.3, seconds / 2, max(0.5, seconds - 0.3)):
+        p = subprocess.run(["ffmpeg", "-loglevel", "error", "-ss", f"{clip['start'] + t:.2f}", "-i", clip["path"],
+                            "-frames:v", "1", "-vf", "scale=480:-2", "-f", "image2", "-c:v", "mjpeg", "-"],
+                           capture_output=True)
+        if p.stdout:
+            frames.append(Image.open(io.BytesIO(p.stdout)).convert("RGB"))
+    if not frames:
+        return Path(clip["keyframe"]).read_bytes()
+    h = max(f.height for f in frames)
+    strip = Image.new("RGB", (sum(f.width for f in frames) + 20 * (len(frames) - 1), h), "white")
+    x = 0
+    for f in frames:
+        strip.paste(f, (x, 0))
+        x += f.width + 20
+    buf = io.BytesIO()
+    strip.save(buf, "JPEG", quality=85)
+    return buf.getvalue()
 
 
 def band_height(clip: dict, crop: str | None) -> int:
@@ -116,4 +143,4 @@ def blank() -> Image.Image:
 
 
 __all__ = ["BAND_Y", "open_library", "candidates", "candidate_lines", "render_segments", "blank",
-           "pick_track", "log", "W", "H"]
+           "pick_track", "log", "W", "H", "clip_strip"]

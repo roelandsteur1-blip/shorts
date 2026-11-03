@@ -247,7 +247,7 @@ def render(card: Image.Image, clip: dict, track, seconds: float, out: Path) -> N
     if shot < seconds:  # loop the one shot instead of running into the next one
         loop = out.with_suffix(".shot.mp4")
         media.run(["-ss", f"{clip['start']:.2f}", "-t", f"{shot - 0.1:.2f}", "-i", clip["path"], "-an",
-                   "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", str(loop)])
+                   "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", str(loop)])
         args = ["-loop", "1", "-i", str(png), "-stream_loop", "-1", "-t", f"{seconds:.2f}", "-i", str(loop)]
     else:
         loop = None
