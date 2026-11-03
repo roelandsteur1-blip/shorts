@@ -13,7 +13,7 @@ mkdir -p "$HOME/.ssh" "$HOME/meta-out"
 LINE="*/5 * * * * flock -n \$HOME/meta-runner.lock sh -c 'cd \$HOME/meta-run && git fetch -q origin main && git reset -q --hard origin/main && META_CONFIG_DIR=\$HOME/shorts/config \$HOME/shorts/.venv/bin/python -m meta.runner >> \$HOME/meta-out/runner.log 2>&1' # meta-runner"
 ( crontab -l 2>/dev/null | grep -v '# meta-runner' || true; echo "$LINE" ) | crontab -
 echo
-echo "Runner installed (every 5 minutes). Add this key on GitHub to the PRIVATE repo shorts-results:"
+echo "Runner installed (every 5 minutes). Add this key on GitHub to the PRIVATE repo Shorts_results:"
 echo "Settings -> Deploy keys -> Add deploy key, tick 'Allow write access':"
 echo
 cat "$HOME/.ssh/meta_results_deploy.pub"

@@ -7,7 +7,7 @@
 - It runs as the `shorts` user from cron, without sudo. It never touches ~/shorts (the live
   program): no git reset there, no restarts, no writes to its database.
 - Results (log, an index and small preview videos/frames) are pushed to a SEPARATE private repo
-  (`shorts-results`) with a deploy key that only has access to that repo.
+  (`Shorts_results`) with a deploy key that only has access to that repo.
 
 Cron (every 5 minutes, installed by meta/setup-runner.sh):
     cd ~/meta-run && git fetch -q origin main && git reset -q --hard origin/main &&
@@ -32,7 +32,7 @@ OUT = HOME / "meta-out"
 STATE = OUT / "runner-done.json"
 RESULTS = HOME / "meta-results"         # local clone of the private results repo
 KEY = HOME / ".ssh" / "meta_results_deploy"
-RESULTS_URL = "git@github.com:roelandsteur1-blip/shorts-results.git"
+RESULTS_URL = "git@github.com:roelandsteur1-blip/Shorts_results.git"
 PY = HOME / "shorts" / ".venv" / "bin" / "python"
 
 # name -> (module, fixed args, allowed count range or None). {n} is the job's count.
