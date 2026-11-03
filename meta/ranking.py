@@ -81,10 +81,10 @@ def make(niche: str, n: int) -> list[dict]:
     out_dir.mkdir(parents=True, exist_ok=True)
     done = OUT / "made.json"
     made = json.loads(done.read_text(encoding="utf-8")) if done.exists() else []
-    used = {sid for m in made for sid in m["scene_ids"]}
+    used: set[int] = set()  # samples may reuse clips from earlier runs; within one run each clip once
     results = []
     for k in range(n):
-        cands = candidates(conn, settings, queries, used, INTRO + ITEM + OUTRO + 0.5, per_query=2)
+        cands = candidates(conn, settings, queries, used, INTRO + ITEM + OUTRO + 0.5, per_query=4)
         if len(cands) < 4:
             log(f"[{niche}] not enough footage for a ranking")
             break

@@ -25,3 +25,13 @@ n = 1
 id = "2026-11-03-ranking-1"
 name = "ranking"
 n = 1
+
+[[job]]
+id = "2026-11-03-quiz-2"
+name = "quiz"
+n = 1
+
+[[job]]
+id = "2026-11-03-ranking-2"
+name = "ranking"
+n = 1

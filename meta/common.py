@@ -44,15 +44,15 @@ def candidate_lines(cands: dict) -> tuple[str, list[bytes]]:
 
 
 VERIFY = """Each image below is ONE video clip: three frames from its start, middle and end, side
-by side. Look only at the frames (ignore any title you may know). Say ok only if ALL THREE frames
-clearly and unmistakably show the named subject as the main thing on screen, in one continuous
-shot. It is a no when: a frame shows something else (a cut to another scene, a title card, a
-crowd, a presenter or diagram taking over), or the subject is a different building, animal, plane
-or object that merely looks similar. Say yes only if you would bet on it.
+by side. Look only at the frames (ignore any title you may know). For each clip answer two things:
+- "same_shot": true unless the frames show a cut to a different scene, a title card, or a
+  presenter/diagram replacing the subject. Camera moves, zooms and the subject moving are fine.
+- "shows": true when the named subject is clearly and unmistakably identifiable in the frames (a
+  different building, animal, plane or object that merely looks similar is false).
 
 {lines}
 
-Return JSON only: {{"checks": [{{"label": "A", "ok": true}}]}}"""
+Return JSON only: {{"checks": [{{"label": "A", "same_shot": true, "shows": true}}]}}"""
 
 
 def verify(llm, settings, items: list[tuple[str, bytes, str]]) -> set[str]:
@@ -63,7 +63,8 @@ def verify(llm, settings, items: list[tuple[str, bytes, str]]) -> set[str]:
     lines = "\n".join(f"Image {lab}: {name}" for lab, _, name in items)
     data = llm.ask_json(VERIFY.format(lines=lines), settings.claude_cmd, retries=1,
                         images=[img for _, img, _ in items])
-    return {c.get("label") for c in data.get("checks", []) if c.get("ok") is True}
+    return {c.get("label") for c in data.get("checks", [])
+            if c.get("same_shot") is True and c.get("shows") is True}
 
 
 def clip_strip(clip: dict, seconds: float) -> bytes:
