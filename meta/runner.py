@@ -44,6 +44,7 @@ ALLOWLIST = {
     "scan": ("meta.scan", [], None),
 }
 MAX_HOURS = 3
+PROGRESS_EVERY = 600  # seconds between progress pushes while a job runs
 
 
 def log(msg: str) -> None:
@@ -147,12 +148,22 @@ def main() -> None:
         publish(jid, "running", "started", [])
         start = time.time()
         env = dict(os.environ, PYTHONUNBUFFERED="1")
-        try:
-            p = subprocess.run(cmd, cwd=RUN, env=env, capture_output=True, text=True, errors="replace",
-                               timeout=MAX_HOURS * 3600)
-            status, text = ("done" if p.returncode == 0 else f"failed ({p.returncode})"), p.stdout + p.stderr
-        except subprocess.TimeoutExpired as e:
-            status, text = "timed out", str(e.stdout or "") + str(e.stderr or "")
+        logfile = OUT / f"job-{jid}.log"
+        with open(logfile, "w", encoding="utf-8") as fh:
+            p = subprocess.Popen(cmd, cwd=RUN, env=env, stdout=fh, stderr=subprocess.STDOUT)
+            last = time.time()
+            while p.poll() is None:
+                time.sleep(15)
+                if time.time() - start > MAX_HOURS * 3600:
+                    p.kill()
+                    break
+                if time.time() - last > PROGRESS_EVERY:  # progress note with the log so far
+                    last = time.time()
+                    publish(jid, "running", logfile.read_text(encoding="utf-8", errors="replace"), [])
+        text = logfile.read_text(encoding="utf-8", errors="replace")
+        rc = p.returncode
+        status = "timed out" if rc is None or (rc < 0 and time.time() - start > MAX_HOURS * 3600) else (
+            "done" if rc == 0 else f"failed ({rc})")
         files = sorted(f for f in OUT.glob("**/*.mp4") if f.stat().st_mtime >= start)
         done[jid] = status
         STATE.write_text(json.dumps(done, indent=1), encoding="utf-8")
