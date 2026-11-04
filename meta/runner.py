@@ -207,7 +207,7 @@ def main() -> None:
         rc = p.returncode
         status = "timed out" if rc is None or (rc < 0 and time.time() - start > MAX_HOURS * 3600) else (
             "done" if rc == 0 else f"failed ({rc})")
-        files = sorted(f for f in OUT.glob("**/*.mp4") if f.stat().st_mtime >= start)
+        files = sorted(f for f in OUT.glob("**/*.mp4") if f.stat().st_mtime >= start and ".shot." not in f.name)
         done[jid] = status
         STATE.write_text(json.dumps(done, indent=1), encoding="utf-8")
         log(f"job {jid}: {status}, {len(files)} new videos")
