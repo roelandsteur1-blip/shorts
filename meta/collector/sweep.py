@@ -11,6 +11,8 @@ model the library search uses). Output in ~/meta-out/sweep/:
     sheets/subjects/<niche>-<n>.jpg  per subject: the first hits per source in archive order
 
     python -m meta.collector.sweep [--only niche] [--limit N]
+    python -m meta.collector.sweep --extra   # only the keyed archives, into ~/meta-out/sweepx/
+                                             # (for keys saved after the main sweep ran)
 
 Keys are read from the live program's secrets (Sources page, api_keys.json): europeana, pixabay,
 and the research-only keys dvids, smithsonian, nara. A source without a key is skipped and the
@@ -407,7 +409,11 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="one niche")
     ap.add_argument("--limit", type=int, help="first N subjects")
+    ap.add_argument("--extra", action="store_true", help="only archives that need a key, no library baseline")
     a = ap.parse_args(argv)
+    global OUT
+    if a.extra:
+        OUT = OUT.with_name("sweepx")
     try:
         os.nice(10)  # the live pipeline goes first
     except OSError:
@@ -420,10 +426,12 @@ def main(argv=None) -> None:
     if not lib:
         scorer.enc = None
     srcs = sources_for(keys)
+    if a.extra:
+        srcs = [x for x in srcs if x[2]]
     skipped = sorted({k for _, _, k in srcs if k and not keys.get(k)})
     if skipped:
         log(f"no key yet, skipped: {', '.join(skipped)}")
-    names = ["Library today"] + [n for n, _, k in srcs if not k or keys.get(k)]
+    names = ([] if a.extra else ["Library today"]) + [n for n, _, k in srcs if not k or keys.get(k)]
     results, by_niche = [], {}
     t_all = time.time()
     for idx, s in enumerate(subjects, 1):
@@ -435,7 +443,7 @@ def main(argv=None) -> None:
             q, desc = None, f"error: {e}"
         row["qid"], row["qid_label"] = q, desc
         rows: list[tuple[str, list[dict]]] = []
-        if lib:
+        if lib and not a.extra:
             try:
                 t0 = time.time()
                 total, hits = library_hits(s, lib)

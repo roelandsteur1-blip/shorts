@@ -47,10 +47,11 @@ ALLOWLIST = {
     "scan": ("meta.scan", [], None),
     "probe": ("meta.probe", [], None),  # read-only archive research for the topic-first plan
     "sweep": ("meta.collector.sweep", [], None),  # footage collector research R2+R3, read-only
+    "sweepx": ("meta.collector.sweep", ["--extra"], None),  # the keyed archives only (keys saved later)
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
-SHEET_JOBS = ("probe", "sweep")  # research jobs whose ~/meta-out/<name>/sheets go into the results
+SHEET_JOBS = ("probe", "sweep", "sweepx")  # research jobs whose ~/meta-out/<name>/sheets go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

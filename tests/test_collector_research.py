@@ -130,3 +130,21 @@ def test_research_keys_box_saves_keys(settings):
     assert r.status_code == 302 and sources.api_key(settings, "dvids") == "abc"
     assert client.post("/sources-research-key/evil", data={"api_key": "x"}).status_code == 404
     assert "Key saved" in client.get("/sources").get_data(as_text=True)
+
+
+def test_extra_pass_runs_only_keyed_archives(tmp_path, monkeypatch):
+    monkeypatch.setattr(sweep, "OUT", tmp_path / "sweep")
+    monkeypatch.setattr(sweep, "open_library", lambda: None)
+    monkeypatch.setattr(sweep, "load_keys", lambda settings: {"smithsonian": "K"})
+    monkeypatch.setattr(sweep, "open_library", lambda: (object(), None))
+    monkeypatch.setattr(sweep.Scorer, "__init__", lambda self, settings: setattr(self, "enc", None))
+    monkeypatch.setattr(sweep, "qid", lambda label, hint: ("Q1", "x: y"))
+    monkeypatch.setattr(sweep, "fetch_thumb", lambda src: None)
+    monkeypatch.setattr(sweep, "smithsonian", lambda q, key: (1, [sweep.hit("t", True, "CC0", None)]))
+    monkeypatch.setattr(sweep, "commons", lambda *a, **k: (_ for _ in ()).throw(AssertionError("not keyed")))
+    sweep.main(["--extra", "--only", "body", "--limit", "1"])
+    import json
+    made = json.loads((tmp_path / "sweepx" / "made.json").read_text())
+    assert list(made["subjects"][0]["sources"]) == ["Smithsonian"]
+    from meta import runner
+    assert runner.command({"id": "2026-11-04-sweepx-1", "name": "sweepx"})[-1] == "--extra"
