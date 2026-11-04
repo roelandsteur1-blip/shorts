@@ -10,6 +10,13 @@ from .common import conn, settings
 from .jobs import start_job
 
 bp = Blueprint("sources", __name__)
+# Keys for archives the footage collector research tries before they become real sources
+# (meta/collector). Stored like the other keys in secrets/api_keys.json, never in the repo.
+RESEARCH_KEYS = {
+    "dvids": ("DVIDS (US military video)", "https://api.dvidshub.net/"),
+    "smithsonian": ("Smithsonian Open Access (api.data.gov key)", "https://api.data.gov/signup/"),
+    "nara": ("US National Archives catalog", "https://www.archives.gov/research/catalog/help/api"),
+}
 TEST_WAIT = 45  # seconds the page waits for a test; a slower archive keeps going and saves its result later
 _pool = ThreadPoolExecutor(max_workers=8)
 
@@ -34,7 +41,17 @@ def index():
                      "rejected": counts.get("rejected", 0), "failed": counts.get("failed", 0),
                      "reasons": reasons})
     summary = {k: sum(r["state"] == k for r in rows) for k in ("connected", "failing", "needs-key", "untested", "off")}
-    return render_template("sources.html", rows=rows, summary=summary, total=len(rows))
+    research = [{"name": n, "label": label, "url": url, "has_key": bool(sources.api_key(settings(), n))}
+                for n, (label, url) in RESEARCH_KEYS.items()]
+    return render_template("sources.html", rows=rows, summary=summary, total=len(rows), research=research)
+
+
+@bp.post("/sources-research-key/<name>")
+def research_key(name: str):
+    if name not in RESEARCH_KEYS:
+        abort(404)
+    sources.set_api_key(settings(), name, request.form.get("api_key", ""))
+    return redirect(url_for("sources.index") + "#research-keys")
 
 
 def _run_tests(names: list[str]) -> None:

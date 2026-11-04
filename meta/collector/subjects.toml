@@ -1,0 +1,377 @@
+# Footage collector research, step R1: the fixed test set. 60 subjects, 6 per niche, from easy
+# (Apollo 11) to hard (red blood cell). Every research step runs on exactly these, so old and new
+# can be compared. Do not change a subject once results exist; add a new file for a new set.
+#
+# name: as a person says it (also the search text). wikidata: the label to look up, hint: a word
+# the right Wikidata description contains (the first of the top 5 matches that has it is used;
+# Wikidata's own top match is wrong for about 1 in 5 names). show: what a good shot must show.
+
+[[subject]]
+niche = "space"
+name = "Saturn"
+wikidata = "Saturn"
+hint = "planet"
+show = "the planet Saturn with its rings"
+[[subject]]
+niche = "space"
+name = "the Moon"
+wikidata = "Moon"
+hint = "satellite"
+show = "the Moon's surface or the Moon in the sky"
+[[subject]]
+niche = "space"
+name = "International Space Station"
+wikidata = "International Space Station"
+hint = "station"
+show = "the space station in orbit, outside view"
+[[subject]]
+niche = "space"
+name = "Space Shuttle launch"
+wikidata = "Space Shuttle"
+hint = "spacecraft"
+show = "a Space Shuttle lifting off"
+[[subject]]
+niche = "space"
+name = "Apollo 11"
+wikidata = "Apollo 11"
+hint = "spaceflight"
+show = "Apollo 11 launch or astronauts on the Moon"
+[[subject]]
+niche = "space"
+name = "Jupiter"
+wikidata = "Jupiter"
+hint = "planet"
+show = "the planet Jupiter with its bands"
+
+[[subject]]
+niche = "warplane"
+name = "P-51 Mustang"
+wikidata = "North American P-51 Mustang"
+hint = "aircraft"
+show = "a P-51 Mustang, the whole plane"
+[[subject]]
+niche = "warplane"
+name = "Spitfire"
+wikidata = "Supermarine Spitfire"
+hint = "aircraft"
+show = "a Spitfire, the whole plane"
+[[subject]]
+niche = "warplane"
+name = "B-17 Flying Fortress"
+wikidata = "Boeing B-17 Flying Fortress"
+hint = "bomber"
+show = "a B-17 bomber, the whole plane"
+[[subject]]
+niche = "warplane"
+name = "SR-71 Blackbird"
+wikidata = "Lockheed SR-71 Blackbird"
+hint = "aircraft"
+show = "an SR-71, the whole plane"
+[[subject]]
+niche = "warplane"
+name = "F-16 fighter jet"
+wikidata = "General Dynamics F-16 Fighting Falcon"
+hint = "aircraft"
+show = "an F-16 in flight or taking off"
+[[subject]]
+niche = "warplane"
+name = "aircraft carrier"
+wikidata = "aircraft carrier"
+hint = "ship"
+show = "an aircraft carrier at sea, or a jet landing on one"
+
+[[subject]]
+niche = "ocean"
+name = "humpback whale"
+wikidata = "humpback whale"
+hint = "species"
+show = "a humpback whale"
+[[subject]]
+niche = "ocean"
+name = "octopus"
+wikidata = "Octopus"
+hint = "mollus"
+show = "an octopus, clearly visible"
+[[subject]]
+niche = "ocean"
+name = "sea turtle"
+wikidata = "sea turtle"
+hint = "turtle"
+show = "a sea turtle swimming"
+[[subject]]
+niche = "ocean"
+name = "great white shark"
+wikidata = "great white shark"
+hint = "species"
+show = "a great white shark"
+[[subject]]
+niche = "ocean"
+name = "coral reef"
+wikidata = "coral reef"
+hint = "reef"
+show = "a coral reef under water"
+[[subject]]
+niche = "ocean"
+name = "dolphin"
+wikidata = "common bottlenose dolphin"
+hint = "species"
+show = "a dolphin swimming or jumping"
+
+[[subject]]
+niche = "planet"
+name = "African elephant"
+wikidata = "African bush elephant"
+hint = "species"
+show = "an African elephant"
+[[subject]]
+niche = "planet"
+name = "lion"
+wikidata = "lion"
+hint = "species"
+show = "a lion"
+[[subject]]
+niche = "planet"
+name = "bald eagle"
+wikidata = "bald eagle"
+hint = "species"
+show = "a bald eagle"
+[[subject]]
+niche = "planet"
+name = "giraffe"
+wikidata = "giraffe"
+hint = "species"
+show = "a giraffe"
+[[subject]]
+niche = "planet"
+name = "polar bear"
+wikidata = "polar bear"
+hint = "species"
+show = "a polar bear"
+[[subject]]
+niche = "planet"
+name = "cheetah"
+wikidata = "cheetah"
+hint = "species"
+show = "a cheetah"
+
+[[subject]]
+niche = "history"
+name = "Hindenburg"
+wikidata = "LZ 129 Hindenburg"
+hint = "airship"
+show = "the Hindenburg airship"
+[[subject]]
+niche = "history"
+name = "Statue of Liberty"
+wikidata = "Statue of Liberty"
+hint = "statue"
+show = "the Statue of Liberty"
+[[subject]]
+niche = "history"
+name = "Golden Gate Bridge"
+wikidata = "Golden Gate Bridge"
+hint = "bridge"
+show = "the Golden Gate Bridge"
+[[subject]]
+niche = "history"
+name = "Titanic"
+wikidata = "RMS Titanic"
+hint = "ship"
+show = "the ship Titanic"
+[[subject]]
+niche = "history"
+name = "Berlin Wall"
+wikidata = "Berlin Wall"
+hint = "barrier"
+show = "the Berlin Wall"
+[[subject]]
+niche = "history"
+name = "D-Day landings"
+wikidata = "Normandy landings"
+hint = "landing"
+show = "troops landing on the Normandy beaches"
+
+[[subject]]
+niche = "retrotech"
+name = "steam locomotive"
+wikidata = "steam locomotive"
+hint = "locomotive"
+show = "a steam locomotive"
+[[subject]]
+niche = "retrotech"
+name = "typewriter"
+wikidata = "typewriter"
+hint = "machine"
+show = "a typewriter"
+[[subject]]
+niche = "retrotech"
+name = "Ford Model T"
+wikidata = "Ford Model T"
+hint = "automobile"
+show = "a Ford Model T car"
+[[subject]]
+niche = "retrotech"
+name = "gramophone"
+wikidata = "phonograph"
+hint = "device"
+show = "a gramophone or phonograph"
+[[subject]]
+niche = "retrotech"
+name = "ENIAC computer"
+wikidata = "ENIAC"
+hint = "computer"
+show = "the ENIAC computer or a room-sized early computer"
+[[subject]]
+niche = "retrotech"
+name = "telephone switchboard"
+wikidata = "telephone switchboard"
+hint = "telephone"
+show = "operators at a telephone switchboard"
+
+[[subject]]
+niche = "weather"
+name = "tornado"
+wikidata = "tornado"
+hint = "column"
+show = "a tornado funnel"
+[[subject]]
+niche = "weather"
+name = "lightning"
+wikidata = "lightning"
+hint = "discharge"
+show = "lightning bolts"
+[[subject]]
+niche = "weather"
+name = "hurricane"
+wikidata = "tropical cyclone"
+hint = "storm"
+show = "a hurricane from space or its storm on land"
+[[subject]]
+niche = "weather"
+name = "blizzard"
+wikidata = "blizzard"
+hint = "storm"
+show = "a heavy snowstorm"
+[[subject]]
+niche = "weather"
+name = "rainbow"
+wikidata = "rainbow"
+hint = "phenomenon"
+show = "a rainbow in the sky"
+[[subject]]
+niche = "weather"
+name = "hailstorm"
+wikidata = "hail"
+hint = "precipitation"
+show = "hail falling or hailstones"
+
+[[subject]]
+niche = "earthquake"
+name = "volcano eruption"
+wikidata = "volcanic eruption"
+hint = "volcan"
+show = "a volcano erupting"
+[[subject]]
+niche = "earthquake"
+name = "Mount St. Helens"
+wikidata = "Mount St. Helens"
+hint = "volcano"
+show = "Mount St. Helens or its 1980 eruption"
+[[subject]]
+niche = "earthquake"
+name = "lava flow"
+wikidata = "lava"
+hint = "rock"
+show = "flowing lava"
+[[subject]]
+niche = "earthquake"
+name = "tsunami"
+wikidata = "tsunami"
+hint = "wave"
+show = "a tsunami wave or its flooding"
+[[subject]]
+niche = "earthquake"
+name = "1906 San Francisco earthquake"
+wikidata = "1906 San Francisco earthquake"
+hint = "earthquake"
+show = "San Francisco ruins after the 1906 earthquake"
+[[subject]]
+niche = "earthquake"
+name = "Kilauea"
+wikidata = "Kīlauea"
+hint = "volcano"
+show = "Kilauea volcano, lava or its crater"
+
+[[subject]]
+niche = "oldcity"
+name = "Times Square"
+wikidata = "Times Square"
+hint = "intersection"
+show = "Times Square in New York"
+[[subject]]
+niche = "oldcity"
+name = "Eiffel Tower"
+wikidata = "Eiffel Tower"
+hint = "tower"
+show = "the Eiffel Tower"
+[[subject]]
+niche = "oldcity"
+name = "Empire State Building"
+wikidata = "Empire State Building"
+hint = "skyscraper"
+show = "the Empire State Building"
+[[subject]]
+niche = "oldcity"
+name = "Tower Bridge"
+wikidata = "Tower Bridge"
+hint = "bridge"
+show = "Tower Bridge in London"
+[[subject]]
+niche = "oldcity"
+name = "New York subway"
+wikidata = "New York City Subway"
+hint = "transit"
+show = "a New York subway train or station"
+[[subject]]
+niche = "oldcity"
+name = "Venice canals"
+wikidata = "Grand Canal"
+hint = "Venice"
+show = "canals and gondolas in Venice"
+
+[[subject]]
+niche = "body"
+name = "human heart"
+wikidata = "heart"
+hint = "organ"
+show = "a heart (beating, model or animation)"
+[[subject]]
+niche = "body"
+name = "red blood cells"
+wikidata = "red blood cell"
+hint = "cell"
+show = "red blood cells under a microscope or animated"
+[[subject]]
+niche = "body"
+name = "human brain"
+wikidata = "human brain"
+hint = "organ"
+show = "a brain (scan, model or animation)"
+[[subject]]
+niche = "body"
+name = "human skeleton"
+wikidata = "human skeleton"
+hint = "skeleton"
+show = "a human skeleton or X-ray"
+[[subject]]
+niche = "body"
+name = "neuron"
+wikidata = "neuron"
+hint = "cell"
+show = "a nerve cell under a microscope or animated"
+[[subject]]
+niche = "body"
+name = "lungs"
+wikidata = "lung"
+hint = "organ"
+show = "lungs (X-ray, model or animation)"
