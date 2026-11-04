@@ -63,3 +63,17 @@ name = "sweep"
 [[job]]
 id = "2026-11-04-sweepx-1"
 name = "sweepx"
+
+[[job]]
+id = "2026-11-05-tools-2"
+name = "research-tools"
+
+[[job]]
+id = "2026-11-05-pieces-1"
+name = "pieces"
+n = 1
+
+[[job]]
+id = "2026-11-05-pieces-2"
+name = "pieces"
+n = 2

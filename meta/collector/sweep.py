@@ -134,10 +134,10 @@ def claude_qids(subjects: list[dict], matches: list[list[dict]], ask) -> dict[in
 
 # ---------- the sources: each returns (total hits, [hit]) ----------
 
-def commons(search: str, kind: str, g: Get = get) -> tuple[int, list[dict]]:
+def commons(search: str, kind: str, g: Get = get, width: int = 320) -> tuple[int, list[dict]]:
     d = g(COMMONS, action="query", format="json", generator="search", gsrsearch=search, gsrnamespace=6,
           gsrlimit=ROWS, gsrinfo="totalhits", prop="imageinfo", iiprop="url|size|mime|extmetadata",
-          iiurlwidth=320, iiextmetadatafilter="LicenseShortName|License")
+          iiurlwidth=width, iiextmetadatafilter="LicenseShortName|License|DateTimeOriginal")
     total = int(((d.get("query") or {}).get("searchinfo") or {}).get("totalhits") or 0)
     pages = sorted(((d.get("query") or {}).get("pages") or {}).values(), key=lambda p: p.get("index", 0))
     hits = []
@@ -149,8 +149,22 @@ def commons(search: str, kind: str, g: Get = get) -> tuple[int, list[dict]]:
             lic = license_from_name(meta["LicenseShortName"])
         hits.append(hit(p.get("title", ""), not lic.reject, lic.license or lic.reject, info.get("thumburl"),
                         ref=info.get("descriptionurl") or p.get("title"), kind=kind,
-                        seconds=info.get("duration"), height=info.get("height")))
+                        seconds=info.get("duration"), height=info.get("height"), bytes=info.get("size"),
+                        file=_commons_file(info), year=_year(meta.get("DateTimeOriginal"))))
     return total or len(hits), hits
+
+
+def _commons_file(info: dict) -> str | None:
+    try:
+        from shorts.sources import commons as cm
+        return cm.pick_url(info) if info.get("url") else None
+    except Exception:
+        return info.get("url")
+
+
+def _year(text) -> int | None:
+    m = re.search(r"\b(18[89]\d|19\d\d|20[0-2]\d)\b", str(text or ""))
+    return int(m.group(1)) if m else None
 
 
 def internet_archive(q: str, base: str, g: Get = get) -> tuple[int, list[dict]]:
@@ -177,7 +191,8 @@ def nasa_video(q: str, g: Get = get) -> tuple[int, list[dict]]:
         thumb = next((l.get("href") for l in it.get("links") or [] if l.get("render") == "image"), None)
         flagged = nasa.needs_rights_check(data)
         hits.append(hit(data.get("title"), not flagged, "public-domain" + (" (needs check)" if flagged else ""),
-                        thumb, ref=f"https://images.nasa.gov/details/{quote(str(data.get('nasa_id', '')))}"))
+                        thumb, ref=f"https://images.nasa.gov/details/{quote(str(data.get('nasa_id', '')))}",
+                        nasa_id=data.get("nasa_id"), year=_year(data.get("date_created"))))
     return int((coll.get("metadata") or {}).get("total_hits") or 0), hits
 
 
@@ -263,7 +278,8 @@ def openverse(q: str, g: Get = get) -> tuple[int, list[dict]]:
     """Openverse: CC0 / public domain mark / CC BY photos from many collections (photo fallback)."""
     d = g(OPENVERSE, q=q, license="cc0,pdm,by", page_size=20)
     hits = [hit(r.get("title"), True, f"{r.get('license', '')} {r.get('license_version', '') or ''}".strip(),
-                r.get("thumbnail"), ref=r.get("foreign_landing_url"), kind="photo", provider=r.get("provider"))
+                r.get("thumbnail"), ref=r.get("foreign_landing_url"), kind="photo", provider=r.get("provider"),
+                file=r.get("url"))
             for r in d.get("results") or []]
     return int(d.get("result_count") or len(hits)), hits
 
@@ -285,7 +301,8 @@ def pixabay(q: str, key: str, g: Get = get) -> tuple[int, list[dict]]:
     for r in d.get("hits") or []:
         v = r.get("videos") or {}
         thumb = next((v[k].get("thumbnail") for k in ("medium", "small", "large") if (v.get(k) or {}).get("thumbnail")), None)
-        hits.append(hit(r.get("tags"), True, "Pixabay Content License", thumb, ref=r.get("pageURL")))
+        best = next((v[k].get("url") for k in ("medium", "large", "small") if (v.get(k) or {}).get("url")), None)
+        hits.append(hit(r.get("tags"), True, "Pixabay Content License", thumb, ref=r.get("pageURL"), file=best))
     return int(d.get("totalHits") or len(hits)), hits
 
 
@@ -317,7 +334,8 @@ def library_hits(subject: dict, lib) -> tuple[int, list[dict]]:
     settings, conn = lib
     clips = find_clips(conn, settings, [subject["name"]], set(), need=3.0, per_query=KEEP)
     return len(clips), [hit(c["title"], True, c["source"], c["keyframe"], ref=f"scene {c['id']}",
-                            score_lib=c["score"]) for c in clips]
+                            score_lib=c["score"], file=c["path"], start=c["start"], end=c["end"],
+                            height=c["height"]) for c in clips]
 
 
 # ---------- thumbnails and scores ----------

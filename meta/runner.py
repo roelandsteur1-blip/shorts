@@ -48,10 +48,12 @@ ALLOWLIST = {
     "probe": ("meta.probe", [], None),  # read-only archive research for the topic-first plan
     "sweep": ("meta.collector.sweep", [], None),  # footage collector research R2+R3, read-only
     "sweepx": ("meta.collector.sweep", ["--extra"], None),  # the keyed archives only (keys saved later)
+    "pieces": ("meta.collector.pieces", ["--part", "{n}"], (1, 2)),  # collector research R4-R7, half the subjects each
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx")  # research jobs whose ~/meta-out/<name>/sheets go into the results
+JSON_JOBS = ("pieces",)  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3
@@ -136,6 +138,9 @@ def publish(job_id: str, status: str, log_text: str, files: list[Path]) -> None:
     sheets = OUT / name / "sheets"
     if status != "running" and name in SHEET_JOBS and sheets.exists():
         shutil.copytree(sheets, folder / "sheets", dirs_exist_ok=True)
+    if name in JSON_JOBS:
+        for f in (OUT / name).glob("*.json"):
+            shutil.copy(f, folder / f.name)
     jobs = sorted((RESULTS / "jobs").iterdir(), key=lambda p: p.stat().st_mtime)
     for old in jobs[:-5]:
         shutil.rmtree(old / "previews", ignore_errors=True)
