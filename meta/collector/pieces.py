@@ -407,6 +407,9 @@ def run_subject(s: dict, lib, scorer, gates, keys: dict, tmp: Path, rng: random.
         p = c.pop("_path", None)
         c.pop("_img", None)
         if p:
+            # the landscape piece is kept for the crop research (R6b); .mkv so the runner doesn't publish it
+            (OUT / "landscape").mkdir(parents=True, exist_ok=True)
+            shutil.copy(p, OUT / "landscape" / f"{s['niche']}-{slug}-{c['label']}.mkv")
             dst = OUT / "clips" / f"{s['niche']}-{slug}-{c['label']}.mp4"
             try:
                 vertical(p, dst)

@@ -74,6 +74,7 @@ def test_one_failing_candidate_or_source_does_not_stop_the_subject(tmp_path, mon
     assert "archive down" in c[0]["error"] and "connection reset" in c[1]["error"]
     assert "gates" in c[2] and c[2]["claude_shows"] is True and c[2]["preview"].startswith("space-saturn-")
     assert len(seen) == 1 and (tmp_path / "clips" / c[2]["preview"]).exists()
+    assert (tmp_path / "landscape" / c[2]["preview"].replace(".mp4", ".mkv")).exists()
     summ = pieces.summary([row])
     assert summ["commons_video"]["failed"] == 2 and summ["library"]["made"] == 1
 
