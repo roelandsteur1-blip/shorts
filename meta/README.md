@@ -25,3 +25,14 @@ One Claude call per niche, footage from the shorts library (read-only), output i
     .venv/bin/python -m meta.quiz --all -n 1       # "Can you name this?" in 3 levels, ~20 s
     .venv/bin/python -m meta.ranking --all -n 1    # "Ranking X by Y", 5 items, ~18 s
     .venv/bin/python -m meta.samples               # text cards + quizzes + rankings, new ones in ~/meta-out/samples.tar.gz
+
+## Updating the live program from the runner (only when Roeland asks)
+
+The runner's `update` job does what the update one-liner does: `~/shorts` to `origin/main`, then
+`sudo systemctl restart shorts-dashboard`. Claude queues it in `meta/jobs.toml` only when Roeland
+asks for an update; pushing to main alone never updates the live program. The restart needs this
+one-time rule (it allows that single command and nothing else), run from the laptop:
+
+    ssh -t -i $HOME\.ssh\contabo shorts@5.189.155.248 "echo 'shorts ALL=(root) NOPASSWD: /usr/bin/systemctl restart shorts-dashboard' | sudo tee /etc/sudoers.d/shorts-update >/dev/null && sudo chmod 440 /etc/sudoers.d/shorts-update && sudo visudo -cf /etc/sudoers.d/shorts-update"
+
+Undo: `sudo rm /etc/sudoers.d/shorts-update`. A restart stops a dashboard job that is running.

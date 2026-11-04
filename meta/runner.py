@@ -4,8 +4,11 @@
   ~/meta-run is reset to origin/main by the cron line before every run).
 - It only runs jobs from the fixed ALLOWLIST below: a name maps to one fixed `python -m meta.<x>`
   command; the only thing a job may set is a small count. Never arbitrary shell.
-- It runs as the `shorts` user from cron, without sudo. It never touches ~/shorts (the live
-  program): no git reset there, no restarts, no writes to its database.
+- It runs as the `shorts` user from cron. It never touches ~/shorts (the live program), with one
+  exception Roeland asked for (2026-11-04): the fixed "update" job, queued only when he asks for an
+  update, resets ~/shorts to origin/main and restarts the dashboard service. Its only sudo is
+  `systemctl restart shorts-dashboard`, allowed by /etc/sudoers.d/shorts-update (see
+  meta/README.md); without that file the restart is skipped and the log says so.
 - Results (log, an index and small preview videos/frames) are pushed to a SEPARATE private repo
   (`Shorts_results`) with a deploy key that only has access to that repo.
 
@@ -42,7 +45,10 @@ ALLOWLIST = {
     "quiz": ("meta.quiz", ["--all", "-n", "{n}"], (1, 2)),
     "ranking": ("meta.ranking", ["--all", "-n", "{n}"], (1, 2)),
     "scan": ("meta.scan", [], None),
+    "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
+SYSTEMCTL = "/usr/bin/systemctl"
+SERVICE = "shorts-dashboard"
 MAX_HOURS = 3
 PROGRESS_EVERY = 600  # seconds between progress pushes while a job runs
 
@@ -64,6 +70,8 @@ def command(job: dict) -> list[str] | None:
     if name not in ALLOWLIST or not re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", str(job.get("id", ""))):
         return None
     module, args, limits = ALLOWLIST[name]
+    if module is None:
+        return ["update"]
     n = job.get("n", 1)
     if limits:
         if not isinstance(n, int) or not limits[0] <= n <= limits[1]:
@@ -128,6 +136,31 @@ def publish(job_id: str, status: str, log_text: str, files: list[Path]) -> None:
     log("results pushed" if p.returncode == 0 else f"push failed: {p.stderr.strip()[-300:]}")
 
 
+def update_live() -> tuple[str, str]:
+    """The "update" job: the live program to origin/main (what the update one-liner does), then
+    restart the dashboard. Returns (status, log)."""
+    out = []
+
+    def run(cmd: list[str]) -> int:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        out.append(f"$ {' '.join(cmd)}\n{p.stdout}{p.stderr}".rstrip())
+        return p.returncode
+
+    live = str(HOME / "shorts")
+    before = subprocess.run(["git", "-C", live, "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if run(["git", "-C", live, "fetch", "-q", "origin", "main"]) or run(["git", "-C", live, "reset", "-q", "--hard", "origin/main"]):
+        return "failed (git)", "\n".join(out)
+    after = subprocess.run(["git", "-C", live, "log", "--oneline", "-1"], capture_output=True, text=True).stdout.strip()
+    out.append(f"code: {before} -> {after}")
+    if run(["sudo", "-n", SYSTEMCTL, "restart", SERVICE]):
+        out.append("restart not allowed yet: run the one-time sudoers command in meta/README.md")
+        return "updated, not restarted", "\n".join(out)
+    time.sleep(5)
+    active = subprocess.run([SYSTEMCTL, "is-active", SERVICE], capture_output=True, text=True).stdout.strip()
+    out.append(f"dashboard: {active}")
+    return ("done" if active == "active" else f"restarted, dashboard {active}"), "\n".join(out)
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     done = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
@@ -142,6 +175,16 @@ def main() -> None:
             log(f"job {jid}: refused (not on the allowlist or bad count)")
             publish(jid, "refused", "not on the allowlist or bad count", [])
             continue
+        if cmd == ["update"]:
+            log(f"job {jid}: updating the live program")
+            done[jid] = "running"
+            STATE.write_text(json.dumps(done, indent=1), encoding="utf-8")
+            status, text = update_live()
+            done[jid] = status
+            STATE.write_text(json.dumps(done, indent=1), encoding="utf-8")
+            log(f"job {jid}: {status}")
+            publish(jid, status, text, [])
+            break
         log(f"job {jid}: running {' '.join(cmd[1:])}")
         done[jid] = "running"
         STATE.write_text(json.dumps(done, indent=1), encoding="utf-8")
