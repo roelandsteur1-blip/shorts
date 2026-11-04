@@ -111,6 +111,7 @@ def test_runner_allows_the_sweep_job():
     from meta import runner
     cmd = runner.command({"id": "2026-11-04-sweep-1", "name": "sweep"})
     assert cmd[-2:] == ["-m", "meta.collector.sweep"]
+    assert runner.command({"id": "2026-11-04-research-tools-1", "name": "research-tools"})[-1] == "meta.collector.tools"
 
 
 def test_jobs_file_is_valid_toml():

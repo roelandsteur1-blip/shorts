@@ -51,3 +51,11 @@ name = "probe"
 [[job]]
 id = "2026-11-04-update-3"
 name = "update"
+
+[[job]]
+id = "2026-11-04-tools-1"
+name = "research-tools"
+
+[[job]]
+id = "2026-11-04-sweep-1"
+name = "sweep"
