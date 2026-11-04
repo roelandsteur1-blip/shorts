@@ -59,3 +59,7 @@ name = "research-tools"
 [[job]]
 id = "2026-11-04-sweep-1"
 name = "sweep"
+
+[[job]]
+id = "2026-11-04-sweepx-1"
+name = "sweepx"
