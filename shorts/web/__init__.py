@@ -20,6 +20,8 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
     app.extensions["runner"] = runner or Runner(settings)
     if start_runner:
         app.extensions["runner"].start()
+        from ..channels import add_video_types
+        add_video_types(settings)  # older channel files: video_type = "classic"
 
     from . import bench, channels, home, jobs, library, music, review, schedule, sources, stats, voices
     for module in (home, review, jobs, library, sources, music, voices, channels, schedule, stats, bench):

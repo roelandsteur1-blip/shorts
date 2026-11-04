@@ -269,28 +269,26 @@ def render(card: Image.Image, clip: dict, track, seconds: float, out: Path) -> N
         loop.unlink(missing_ok=True)
 
 
-def make(niche: str, n: int, seed_avoid: list[str]) -> list[dict]:
-    from shorts import db, llm
-    from shorts.config import load_settings
-    from shorts.server import load_env
-    from . import config_dir
-    settings = load_settings(config_dir())
-    load_env(settings)  # CLAUDE_CODE_OAUTH_TOKEN on the server, as `python -m shorts` does
-    local_bin = str(Path.home() / ".local" / "bin")  # where the installer puts claude
-    if local_bin not in os.environ.get("PATH", "").split(os.pathsep):
-        os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
-    conn = db.connect(settings.db_path)
+def make(niche: str, n: int, seed_avoid: list[str], lib: dict | None = None) -> list[dict]:
+    """n text-card Shorts for a niche. lib (from shorts/metatype.py, the main program): settings,
+    conn, llm, out_dir, used scene ids, titles to avoid, card name and handle; then nothing is
+    read from or written to ~/meta-out."""
+    if lib:
+        settings, conn, llm = lib["settings"], lib["conn"], lib["llm"]
+    else:
+        from .common import open_library
+        settings, conn, llm = open_library()
     topic, hot = NICHES[niche]
-    out_dir = OUT / niche
+    out_dir = lib["out_dir"] if lib else OUT / niche
     out_dir.mkdir(parents=True, exist_ok=True)
     done_file = OUT / "made.json"
-    made = json.loads(done_file.read_text(encoding="utf-8")) if done_file.exists() else []
-    avoid = [m["title"] for m in made if m["niche"] == niche] + seed_avoid
+    made = [] if lib else json.loads(done_file.read_text(encoding="utf-8")) if done_file.exists() else []
+    avoid = [m["title"] for m in made if m["niche"] == niche] + seed_avoid + list((lib or {}).get("avoid", []))
     log(f"[{niche}] asking Claude for {n + 4} posts")
     data = llm.ask_json(PROMPT.format(topic=topic, hot=hot, n=n + 4,
                                       avoid="; ".join(avoid[-40:]) or "nothing yet"),
                         settings.claude_cmd, retries=1)
-    used = {m["scene_id"] for m in made}
+    used = {m["scene_id"] for m in made} | set((lib or {}).get("used", ()))
     colour = random.Random(niche).choice([(232, 65, 24), (29, 155, 240), (0, 186, 124),
                                           (120, 86, 255), (249, 24, 128)])
     posts = data.get("posts", [])
@@ -327,17 +325,21 @@ def make(niche: str, n: int, seed_avoid: list[str]) -> list[dict]:
         used.add(clip["id"])
         secs = seconds_for(text)
         idx = sum(1 for m in made if m["niche"] == niche) + len(results) + 1
-        out = out_dir / f"{niche}-{idx:03d}.mp4"
-        card = card_image(text, post.get("highlight", []), f"{topic} Facts", f"@{niche}facts", colour)
-        render(card, clip, pick_track(conn), secs, out)
+        out = out_dir / (f"textcard-{datetime.now():%Y%m%d-%H%M%S}-{idx}.mp4" if lib else f"{niche}-{idx:03d}.mp4")
+        card = card_image(text, post.get("highlight", []), (lib or {}).get("name") or f"{topic} Facts",
+                          (lib or {}).get("handle") or f"@{niche}facts", colour)
+        track = pick_track(conn)
+        render(card, clip, track, secs, out)
         rec = {"niche": niche, "file": str(out), "title": post.get("title", ""), "text": text,
                "fixed": bool(c.get("fix")), "visual": clip["query"], "scene_id": clip["id"],
                "footage": clip["title"], "footage_source": clip["source"], "match": clip["score"],
                "seconds": round(secs, 1), "fact_source": post.get("source", ""),
+               "music": track["path"] if track else None, "scene_ids": [clip["id"]],
                "made_at": datetime.now().isoformat(timespec="seconds")}
         results.append(rec)
         log(f"[{niche}] {out.name}: {rec['title']} ({secs:.0f} s, footage: {clip['title'][:50]})")
-    done_file.write_text(json.dumps(made + results, indent=1, ensure_ascii=False), encoding="utf-8")
+    if not lib:
+        done_file.write_text(json.dumps(made + results, indent=1, ensure_ascii=False), encoding="utf-8")
     return results
 
 

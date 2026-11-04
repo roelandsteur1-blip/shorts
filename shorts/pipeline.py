@@ -67,6 +67,17 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     None). Returns Shorts waiting for review per channel."""
     if not orders:
         return {}
+    from . import metatype
+    meta = [(ch, count) for ch, count, _ in orders if metatype.is_meta(ch)]
+    orders = [o for o in orders if not metatype.is_meta(o[0])]
+    waiting = {}
+    for ch, count in meta:  # text card / quiz / ranking channels: the meta maker, rendered right away
+        if count > 0:
+            metatype.make(conn, settings, ch, count)
+        waiting[ch.id] = conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='rendered'",
+                                      (ch.id,)).fetchone()[0]
+    if not orders:
+        return waiting
     from .sources.common import recheck_rights
     if flagged := recheck_rights(conn):
         log.info("%d videos newly flagged for a rights check; they won't be used", flagged)
@@ -112,8 +123,8 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     if restock:
         for ch in channels:
             library.restock(conn, settings, ch)
-    return {ch.id: conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='rendered'",
-                                (ch.id,)).fetchone()[0] for ch in channels}
+    return waiting | {ch.id: conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='rendered'",
+                                          (ch.id,)).fetchone()[0] for ch in channels}
 
 
 def _music_check(settings: Settings, channel: Channel, ready: threading.Event) -> None:

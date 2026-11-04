@@ -115,6 +115,10 @@ class Channel:
     youtube_channel_id: str | None = None  # set by 'Connect YouTube'; upload refuses another channel
     hero_query: str | None = None          # what a scroll-stopping first frame looks like (CLIP)
     library_formats: bool = True           # also use shared formats (shorts/formats.py) up to 3 in total
+    # What kind of Short the channel makes (shorts/metatype.py): classic (the original) or a meta type
+    # (textcard, quiz, ranking, mix). meta_niche: the meta maker's topic set; empty = guessed from id/name.
+    video_type: str = "classic"
+    meta_niche: str | None = None
 
     def __post_init__(self):
         # Claimed Shorts over a minute can't earn at all, and evidence favours short ones.

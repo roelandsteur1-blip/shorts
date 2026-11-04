@@ -5,6 +5,13 @@
 {% for e in errors %}<p class="bad">{{ e }}</p>{% endfor %}
 <div class="grid" style="grid-template-columns:1fr 340px">
 <form method="post" action="{{ '/channels/new' if new else '/channels/' ~ d.id }}" id="chform">
+<div class="card"><h3 style="margin-top:0">Video type</h3>
+<label>What kind of Short this channel makes<select name="video_type" id="video_type">{% for k, v in video_types.items() %}<option value="{{ k }}" {{ 'selected' if k == (d.video_type or 'classic') }}>{{ v }}</option>{% endfor %}</select></label>
+<label id="meta_niche_row">Topic set for text cards, quizzes and rankings<select name="meta_niche"><option value="" {{ 'selected' if not d.meta_niche }}>Automatic{% if meta_guess %}: {{ meta_niches[meta_guess] }}{% else %} (none found: pick one){% endif %}</option>{% for k, v in meta_niches.items() %}<option value="{{ k }}" {{ 'selected' if k == d.meta_niche }}>{{ v }}{% if meta_ok[k]|length == 1 %} (text cards only){% endif %}</option>{% endfor %}</select></label>
+<p class="muted" id="meta_note">Text card, quiz and ranking Shorts come out finished: they go straight to Review, upload like any other Short, and can't be edited (reject and make a new one). Voice, caption look, title bar and formats below only apply to Classic.</p>
+<script>(() => { const s = document.getElementById("video_type"); const f = () => { const m = s.value !== "classic"; document.getElementById("meta_niche_row").style.display = m ? "" : "none"; document.getElementById("meta_note").style.display = m ? "" : "none"; }; s.addEventListener("change", f); f(); })();</script>
+</div>
+
 <div class="card">
 <label>Name<input type="text" name="name" value="{{ d.name or '' }}" required></label>
 {% if new %}<label>Id (file name, can't change later)<input type="text" name="id" value="{{ d.id or '' }}" required pattern="[a-z][a-z0-9_]{1,30}"></label>{% endif %}

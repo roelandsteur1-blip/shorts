@@ -4,6 +4,10 @@ name = "Space Shorts"
 language = "en"
 niche = "space exploration and astronomy"
 
+# What kind of Short this channel makes: classic (hero shot + script + captions), or from the meta
+# maker: textcard, quiz, ranking, mix (shorts/metatype.py). meta_niche: its topic set (optional).
+video_type = "classic"
+
 # Footage categories (config/categories.toml) and sources (shorts/sources) this channel uses.
 categories = ["space"]
 sources = ["nasa"]

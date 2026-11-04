@@ -271,6 +271,11 @@ def work_dir(settings: Settings, channel: Channel, short_id: int) -> Path:
 
 def render_short(conn: sqlite3.Connection, settings: Settings, channel: Channel, short_id: int) -> Path:
     from . import speed, timing, voice
+    row = conn.execute("SELECT format_id, video_path FROM shorts WHERE id=?", (short_id,)).fetchone()
+    if row and (row["format_id"] or "").startswith("meta_"):
+        # Made by the meta maker (shorts/metatype.py): its video can't be rebuilt from the blocks.
+        log.info("short %d is a %s Short: not re-rendered", short_id, row["format_id"][5:])
+        return Path(row["video_path"])
     voice.prepare(conn, settings, channel, short_id)  # no-op unless voiced and the text changed
     looks.ensure_fonts({looks.resolve(channel.style).get("font")})
     lim = speed.limits()

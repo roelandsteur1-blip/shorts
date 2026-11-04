@@ -74,14 +74,17 @@ def overlay(heading: str, items: list[dict], shown: set[int], current: int | Non
     return im
 
 
-def make(niche: str, n: int) -> list[dict]:
-    settings, conn, llm = open_library()
+def make(niche: str, n: int, lib: dict | None = None) -> list[dict]:
+    """n Shorts for a niche. lib (from shorts/metatype.py, the main program): settings, conn, llm,
+    out_dir and the scene ids the channel already used; then ~/meta-out is not touched."""
+    settings, conn, llm = (lib["settings"], lib["conn"], lib["llm"]) if lib else open_library()
     theme, queries, _ = THEMES[niche]
-    out_dir = OUT / niche
+    out_dir = lib["out_dir"] if lib else OUT / niche
     out_dir.mkdir(parents=True, exist_ok=True)
     done = OUT / "made.json"
-    made = json.loads(done.read_text(encoding="utf-8")) if done.exists() else []
-    used: set[int] = set()  # samples may reuse clips from earlier runs; within one run each clip once
+    made = [] if lib else json.loads(done.read_text(encoding="utf-8")) if done.exists() else []
+    # Samples may reuse clips from earlier runs; a channel doesn't reuse its own. Within one run each clip once.
+    used: set[int] = set((lib or {}).get("used", ()))
     results = []
     for k in range(n):
         cands = candidates(conn, settings, queries, used, INTRO + ITEM + OUTRO + 0.5, per_query=4)
@@ -120,17 +123,20 @@ def make(niche: str, n: int) -> list[dict]:
         for it in items:
             used.add(cands[it["clip"]]["id"])
         idx = sum(1 for m in made if m["niche"] == niche) + len(results) + 1
-        out = out_dir / f"{niche}-ranking-{idx:03d}.mp4"
-        secs = render_segments(segs, pick_track(conn), out)
+        out = out_dir / (f"ranking-{datetime.now():%Y%m%d-%H%M%S}-{idx}.mp4" if lib else f"{niche}-ranking-{idx:03d}.mp4")
+        track = pick_track(conn)
+        secs = render_segments(segs, track, out)
         rec = {"niche": niche, "file": str(out), "title": data.get("title", ""), "heading": heading,
                "seconds": round(secs, 1),
                "items": [{"rank": it["rank"], "name": it["name"], "value": it["value"],
                           "footage": cands[it["clip"]]["title"]} for it in sorted(items, key=lambda x: x["rank"])],
                "scene_ids": [cands[it["clip"]]["id"] for it in items],
+               "music": track["path"] if track else None,
                "made_at": datetime.now().isoformat(timespec="seconds")}
         results.append(rec)
         log(f"[{niche}] {out.name}: {rec['title']} ({secs:.0f} s)")
-    done.write_text(json.dumps(made + results, indent=1, ensure_ascii=False), encoding="utf-8")
+    if not lib:
+        done.write_text(json.dumps(made + results, indent=1, ensure_ascii=False), encoding="utf-8")
     return results
 
 

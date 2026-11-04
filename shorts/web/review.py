@@ -135,6 +135,8 @@ def edit_blocks(sid: int):
         abort(404)
     if s["youtube_id"]:
         abort(400, "already uploaded: change it in YouTube Studio")
+    if (s["format_id"] or "").startswith("meta_"):
+        abort(400, "text card, quiz and ranking Shorts can't be edited: reject it and make a new one")
     texts = {int(k.removeprefix("block_")): v for k, v in request.form.items() if k.startswith("block_")}
     changed = script.edit_blocks(conn(), channel_or_404(s["channel"]), sid, texts)
     if "screen_title" in request.form:

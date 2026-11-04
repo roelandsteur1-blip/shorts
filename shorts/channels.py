@@ -78,6 +78,21 @@ def validate(data: dict, known_categories: set[str]) -> list[str]:
     bar = (data.get("style") or {}).get("title_bar")
     if bar and bar not in TITLE_BARS:
         errors.append(f"unknown title bar: {bar}")
+    from . import metatype
+    vt = data.get("video_type", "classic")
+    if vt not in metatype.TYPES:
+        errors.append(f"unknown video type: {vt}")
+    elif vt != "classic":
+        niche = data.get("meta_niche")
+        if niche and niche not in metatype.NICHE_LABELS:
+            errors.append(f"unknown topic set: {niche}")
+        else:
+            guess = metatype.guess_niche(data.get("id"), data.get("name"), niche)
+            if not guess:
+                errors.append("pick a topic set for this video type")
+            elif vt in ("quiz", "ranking") and vt not in metatype.available(guess):
+                errors.append(f"{metatype.TYPES[vt].split(':')[0]} isn't available for {metatype.NICHE_LABELS[guess]} yet: "
+                              "use Text card or Mix")
     allowed = {f.name for f in fields(Channel)}
     extra = set(data) - allowed
     if extra:
@@ -110,9 +125,27 @@ def save(settings: Settings, data: dict, known_categories: set[str], new: bool =
     return []
 
 
+def add_video_types(settings: Settings) -> list[str]:
+    """Channels from before video types get video_type = "classic" written into their file (what
+    they always made). Returns the ids changed."""
+    from .config import list_channels
+    changed = []
+    for cid in list_channels(settings.config_dir):
+        try:
+            data = raw(settings, cid)
+            if "video_type" in data:
+                continue
+            data["video_type"] = "classic"
+            tomlw.write(path_for(settings, cid), data, HEADER)
+            changed.append(cid)
+        except Exception:  # noqa: BLE001 - a broken file stays as it is; the default is classic anyway
+            continue
+    return changed
+
+
 def new_channel(channel_id: str, name: str, language: str, niche: str) -> dict:
     return {
-        "id": channel_id, "name": name, "language": language, "niche": niche,
+        "id": channel_id, "name": name, "language": language, "niche": niche, "video_type": "classic",
         "categories": [], "sources": ["nasa"], "search_terms": [],
         "min_seconds": 15, "max_seconds": 30, "uploads_per_day": 2,
         "publish_times_utc": ["15:00", "21:00"], "niche_tags": [],

@@ -5,7 +5,7 @@ import json
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
-from .. import categorize, channels as chans, formats as fmtlib, llm, looks, sources, tags as taglayers
+from .. import categorize, channels as chans, formats as fmtlib, llm, looks, metatype, sources, tags as taglayers
 from ..config import all_channels, load_channel
 from ..music import MUSIC_EXT
 from ..upload import found_path, token_path
@@ -31,6 +31,9 @@ def form_to_data(form, base: dict) -> dict:
     if "niche_tags" in form:
         data["niche_tags"] = taglayers.pick(_lines(form["niche_tags"]))
     data["search_terms"] = _lines(form.get("search_terms"))
+    if "video_type" in form:
+        data["video_type"] = form["video_type"] or "classic"
+        data["meta_niche"] = form.get("meta_niche") or None
     if "voice" in form:
         data["voice"] = form["voice"].strip() or None
     if form.get("voice_speed"):
@@ -94,7 +97,14 @@ def _context(data: dict, errors=None, new=False) -> dict:
     return {"d": data, "errors": errors or [], "new": new, "cats": cats, "counts": counts,
             "sources": sources.all_sources(), "languages": chans.LANGUAGES, "voices": VOICES, "speeds": SPEEDS, "voice_label": label,
             "looks": looks.LABELS, "title_bars": looks.TITLE_BARS, "same_voice": same_voice, "same_look": same_look, "library_extra": lib,
-            "niche_default": taglayers.NICHE_DEFAULTS.get(data.get("id") or "", [])}
+            "niche_default": taglayers.NICHE_DEFAULTS.get(data.get("id") or "", []),
+            "video_types": metatype.TYPES, "meta_niches": metatype.NICHE_LABELS, "meta_guess": _guess(data),
+            "meta_ok": {n: metatype.available(n) for n in metatype.NICHE_LABELS}}
+
+
+def _guess(data: dict) -> str | None:
+    """The topic set the meta maker would use when none is picked."""
+    return metatype.guess_niche(data.get("id"), data.get("name"))
 
 
 @bp.get("/channels/new")
