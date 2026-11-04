@@ -45,6 +45,7 @@ ALLOWLIST = {
     "quiz": ("meta.quiz", ["--all", "-n", "{n}"], (1, 2)),
     "ranking": ("meta.ranking", ["--all", "-n", "{n}"], (1, 2)),
     "scan": ("meta.scan", [], None),
+    "probe": ("meta.probe", [], None),  # read-only archive research for the topic-first plan
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SYSTEMCTL = "/usr/bin/systemctl"
@@ -127,6 +128,9 @@ def publish(job_id: str, status: str, log_text: str, files: list[Path]) -> None:
         shutil.copy(idx, folder / f"made-{idx.parent.name}.json")
     if files:
         previews(files, folder / "previews")
+    sheets = OUT / "probe" / "sheets"
+    if status != "running" and job_id.split("-")[-2:-1] == ["probe"] and sheets.exists():
+        shutil.copytree(sheets, folder / "sheets", dirs_exist_ok=True)
     jobs = sorted((RESULTS / "jobs").iterdir(), key=lambda p: p.stat().st_mtime)
     for old in jobs[:-5]:
         shutil.rmtree(old / "previews", ignore_errors=True)
