@@ -143,6 +143,33 @@ def add_video_types(settings: Settings) -> list[str]:
     return changed
 
 
+def seed_channels(settings: Settings) -> list[str]:
+    """Channels prepared in config/channel-seeds/ are copied into config/channels once (never over
+    an existing file; a channel deleted later doesn't come back). Returns the ids added."""
+    import json
+    import shutil
+    seeds = settings.config_dir / "channel-seeds"
+    marker = settings.data_dir / "seeded-channels.json"
+    try:
+        done = set(json.loads(marker.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        done = set()
+    added = []
+    for src in sorted(seeds.glob("*.toml")) if seeds.is_dir() else []:
+        dest = path_for(settings, src.stem)
+        if src.stem in done:
+            continue
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dest)
+            added.append(src.stem)
+        done.add(src.stem)
+    if added or (seeds.is_dir() and not marker.exists()):
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps(sorted(done)), encoding="utf-8")
+    return added
+
+
 def new_channel(channel_id: str, name: str, language: str, niche: str) -> dict:
     return {
         "id": channel_id, "name": name, "language": language, "niche": niche, "video_type": "classic",

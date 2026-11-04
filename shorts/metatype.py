@@ -136,6 +136,16 @@ def describe(rec: dict) -> tuple[str, list[tuple[str, float]]]:
     return f"{rec.get('heading') or rec['title']}\n" + "\n".join(lines), [(x, each) for x in lines]
 
 
+def post_tags(rec: dict) -> list[str]:
+    """Tag layer 1 (shorts/tags.py): what this Short is about. Text cards get 3 from Claude; a quiz
+    its answers, a ranking its top 3 (niche and broad tags are added at upload like for classic)."""
+    if rec["kind"] == "quiz":
+        return [r["answer"] for r in rec["rounds"]][:3]
+    if rec["kind"] == "ranking":
+        return [it["name"] for it in rec["items"]][:3]
+    return list(rec.get("tags") or [])[:3]
+
+
 def save(conn: sqlite3.Connection, channel: Channel, rec: dict) -> int:
     description, blocks = describe(rec)
     cur = conn.execute(
@@ -143,7 +153,7 @@ def save(conn: sqlite3.Connection, channel: Channel, rec: dict) -> int:
                                status, video_path, duration, music)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'rendered', ?, ?, ?)""",
         (channel.id, f"meta_{rec['kind']}", rec["scene_ids"][0], rec["title"], rec["title"], rec["title"],
-         description, json.dumps([]), rec["file"], rec["seconds"], rec.get("music")))
+         description, json.dumps(post_tags(rec)), rec["file"], rec["seconds"], rec.get("music")))
     sid = cur.lastrowid
     for i, ((text, secs), scene) in enumerate(zip(blocks, rec["scene_ids"])):
         conn.execute("INSERT INTO blocks (short_id, idx, text, seconds, scene_id) VALUES (?, ?, ?, ?, ?)",

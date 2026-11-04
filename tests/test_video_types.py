@@ -101,3 +101,24 @@ def test_channel_page_has_video_type(settings):
     client = create_app(settings, start_runner=False).test_client()
     page = client.get("/channels/space").data
     assert b"Video type" in page and b"Quiz:" in page and b"Automatic: Space" in page
+
+
+def test_seed_channels_once(settings, tmp_path):
+    from pathlib import Path
+    cfg = tmp_path / "cfg"
+    shutil.copytree(Path(chans.__file__).parent.parent / "config", cfg)
+    s = dataclasses.replace(settings, config_root=cfg)
+    added = chans.seed_channels(s)
+    assert set(added) == {"historycards", "namethatanimal", "spaceranked", "oceanoddities"}
+    for cid in added:
+        ch = load_channel(cid, cfg)
+        assert metatype.is_meta(ch) and chans.validate(chans.raw(s, cid), set()) == []
+    assert load_channel("namethatanimal", cfg).video_type == "quiz"
+    (cfg / "channels" / "spaceranked.toml").unlink()  # deleted by hand: stays deleted
+    assert chans.seed_channels(s) == []
+    assert not (cfg / "channels" / "spaceranked.toml").exists()
+
+
+def test_meta_post_tags():
+    assert metatype.post_tags({"kind": "quiz", "rounds": [{"answer": a} for a in "abcd"]}) == ["a", "b", "c"]
+    assert metatype.post_tags({"kind": "textcard", "tags": ["x", "y"]}) == ["x", "y"]

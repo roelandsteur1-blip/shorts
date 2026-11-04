@@ -76,6 +76,7 @@ Return JSON only:
 {{"posts": [{{"text": "...", "highlight": ["1-3 key words from the text"],
 "visual": "specific query", "visual_broad": "broader query",
 "title": "YouTube title, a question or claim, max 60 characters",
+"tags": ["3 search tags about this post's subject, e.g. 'saturn', 'saturn rings', 'planets'"],
 "source": "where this fact is documented"}}]}}"""
 
 
@@ -335,6 +336,7 @@ def make(niche: str, n: int, seed_avoid: list[str], lib: dict | None = None) -> 
                "footage": clip["title"], "footage_source": clip["source"], "match": clip["score"],
                "seconds": round(secs, 1), "fact_source": post.get("source", ""),
                "music": track["path"] if track else None, "scene_ids": [clip["id"]],
+               "tags": [str(t) for t in post.get("tags") or []][:3],
                "made_at": datetime.now().isoformat(timespec="seconds")}
         results.append(rec)
         log(f"[{niche}] {out.name}: {rec['title']} ({secs:.0f} s, footage: {clip['title'][:50]})")
