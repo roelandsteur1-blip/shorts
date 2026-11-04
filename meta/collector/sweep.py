@@ -100,8 +100,36 @@ def pick_qid(results: list[dict], hint: str) -> tuple[str | None, str]:
 
 
 def qid(label: str, hint: str, g: Get = get) -> tuple[str | None, str]:
+    return pick_qid(wikidata_matches(label, g), hint)
+
+
+def wikidata_matches(label: str, g: Get = get) -> list[dict]:
     d = g(WIKIDATA, action="wbsearchentities", search=label, language="en", format="json", limit=5, type="item")
-    return pick_qid(d.get("search") or [], hint)
+    return [{"id": r.get("id"), "label": r.get("label", ""), "description": r.get("description", "")}
+            for r in d.get("search") or []]
+
+
+PICK_QIDS = """For each subject below, pick the Wikidata item that IS the subject as a viewer of a short
+video would mean it (the planet, not the god; the aircraft type, not a video game or a surname).
+Answer "none" when no candidate fits.
+
+{lines}
+
+Return JSON only: {{"picks": {{"<subject number>": "<Q-id or none>"}}}}"""
+
+
+def claude_qids(subjects: list[dict], matches: list[list[dict]], ask) -> dict[int, str | None]:
+    """One Claude call for all subjects: {index: QID or None}. ask(prompt) -> parsed JSON."""
+    lines = []
+    for i, (s, ms) in enumerate(zip(subjects, matches), 1):
+        opts = "; ".join(f"{m['id']} = {m['label']}: {m['description']}" for m in ms) or "no candidates"
+        lines.append(f"{i}. {s['name']} (good shot: {s['show']}). Candidates: {opts}")
+    picks = (ask(PICK_QIDS.format(lines="\n".join(lines))) or {}).get("picks") or {}
+    out = {}
+    for i, ms in enumerate(matches, 1):
+        v = str(picks.get(str(i), "none"))
+        out[i - 1] = v if v in {m["id"] for m in ms} else None
+    return out
 
 
 # ---------- the sources: each returns (total hits, [hit]) ----------
@@ -159,12 +187,25 @@ def nasa_svs(q: str, g: Get = get) -> tuple[int, list[dict]]:
     rows = d.get("results") if isinstance(d, dict) else d
     hits = []
     for r in rows or []:
-        img = r.get("main_image") or {}
-        hits.append(hit(r.get("title"), True, "public-domain (NASA SVS, credit check)",
-                        img.get("url") if isinstance(img, dict) else None,
+        hits.append(hit(r.get("title"), True, "public-domain (NASA SVS, credit check)", find_image(r),
                         ref=r.get("url") or f"https://svs.gsfc.nasa.gov/{r.get('id', '')}",
                         result_type=r.get("result_type") or r.get("page_type")))
     return int(d.get("count") or len(hits)) if isinstance(d, dict) else len(hits), hits
+
+
+def find_image(obj, depth: int = 0) -> str | None:
+    """The first .jpg/.png URL anywhere in an API record (field names differ per archive)."""
+    if depth > 4:
+        return None
+    if isinstance(obj, str):
+        low = obj.lower().split("?")[0]
+        return obj if obj.startswith("http") and low.endswith((".jpg", ".jpeg", ".png")) else None
+    items = obj.values() if isinstance(obj, dict) else obj if isinstance(obj, list) else []
+    for v in items:
+        got = find_image(v, depth + 1)
+        if got:
+            return got
+    return None
 
 
 def dvids(q: str, key: str, g: Get = get) -> tuple[int, list[dict]]:
@@ -395,10 +436,15 @@ def load_keys(settings) -> dict:
     return {n: sources.api_key(settings, n) for n in ("dvids", "nara", "europeana", "pixabay", "smithsonian")}
 
 
+ASK = None  # Claude (llm.ask_json) once the library is open; None in tests / without Claude
+
+
 def open_library():
     try:
         from meta.common import open_library as ol
-        settings, conn, _ = ol()
+        settings, conn, llm = ol()
+        global ASK
+        ASK = lambda prompt: llm.ask_json(prompt, settings.claude_cmd, retries=1)
         return settings, conn
     except Exception as e:
         log(f"library not available, no baseline: {e}")
@@ -432,15 +478,34 @@ def main(argv=None) -> None:
     if skipped:
         log(f"no key yet, skipped: {', '.join(skipped)}")
     names = ([] if a.extra else ["Library today"]) + [n for n, _, k in srcs if not k or keys.get(k)]
+    matches = []
+    for s in subjects:
+        try:
+            matches.append(wikidata_matches(s["wikidata"]))
+        except Exception as e:
+            log(f"Wikidata lookup failed for {s['name']}: {e}")
+            matches.append(None)
+    picked = None
+    if ASK:
+        try:
+            picked = claude_qids(subjects, [m or [] for m in matches], ASK)
+            log(f"Claude picked Wikidata items for {sum(1 for v in picked.values() if v)} of {len(subjects)} subjects")
+        except Exception as e:
+            log(f"Claude Wikidata pick failed, using hint words: {e}")
     results, by_niche = [], {}
     t_all = time.time()
     for idx, s in enumerate(subjects, 1):
         log(f"{idx}/{len(subjects)} {s['niche']} / {s['name']}")
         row = {"niche": s["niche"], "name": s["name"], "sources": {}}
-        try:
-            q, desc = qid(s["wikidata"], s["hint"])
-        except Exception as e:
-            q, desc = None, f"error: {e}"
+        ms = matches[idx - 1]
+        if ms is None:
+            q, desc = None, "Wikidata lookup failed"
+        elif picked is not None and picked.get(idx - 1):
+            q = picked[idx - 1]
+            m = next(m for m in ms if m["id"] == q)
+            desc = f"{m['label']}: {m['description']} (Claude)"
+        else:
+            q, desc = pick_qid(ms, s["hint"])
         row["qid"], row["qid_label"] = q, desc
         rows: list[tuple[str, list[dict]]] = []
         if lib and not a.extra:

@@ -55,8 +55,8 @@ def test_nasa_flags_third_party_footage():
 
 
 def test_new_archives_parse():
-    svs = {"count": 1, "results": [{"id": 5, "title": "Hurricane", "url": "u", "main_image": {"url": "img"}}]}
-    assert sweep.nasa_svs("h", g=lambda *a, **k: svs)[1][0]["thumb"] == "img"
+    svs = {"count": 1, "results": [{"id": 5, "title": "Hurricane", "url": "u", "main_image": {"url": "https://svs.gsfc.nasa.gov/img.jpg"}}]}
+    assert sweep.nasa_svs("h", g=lambda *a, **k: svs)[1][0]["thumb"] == "https://svs.gsfc.nasa.gov/img.jpg"
     dv = {"page_info": {"total_results": 7}, "results": [{"title": "F-16", "thumbnail": {"url": "t"}, "url": "u"}]}
     total, hits = sweep.dvids("f-16", "KEY", g=lambda url, **p: dv)
     assert total == 7 and hits[0]["thumb"] == "t" and hits[0]["ok"]
@@ -83,7 +83,8 @@ def test_new_archives_parse():
 def test_sources_without_a_key_are_skipped_and_one_failure_does_not_stop_the_sweep(tmp_path, monkeypatch):
     monkeypatch.setattr(sweep, "OUT", tmp_path)
     monkeypatch.setattr(sweep, "open_library", lambda: None)
-    monkeypatch.setattr(sweep, "qid", lambda label, hint: ("Q1", "x: y"))
+    monkeypatch.setattr(sweep, "wikidata_matches", lambda label: [{"id": "Q1", "label": "x", "description": "y"}])
+    monkeypatch.setattr(sweep, "pick_qid", lambda ms, hint: ("Q1", "x: y"))
     monkeypatch.setattr(sweep, "fetch_thumb", lambda src: Image.new("RGB", (64, 36), (90, 90, 90)) if src else None)
     calls = []
 
@@ -138,7 +139,8 @@ def test_extra_pass_runs_only_keyed_archives(tmp_path, monkeypatch):
     monkeypatch.setattr(sweep, "load_keys", lambda settings: {"smithsonian": "K"})
     monkeypatch.setattr(sweep, "open_library", lambda: (object(), None))
     monkeypatch.setattr(sweep.Scorer, "__init__", lambda self, settings: setattr(self, "enc", None))
-    monkeypatch.setattr(sweep, "qid", lambda label, hint: ("Q1", "x: y"))
+    monkeypatch.setattr(sweep, "wikidata_matches", lambda label: [{"id": "Q1", "label": "x", "description": "y"}])
+    monkeypatch.setattr(sweep, "pick_qid", lambda ms, hint: ("Q1", "x: y"))
     monkeypatch.setattr(sweep, "fetch_thumb", lambda src: None)
     monkeypatch.setattr(sweep, "smithsonian", lambda q, key: (1, [sweep.hit("t", True, "CC0", None)]))
     monkeypatch.setattr(sweep, "commons", lambda *a, **k: (_ for _ in ()).throw(AssertionError("not keyed")))
@@ -148,3 +150,17 @@ def test_extra_pass_runs_only_keyed_archives(tmp_path, monkeypatch):
     assert list(made["subjects"][0]["sources"]) == ["Smithsonian"]
     from meta import runner
     assert runner.command({"id": "2026-11-04-sweepx-1", "name": "sweepx"})[-1] == "--extra"
+
+
+def test_claude_picks_wikidata_items_in_one_call_and_only_from_the_candidates():
+    subs = [{"name": "Saturn", "show": "the planet"}, {"name": "lion", "show": "a lion"}, {"name": "x", "show": "y"}]
+    ms = [[{"id": "Q1", "label": "Saturn", "description": "Roman god"}, {"id": "Q193", "label": "Saturn", "description": "planet"}],
+          [{"id": "Q140", "label": "lion", "description": "species"}], []]
+    prompts = []
+    got = sweep.claude_qids(subs, ms, lambda p: prompts.append(p) or {"picks": {"1": "Q193", "2": "Q999", "3": "none"}})
+    assert got == {0: "Q193", 1: None, 2: None} and len(prompts) == 1 and "Roman god" in prompts[0]
+
+
+def test_find_image_anywhere_in_a_record():
+    assert sweep.find_image({"a": 1, "media": [{"x": "https://svs/a.mp4"}, {"y": "https://svs/b_searchweb.png"}]}) == "https://svs/b_searchweb.png"
+    assert sweep.find_image({"a": "not a url.jpg"}) is None
