@@ -47,3 +47,7 @@ name = "update"
 [[job]]
 id = "2026-11-04-probe-1"
 name = "probe"
+
+[[job]]
+id = "2026-11-04-update-3"
+name = "update"

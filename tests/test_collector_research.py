@@ -119,8 +119,10 @@ def test_jobs_file_is_valid_toml():
     assert len({j["id"] for j in jobs}) == len(jobs)
 
 
-def test_research_keys_box_saves_keys(client, settings):
+def test_research_keys_box_saves_keys(settings):
     from shorts import sources
+    from shorts.web import create_app
+    client = create_app(settings, start_runner=False).test_client()
     page = client.get("/sources").get_data(as_text=True)
     assert "Research keys" in page and "DVIDS" in page and "No key yet" in page
     r = client.post("/sources-research-key/dvids", data={"api_key": " abc "})
