@@ -63,4 +63,5 @@ def test_every_method_renders_and_the_grid_is_made(tmp_path):
 
 def test_runner_allows_crops():
     from meta import runner
-    assert runner.command({"id": "2026-11-05-crops-1", "name": "crops"})[-1] == "meta.collector.crops"
+    cmd = runner.command({"id": "2026-11-05-crops-3", "name": "crops", "n": 2})
+    assert "meta.collector.crops" in cmd and cmd[-2:] == ["--part", "2"]

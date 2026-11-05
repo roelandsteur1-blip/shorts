@@ -40,6 +40,7 @@ from . import pieces, sweep
 SRC = Path.home() / "meta-out" / "pieces"
 OUT = Path.home() / "meta-out" / "crops"
 PER_SUBJECT = 2
+PARTS = 3
 DETECT_EVERY = 2.0     # seconds between detector frames
 MIN_SCORE = 0.12       # detector box score to count as "found"
 PANEL_W, PANEL_H = 270, 480
@@ -292,6 +293,7 @@ def side_by_side(panels: list[tuple[str, Path]], dst: Path) -> None:
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--part", type=int, default=0, help="1-3: every third clip, so each part fits the runner's 3 hours")
     a = ap.parse_args(argv)
     if pieces.RESEARCH_PY.exists() and Path(sys.prefix).resolve() != pieces.RESEARCH_PY.parent.parent.resolve() \
             and not os.environ.get("PIECES_NO_REEXEC"):
@@ -303,7 +305,11 @@ def main(argv=None) -> None:
     from shorts import framing
     (OUT / "review").mkdir(parents=True, exist_ok=True)
     made = [json.loads(p.read_text()) for p in sorted(SRC.glob("made-part*.json"))]
-    clips = pick_clips(made, SRC / "landscape")[:a.limit] if a.limit else pick_clips(made, SRC / "landscape")
+    clips = pick_clips(made, SRC / "landscape")
+    if a.part:
+        clips = clips[a.part - 1::PARTS]
+    if a.limit:
+        clips = clips[:a.limit]
     log(f"{len(clips)} clips to crop")
     lib = sweep.open_library()
     ask = None
@@ -381,7 +387,7 @@ def main(argv=None) -> None:
                     {"key": key, "coverage": cov, "paths": paths, "review": review.name})
         for p in tmp.glob(f"{slug}-*.mp4"):
             p.unlink()
-        (OUT / "made.json").write_text(json.dumps({"clips": rows, "minutes": round((time.time() - t_all) / 60, 1)},
+        (OUT / (f"made-part{a.part}.json" if a.part else "made.json")).write_text(json.dumps({"clips": rows, "minutes": round((time.time() - t_all) / 60, 1)},
                                                   indent=1, default=str), encoding="utf-8")
         log(f"  {i}/{len(clips)} rendered; subject inside window: {json.dumps(cov)}")
     log(f"done: {len(rows)} clips in {(time.time() - t_all) / 60:.0f} min")

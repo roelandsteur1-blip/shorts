@@ -49,7 +49,7 @@ ALLOWLIST = {
     "sweep": ("meta.collector.sweep", [], None),  # footage collector research R2+R3, read-only
     "sweepx": ("meta.collector.sweep", ["--extra"], None),  # the keyed archives only (keys saved later)
     "pieces": ("meta.collector.pieces", ["--part", "{n}"], (1, 2)),  # collector research R4-R7, half the subjects each
-    "crops": ("meta.collector.crops", [], None),  # collector research R6b: crop methods side by side
+    "crops": ("meta.collector.crops", ["--part", "{n}"], (1, 3)),  # collector research R6b: crop methods side by side
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "study": ("meta.study", [], None),  # competitor channel study (meta/study.toml), read-only
     "update": (None, [], None),  # fixed steps in update_live(), not a module
