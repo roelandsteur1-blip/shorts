@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% block title %}Source test · {{ ch.name }}{% endblock %}{% block body %}
+<h1>Source test <span class="muted">{{ ch.name }}</span></h1>
+<p><a href="/channels/{{ ch.id }}">back to the channel</a></p>
+{% if saved %}<p class="ok">Saved: the footage collector will search these archives for {{ ch.name }}.</p>{% endif %}
+<div class="card"><h3 style="margin-top:0">1. Run the test</h3>
+<p class="muted">Searches every footage archive (and today's library) for these subjects, one per line, and makes a sheet with the 2 best thumbnails per archive. Search only: nothing is downloaded. About 1 to 2 minutes per subject.</p>
+<form method="post" action="/channels/{{ ch.id }}/source-test/run">
+<textarea name="subjects" rows="6" style="width:100%;max-width:480px">{{ subjects|join('\n') }}</textarea>
+<p><button class="primary">{{ 'Run again' if res else 'Run source test' }}</button>
+{% if job %}<span class="muted">Last run: <a href="/jobs/{{ job.id }}">{{ job.status }}</a></span>{% endif %}</p>
+</form></div>
+{% if res %}
+<div class="card"><h3 style="margin-top:0">2. Look at the sheet</h3>
+<p class="muted">Rows are the subjects, columns the archives. An empty cell means that archive found nothing usable. Run {{ res.at[:16].replace('T', ' ') }} UTC, {{ res.minutes }} min.</p>
+<a href="/channels/{{ ch.id }}/source-test/sheet.jpg" target="_blank"><img src="/channels/{{ ch.id }}/source-test/sheet.jpg?t={{ res.at }}" style="max-width:100%;border-radius:6px" alt="source test sheet"></a>
+</div>
+{% endif %}
+<div class="card"><h3 style="margin-top:0">{{ '3' if res else '2' }}. Tick the archives this channel uses</h3>
+<p class="muted">{% if saved_ticks %}Your saved choice is ticked.{% else %}Not chosen yet: ticked is the default from the research (round 1) for this niche.{% endif %}</p>
+<form method="post" action="/channels/{{ ch.id }}/source-test/save">
+{% for col in (res.columns if res else picked) %}<label style="display:block;margin:4px 0"><input type="checkbox" name="source" value="{{ col }}" {{ 'checked' if col in picked }}> {{ col }}{% if res %} <span class="muted">({{ res.usable.get(col, 0) }} of {{ res.subjects|length }} subjects found something)</span>{% endif %}</label>
+{% endfor %}
+<p><button class="primary">Save</button></p>
+</form></div>
+{% endblock %}

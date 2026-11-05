@@ -13,7 +13,7 @@ from .config import all_channels, list_channels, load_channel, load_settings
 
 # Commands that keep the CPU busy for a while; they run at below-normal priority.
 HEAVY = {"ingest", "restock", "categorize", "dedupe", "scenes", "embed", "make", "make-all", "finish",
-         "rerender", "music"}
+         "rerender", "music", "source-test"}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -88,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("upload-all", help="7. daily upload: every channel, up to channel_uploads_per_day each")
 
+    pst2 = sub.add_parser("source-test", help="search every footage archive for sample subjects; sheet per archive")
+    pst2.add_argument("--subjects", default="", help="subjects separated by | (default: the niche's test subjects)")
     pcn = sub.add_parser("connect", help="log in to YouTube for this channel and show which channel it is")
     pcn.add_argument("--fresh", action="store_true", help="forget the saved login first (other account)")
 
@@ -120,6 +122,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "check":
         return _check(settings)
+    if args.cmd == "source-test":
+        from .sourcetest import run
+        res = run(conn, settings, channel, args.subjects.split("|"))
+        print("usable per archive (subjects with a hit): " + ", ".join(f"{k} {v}" for k, v in res["usable"].items()))
+        return 0
     if args.cmd == "ingest":
         from .sources.common import ingest
         n = ingest(conn, settings, args.source or "nasa", args.term or channel.search_terms, per_term=args.per_term)

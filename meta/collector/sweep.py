@@ -469,6 +469,49 @@ def open_library():
         return None
 
 
+def sweep_subject(s: dict, q: str | None, row: dict, lib, srcs, keys: dict, scorer) -> list[tuple[str, list[dict]]]:
+    """Search every source for one subject (library first when lib is given), fetch and score the
+    thumbnails; fills row["sources"] and returns [(source name, hits)] for the sheets."""
+    rows: list[tuple[str, list[dict]]] = []
+    if lib:
+        try:
+            t0 = time.time()
+            total, hits = library_hits(s, lib)
+            rows.append(("Library today", hits))
+            row["sources"]["Library today"] = {"found": total, "seconds": round(time.time() - t0, 1)}
+        except Exception as e:
+            row["sources"]["Library today"] = {"error": str(e)[:300]}
+    for name, fn, need in srcs:
+        if need and not keys.get(need):
+            continue
+        t0 = time.time()
+        try:
+            got = fn(s, q)
+        except Exception as e:  # one archive failing never stops the sweep
+            row["sources"][name] = {"error": str(e)[:300], "seconds": round(time.time() - t0, 1)}
+            log(f"  {name}: error {str(e)[:160]}")
+            continue
+        if got is None:
+            row["sources"][name] = {"skipped": "no Wikidata id"}
+            continue
+        total, hits = got
+        ok = [h for h in hits if h["ok"]]
+        row["sources"][name] = {"total": total, "checked": len(hits), "licence_ok": len(ok),
+                                "rejected": sorted({str(h["licence"]) for h in hits if not h["ok"]})[:5],
+                                "seconds": round(time.time() - t0, 1)}
+        rows.append((name, ok[:KEEP]))
+    # thumbnails + scores
+    for name, hits in rows:
+        for h in hits:
+            h["_img"] = fetch_thumb(h.get("thumb"))
+        imgs = [h["_img"] for h in hits if h["_img"]]
+        for h, sc in zip([h for h in hits if h["_img"]], scorer.scores(s, imgs) if scorer.enc else [None] * len(imgs)):
+            h["score"] = sc
+        row["sources"].setdefault(name, {})["hits"] = [
+            {k: v for k, v in h.items() if k != "_img"} | {"thumb_ok": h["_img"] is not None} for h in hits]
+    return rows
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="one niche")
@@ -525,43 +568,7 @@ def main(argv=None) -> None:
         else:
             q, desc = pick_qid(ms, s["hint"])
         row["qid"], row["qid_label"] = q, desc
-        rows: list[tuple[str, list[dict]]] = []
-        if lib and not a.extra:
-            try:
-                t0 = time.time()
-                total, hits = library_hits(s, lib)
-                rows.append(("Library today", hits))
-                row["sources"]["Library today"] = {"found": total, "seconds": round(time.time() - t0, 1)}
-            except Exception as e:
-                row["sources"]["Library today"] = {"error": str(e)[:300]}
-        for name, fn, need in srcs:
-            if need and not keys.get(need):
-                continue
-            t0 = time.time()
-            try:
-                got = fn(s, q)
-            except Exception as e:  # one archive failing never stops the sweep
-                row["sources"][name] = {"error": str(e)[:300], "seconds": round(time.time() - t0, 1)}
-                log(f"  {name}: error {str(e)[:160]}")
-                continue
-            if got is None:
-                row["sources"][name] = {"skipped": "no Wikidata id"}
-                continue
-            total, hits = got
-            ok = [h for h in hits if h["ok"]]
-            row["sources"][name] = {"total": total, "checked": len(hits), "licence_ok": len(ok),
-                                    "rejected": sorted({str(h["licence"]) for h in hits if not h["ok"]})[:5],
-                                    "seconds": round(time.time() - t0, 1)}
-            rows.append((name, ok[:KEEP]))
-        # thumbnails + scores
-        for name, hits in rows:
-            for h in hits:
-                h["_img"] = fetch_thumb(h.get("thumb"))
-            imgs = [h["_img"] for h in hits if h["_img"]]
-            for h, sc in zip([h for h in hits if h["_img"]], scorer.scores(s, imgs) if scorer.enc else [None] * len(imgs)):
-                h["score"] = sc
-            row["sources"].setdefault(name, {})["hits"] = [
-                {k: v for k, v in h.items() if k != "_img"} | {"thumb_ok": h["_img"] is not None} for h in hits]
+        rows = sweep_subject(s, q, row, lib if not a.extra else None, srcs, keys, scorer)
         slug = re.sub(r"[^a-z0-9]+", "_", s["name"].lower()).strip("_")
         subject_sheet(s, rows, OUT / "sheets" / "subjects" / f"{s['niche']}-{slug}.jpg")
         by_niche.setdefault(s["niche"], []).append((s, rows))

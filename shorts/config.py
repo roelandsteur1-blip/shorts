@@ -119,6 +119,9 @@ class Channel:
     # (textcard, quiz, ranking, mix). meta_niche: the meta maker's topic set; empty = guessed from id/name.
     video_type: str = "classic"
     meta_niche: str | None = None
+    # Footage archives the collector searches for this channel, ticked on the channel's Source test
+    # page (shorts/sourcetest.py); empty = Roeland's round-1 pick for its niche.
+    collector_sources: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         # Claimed Shorts over a minute can't earn at all, and evidence favours short ones.

@@ -198,3 +198,58 @@ def confirm(cid: str):
 def try_it(cid: str):
     channel_or_404(cid)
     return start_job(cid, ["make", "-n", "3"], "Try it: make 3 Shorts")
+
+
+# ---------- Source test (shorts/sourcetest.py) ----------
+
+@bp.get("/channels/<cid>/source-test")
+def source_test(cid: str):
+    from .. import sourcetest
+    ch = channel_or_404(cid)
+    res = sourcetest.load(settings(), cid)
+    job = conn().execute("""SELECT * FROM jobs WHERE channel=? AND command LIKE '["source-test"%'
+                            ORDER BY id DESC LIMIT 1""", (cid,)).fetchone()
+    return render_template("source_test.html", ch=ch, res=res, job=job, picked=sourcetest.picked(ch),
+                           saved_ticks=bool(ch.collector_sources),
+                           subjects=(res or {}).get("subjects") or sourcetest.default_subjects(ch),
+                           saved=request.args.get("saved"))
+
+
+@bp.post("/channels/<cid>/source-test/run")
+def source_test_run(cid: str):
+    channel_or_404(cid)
+    names = [x.strip().replace("|", " ") for x in request.form.get("subjects", "").splitlines() if x.strip()][:12]
+    if not names:
+        abort(400, "give at least one subject")
+    return start_job(cid, ["source-test", "--subjects", "|".join(names)], "Source test")
+
+
+@bp.get("/channels/<cid>/source-test/sheet.jpg")
+def source_test_sheet(cid: str):
+    from flask import send_file
+
+    from .. import sourcetest
+    channel_or_404(cid)
+    p = sourcetest.folder(settings(), cid) / "sheet.jpg"
+    if not p.exists():
+        abort(404)
+    return send_file(p, mimetype="image/jpeg", max_age=0)
+
+
+@bp.post("/channels/<cid>/source-test/save")
+def source_test_save(cid: str):
+    from .. import sourcetest
+    channel_or_404(cid)
+    res = sourcetest.load(settings(), cid) or {}
+    allowed = set(res.get("columns") or []) | set(sourcetest.DEFAULT_PICK) | {
+        x for v in sourcetest.ROUND1_PICKS.values() for x in v}
+    ticks = [x for x in request.form.getlist("source") if x in allowed]
+    if not ticks:
+        abort(400, "tick at least one archive")
+    data = chans.raw(settings(), cid)
+    data["collector_sources"] = ticks
+    known = {c.id for c in categorize.load_categories(settings())}
+    errors = chans.save(settings(), data, known)
+    if errors:
+        abort(400, "; ".join(errors))
+    return redirect(url_for("channels.source_test", cid=cid, saved=1))
