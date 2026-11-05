@@ -24,7 +24,10 @@ def test_collect_fetches_more_only_when_first_batch_fails(tmp_path, monkeypatch)
     cands = [dict(_c(str(i), "commons_video"), title=f"t{i}") for i in range(5)]
     for c in cands:
         c.pop("gates")
-    monkeypatch.setattr(round3.pieces, "candidates", lambda *a: [dict(c) for c in cands])
+    def fake_cands(subject, lib, scorer, keys):
+        assert lib is None or len(lib) == 2  # pieces/sweep expect (settings, conn)
+        return [dict(c) for c in cands]
+    monkeypatch.setattr(round3.pieces, "candidates", fake_cands)
     fetched = []
 
     def fake_fetch(c, subject, scorer, tmp):
@@ -42,7 +45,7 @@ def test_collect_fetches_more_only_when_first_batch_fails(tmp_path, monkeypatch)
         def check(self, frames):
             return {"faults": [], "old_look": 0.0}
     sub = round3.subject("space", "Saturn", None)
-    clip, rec = round3.collect(sub, 7.0, None, None, G(), {}, tmp_path, lambda items: {"K1"})
+    clip, rec = round3.collect(sub, 7.0, ("s", "c", "llm"), None, G(), {}, tmp_path, lambda items: {"K1"})
     assert fetched == ["K0", "K1", "K2"] and clip["path"].endswith("K1.mp4") and rec["result"] == "commons_video"
     fetched.clear()
     clip, rec = round3.collect(sub, 7.0, None, None, G(), {}, tmp_path, lambda items: {"K4"} if len(items) == 2 else set())
@@ -93,3 +96,32 @@ def test_new_ranking_and_quiz_render(tmp_path, monkeypatch):
     assert "error" not in r and (tmp_path / "r.mp4").stat().st_size > 10_000 and len(r["items"]) == 5
     q = round3.new_quiz("space", lib, None, None, {}, tmp_path, None, tmp_path / "q.mp4")
     assert "error" not in q and (tmp_path / "q.mp4").exists()
+
+
+def test_main_runs_both_versions_with_letters(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("PIECES_NO_REEXEC", "1")
+    monkeypatch.setattr(round3, "OUT", tmp_path)
+    monkeypatch.setattr(round3.sweep, "open_library", lambda: (_Settings(), _Conn()))
+    monkeypatch.setattr(round3.sweep, "load_keys", lambda s: {})
+    monkeypatch.setattr(round3.sweep, "Scorer", lambda s: None)
+    monkeypatch.setattr(round3.pieces, "Gates", lambda s: None)
+
+    def fake_new(niche, lib, scorer, gates, keys, tmp, ask, out):
+        assert len(lib) == 3
+        out.write_bytes(b"x")
+        return {"title": "new"}
+
+    def fake_old(kind, niche, lib, out_dir):
+        f = out_dir / f"{kind}.mp4"
+        f.write_bytes(b"y")
+        return {"title": "old", "_file": str(f)}
+    monkeypatch.setattr(round3, "new_ranking", fake_new)
+    monkeypatch.setattr(round3, "new_quiz", fake_new)
+    monkeypatch.setattr(round3, "old_short", fake_old)
+    round3.main(["--niche", "space"])
+    d = json.loads((tmp_path / "made-part1.json").read_text())
+    assert [r["kind"] for r in d["shorts"]] == ["ranking", "quiz"]
+    for r in d["shorts"]:
+        assert sorted(r["key"].values()) == ["new", "today"]
+        assert (tmp_path / "shorts" / r["new"]["file"]).exists() and (tmp_path / "shorts" / r["today"]["file"]).exists()

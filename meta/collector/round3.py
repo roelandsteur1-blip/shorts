@@ -80,7 +80,7 @@ def collect(subject: dict, need: float, lib, scorer, gates, keys: dict, tmp: Pat
     """One clip of `need` seconds for the subject, or None. Returns (clip for render_segments, log)."""
     rec = {"name": subject["name"], "tried": []}
     t0 = time.time()
-    cands = [c for c in pieces.candidates(subject, lib, scorer, keys) if "error" not in c]
+    cands = [c for c in pieces.candidates(subject, lib[:2] if lib else None, scorer, keys) if "error" not in c]
     cands = order(cands)
     for i, c in enumerate(cands):
         c["label"] = f"K{i}"
@@ -240,7 +240,9 @@ def main(argv=None) -> None:
     scorer = sweep.Scorer(lib[0])
     gates = pieces.Gates(scorer)
     from meta.common import verify
-    settings, _, llm = lib
+    from shorts import llm
+    settings = lib[0]
+    lib = (lib[0], lib[1], llm)  # sweep gives (settings, conn); the makers here also need llm
     ask = lambda items: verify(llm, settings, items)
     shorts_dir = OUT / "shorts"
     shorts_dir.mkdir(parents=True, exist_ok=True)

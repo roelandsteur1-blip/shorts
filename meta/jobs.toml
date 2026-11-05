@@ -112,3 +112,8 @@ n = 1
 id = "2026-11-05-round3-2"
 name = "round3"
 n = 2
+
+[[job]]
+id = "2026-11-05-round3-3"
+name = "round3"
+n = 1
