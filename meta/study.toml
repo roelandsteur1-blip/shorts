@@ -1,0 +1,1 @@
+handles = ["@moonlitcuriosity"]  # channels for `python -m meta.study` (hooks/titles/format only, never topics)
