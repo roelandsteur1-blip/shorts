@@ -117,11 +117,11 @@ def save_crops(i: int):
     if i >= len(gr):
         abort(404)
     g = gr[i]
-    best = request.form.get("best", "")
-    if best not in g["letters"] and best != "same":
+    best = request.form.getlist("best")  # one or more equally good crops, or "same"
+    if not best or any(b not in g["letters"] and b != "same" for b in best):
         abort(400)
     m = _marks()
-    m["crops"][g["file"]] = {"best": best, "cut": sorted(set(request.form.getlist("cut")) & set(g["letters"]))}
+    m["crops"][g["file"]] = {"best": sorted(best), "cut": sorted(set(request.form.getlist("cut")) & set(g["letters"]))}
     _save(m)
     return redirect(url_for("footage_review.crops", i=i + 1))
 

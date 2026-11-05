@@ -34,10 +34,12 @@ def test_pages_save_marks(tmp_path, monkeypatch):
     app.jinja_env.filters["pct"] = lambda a, b: 0
     c = app.test_client()
     assert c.post("/bench/footage/clips/0", data={"bad": ["K", "Z"]}).status_code == 302
-    assert c.post("/bench/footage/crops/0", data={"best": "D", "cut": ["C"]}).status_code == 302
+    assert c.post("/bench/footage/crops/0", data={"best": ["D", "C"], "cut": ["C"]}).status_code == 302
     assert c.post("/bench/footage/crops/0", data={"best": "Q"}).status_code == 400
+    assert c.post("/bench/footage/crops/0", data={}).status_code == 400
+    assert c.get("/bench/footage/crops/0").status_code == 200
     m = json.loads((tmp_path / "marks" / "footage.json").read_text())
     assert m["clips"] == {"space/Saturn": ["K"]}
-    assert m["crops"] == {"crop-space-saturn-A.mp4": {"best": "D", "cut": ["C"]}}
+    assert m["crops"] == {"crop-space-saturn-A.mp4": {"best": ["C", "D"], "cut": ["C"]}}
     assert c.get("/bench/footage/grid/..%2Fx.mp4").status_code == 404
     assert c.get("/bench/footage/clip/space-saturn-A.mp4").status_code == 200
