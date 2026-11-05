@@ -17,13 +17,21 @@ from pathlib import Path
 from .common import log, pick_track, render_segments
 
 SCRIPTS = 3  # scripts written per Short before giving up on the topic-first route
+# Niches whose subjects must come from the time of film, or no footage exists (round 3: retro tech
+# rankings picked the Antikythera Mechanism and the Gutenberg press; 2 of 5 found).
+ERA = {"retrotech": "Only pick machines and devices from the film era, about 1890 to 1990, so real "
+                    "archive film or photos of them exist; nothing older."}
+
+
+def era(niche: str) -> str:
+    return f"\n{ERA[niche]}" if niche in ERA else ""
 
 RANK_PROMPT = """You make a "ranking" Short about {theme}. Pick {n} different, well-known subjects that
 can be ranked by ONE measurable property: {props}. Every value must measure the SAME thing in the
 SAME unit, no two items share a value, and use only well-documented numbers you are sure of.
 Pick subjects that are easy to film or photograph and that archive footage likely exists for
 (famous named things, not abstract ones). #1 = the most/highest (or as stated above). The Short
-shows the best 5 that we find footage for, so rank all {n}.
+shows the best 5 that we find footage for, so rank all {n}.{era}
 
 Do not reuse these earlier Shorts: {avoid}{failed}
 
@@ -36,7 +44,7 @@ QUIZ_PROMPT = """You make a "{question}" quiz Short in 3 levels about {theme}. P
 well-known subjects, easy to hard, that a viewer can recognise from a picture and that archive
 footage likely exists for. The Short uses the first 3 we find footage for, so give all {n}. For
 each: "answer" (the name, max 4 words), "fact" (one surprising TRUE fact, max 14 plain words) and
-"show" (what a good shot of it looks like, max 10 words).
+"show" (what a good shot of it looks like, max 10 words).{era}
 
 Do not reuse these earlier Shorts: {avoid}{failed}
 
@@ -55,7 +63,7 @@ Write {n} posts. Rules:
 - 18 to 38 words. Plain words a 10-year-old understands. No hashtags, no emojis except at most one
   at the end.
 - The first words must create curiosity; end on the most surprising part.
-- Different subjects for every post. Avoid: {avoid}{failed}
+- Different subjects for every post. Avoid: {avoid}{failed}{era}
 
 Return JSON only:
 {{"posts": [{{"text": "...", "highlight": ["1-3 key words from the text"],
@@ -113,7 +121,7 @@ def ranking(niche: str, lib: dict) -> list[dict]:
     need = rk.INTRO + rk.ITEM + rk.OUTRO + 0.5
     failed: list[str] = []
     for attempt in range(1, SCRIPTS + 1):
-        data = llm.ask_json(RANK_PROMPT.format(theme=theme, props=rk.PROPERTIES[niche], n=7, avoid=_avoid(lib),
+        data = llm.ask_json(RANK_PROMPT.format(theme=theme, props=rk.PROPERTIES[niche], n=7, avoid=_avoid(lib), era=era(niche),
                                                failed=_failed_note(failed)), settings.claude_cmd, retries=1)
         plan = sorted((it for it in data.get("items", []) if it.get("name")), key=lambda x: int(x.get("rank", 99)))
         log(f"[{niche}] ranking script {attempt}: {', '.join(it['name'] for it in plan)}")
@@ -155,7 +163,7 @@ def quiz(niche: str, lib: dict) -> list[dict]:
     need = qz.ASK + qz.COUNT + qz.REVEAL + 0.5
     failed: list[str] = []
     for attempt in range(1, SCRIPTS + 1):
-        data = llm.ask_json(QUIZ_PROMPT.format(question=question, theme=theme, n=5, avoid=_avoid(lib),
+        data = llm.ask_json(QUIZ_PROMPT.format(question=question, theme=theme, n=5, avoid=_avoid(lib), era=era(niche),
                                                failed=_failed_note(failed)), settings.claude_cmd, retries=1)
         plan = [r for r in data.get("rounds", []) if r.get("answer")]
         log(f"[{niche}] quiz script {attempt}: {', '.join(r['answer'] for r in plan)}")
@@ -195,7 +203,7 @@ def textcard(niche: str, lib: dict) -> list[dict]:
     colour = random.Random(niche).choice([(232, 65, 24), (29, 155, 240), (0, 186, 124),
                                           (120, 86, 255), (249, 24, 128)])
     for attempt in range(1, SCRIPTS + 1):
-        posts = llm.ask_json(POST_PROMPT.format(topic=topic, hot=hot, n=3, avoid=_avoid(lib),
+        posts = llm.ask_json(POST_PROMPT.format(topic=topic, hot=hot, n=3, avoid=_avoid(lib), era=era(niche),
                                                 failed=_failed_note(failed)),
                              settings.claude_cmd, retries=1).get("posts", [])
         posts = [p for p in posts if p.get("text") and p.get("subject")]

@@ -309,7 +309,7 @@ def clip(conn: sqlite3.Connection, scene_id: int) -> dict:
 CLASSIC_PROMPT = """You plan YouTube Shorts for the channel "{name}" about {niche}.
 Pick {n} different subjects, each one specific, well-known thing a 30-second Short can be about,
 that viewers of this niche love, and that archive film or photos surely exist of (a named plane,
-animal, place, machine, event; not an abstract idea).{terms}
+animal, place, machine, event; not an abstract idea).{terms}{era}
 
 Never repeat these earlier topics: {avoid}
 
@@ -328,7 +328,9 @@ def classic_heroes(conn: sqlite3.Connection, settings: Settings, channel: Channe
     col = collector or Collector(conn, settings, channel)
     terms = f"\nThe channel's search terms, for the kind of subjects it covers: {', '.join(channel.search_terms[:12])}." \
         if channel.search_terms else ""
+    from meta.topic import era
     data = col._ask(CLASSIC_PROMPT.format(name=channel.name, niche=channel.niche, n=n + 2, terms=terms,
+                                          era=era(getattr(col, "niche", "")),
                                           avoid="; ".join(past_topics(conn, channel.id)[-40:]) or "none yet"))
     out = []
     for s in (data or {}).get("subjects", []):

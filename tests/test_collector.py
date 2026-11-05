@@ -172,6 +172,14 @@ def test_ranking_gives_up_after_three_scripts(conn, settings, tmp_path, monkeypa
     llm = LLM([plan] * 3)
     lib = _lib(conn, settings, tmp_path, llm, [])
     assert topic.ranking("space", lib) == [] and len(llm.prompts) == topic.SCRIPTS
+    assert "film era" not in llm.prompts[0]
+
+
+def test_retrotech_subjects_from_the_film_era(conn, settings, tmp_path):
+    for fn, reply in ((topic.ranking, {"items": []}), (topic.quiz, {"rounds": []}), (topic.textcard, {"posts": []})):
+        llm = LLM([reply] * 3)
+        fn("retrotech", _lib(conn, settings, tmp_path, llm, []))
+        assert "film era, about 1890 to 1990" in llm.prompts[0]
 
 
 def test_quiz_uses_first_three_found(conn, settings, tmp_path, monkeypatch):
