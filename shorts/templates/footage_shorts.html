@@ -5,9 +5,14 @@
 {% endfor %}</div>
 <p class="muted">Play each with sound off or on, as you like. They may be about different subjects: judge which Short you'd rather upload.</p>
 <form method="post" action="/bench/footage/shorts/{{ i }}">
-<p><b>Better Short:</b>
+{% if p.files|length == 1 %}{% set l = p.files[0][0] %}
+<p class="muted">The other way couldn't make this Short (not enough footage), so there is only one.</p>
+<p><b>Good enough to upload?</b>
+<label style="margin-right:10px"><input type="radio" name="best" value="{{ l }}" required {% if mark.best == l %}checked{% endif %}> yes</label>
+<label><input type="radio" name="best" value="bad" {% if mark.best == 'bad' %}checked{% endif %}> no</label></p>
+{% else %}<p><b>Better Short:</b>
 {% for l, f in p.files %}<label style="margin-right:10px"><input type="radio" name="best" value="{{ l }}" required {% if mark.best == l %}checked{% endif %}> {{ l }}</label>{% endfor %}
-<label><input type="radio" name="best" value="same" {% if mark.best == 'same' %}checked{% endif %}> about the same</label></p>
+<label><input type="radio" name="best" value="same" {% if mark.best == 'same' %}checked{% endif %}> about the same</label></p>{% endif %}
 <p><b>Shows the wrong thing somewhere:</b>
 {% for l, f in p.files %}<label style="margin-right:10px"><input type="checkbox" name="wrong" value="{{ l }}" {% if l in (mark.wrong or []) %}checked{% endif %}> {{ l }}</label>{% endfor %}</p>
 <p><input name="note" placeholder="note (optional)" value="{{ mark.note or '' }}" style="width:100%;max-width:640px"></p>

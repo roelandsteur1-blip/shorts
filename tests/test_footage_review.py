@@ -56,11 +56,21 @@ def test_round3_pairs_and_marks(tmp_path, monkeypatch):
         {"niche": "space", "kind": "ranking", "key": {"A": "new", "C": "today"}, "new": {"error": "x"}, "today": {}}]}))
     assert fr.pairs() == [{"key": "space-quiz", "niche": "space", "kind": "quiz",
                            "files": [("B", "space-quiz-B.mp4"), ("Q", "space-quiz-Q.mp4")]}]
+    (tmp_path / "round3" / "shorts" / "space-ranking-C.mp4").write_bytes(b"x")
+    (tmp_path / "round3" / "made-part1.json").write_text(json.dumps({"shorts": [
+        {"niche": "space", "kind": "quiz", "key": {"Q": "new", "B": "today"},
+         "new": {"file": "space-quiz-Q.mp4"}, "today": {"file": "space-quiz-B.mp4"}},
+        {"niche": "space", "kind": "ranking", "key": {"A": "new", "C": "today"}, "new": {"error": "x"},
+         "today": {"file": "space-ranking-C.mp4"}}]}))
+    assert fr.pairs()[1]["files"] == [("C", "space-ranking-C.mp4")]
     from flask import Flask
     app = Flask(__name__, template_folder=str(__import__("pathlib").Path(fr.__file__).parent.parent / "templates"))
     app.register_blueprint(fr.bp)
     c = app.test_client()
     assert c.post("/bench/footage/shorts/0", data={"best": "Q", "wrong": ["B"], "note": "hi"}).status_code == 302
     assert c.post("/bench/footage/shorts/0", data={"best": "Z"}).status_code == 400
+    assert b"Good enough" in c.get("/bench/footage/shorts/1").data
+    assert c.post("/bench/footage/shorts/1", data={"best": "bad"}).status_code == 302
     m = json.loads((tmp_path / "marks" / "footage.json").read_text())
-    assert m["shorts"] == {"space-quiz": {"best": "Q", "wrong": ["B"], "note": "hi"}}
+    assert m["shorts"]["space-quiz"] == {"best": "Q", "wrong": ["B"], "note": "hi"}
+    assert m["shorts"]["space-ranking"]["best"] == "bad"

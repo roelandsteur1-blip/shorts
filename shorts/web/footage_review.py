@@ -77,7 +77,7 @@ def pairs() -> list[dict]:
                 name = (r.get(version) or {}).get("file")
                 if name and (OUT / "round3" / "shorts" / name).exists():
                     files[letter] = name
-            if len(files) == 2:
+            if files:  # a single one when the other way made nothing: then "good enough?"
                 rows.append({"key": f"{r['niche']}-{r['kind']}", "niche": r["niche"], "kind": r["kind"],
                              "files": sorted(files.items())})
     return rows
@@ -113,7 +113,7 @@ def save_shorts(i: int):
     p = pr[i]
     letters = {lab for lab, _ in p["files"]}
     best = request.form.get("best", "")
-    if best not in letters and best != "same":
+    if best not in letters and best not in ("same", "bad"):
         abort(400)
     m = _marks()
     m.setdefault("shorts", {})[p["key"]] = {"best": best, "wrong": sorted(set(request.form.getlist("wrong")) & letters),
