@@ -5,14 +5,19 @@
 <div class="card"><h3 style="margin-top:0">1. Run the test</h3>
 <p class="muted">Searches every footage archive (and today's library) for these subjects, one per line, and makes a sheet with the 2 best thumbnails per archive. Search only: nothing is downloaded. About 1 to 2 minutes per subject.</p>
 <form method="post" action="/channels/{{ ch.id }}/source-test/run">
-<textarea name="subjects" rows="6" style="width:100%;max-width:480px">{{ subjects|join('\n') }}</textarea>
+<textarea name="subjects" rows="6" style="max-width:480px">{{ subjects|join('\n') }}</textarea>
 <p><button class="primary">{{ 'Run again' if res else 'Run source test' }}</button>
 {% if job %}<span class="muted">Last run: <a href="/jobs/{{ job.id }}">{{ job.status }}</a></span>{% endif %}</p>
 </form></div>
 {% if res %}
 <div class="card"><h3 style="margin-top:0">2. Look at the sheet</h3>
 <p class="muted">Rows are the subjects, columns the archives. An empty cell means that archive found nothing usable. Run {{ res.at[:16].replace('T', ' ') }} UTC, {{ res.minutes }} min.</p>
-<a href="/channels/{{ ch.id }}/source-test/sheet.jpg" target="_blank"><img src="/channels/{{ ch.id }}/source-test/sheet.jpg?t={{ res.at }}" style="max-width:100%;border-radius:6px" alt="source test sheet"></a>
+<p class="muted phone-only">On a phone: swipe sideways through the sheet, or tap it to open it full size and zoom.</p>
+<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:6px">
+<a href="/channels/{{ ch.id }}/source-test/sheet.jpg" target="_blank"><img src="/channels/{{ ch.id }}/source-test/sheet.jpg?t={{ res.at }}" class="sheet" alt="source test sheet"></a>
+</div>
+<style>.sheet{display:block;max-width:none;width:100%;min-width:1400px}.phone-only{display:none}
+@media(max-width:800px){.phone-only{display:block}}@media(min-width:1400px){.sheet{min-width:0}}</style>
 </div>
 {% endif %}
 <div class="card"><h3 style="margin-top:0">{{ '3' if res else '2' }}. Tick the archives this channel uses</h3>
