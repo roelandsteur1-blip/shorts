@@ -77,3 +77,7 @@ n = 1
 id = "2026-11-05-pieces-2"
 name = "pieces"
 n = 2
+
+[[job]]
+id = "2026-11-05-crops-1"
+name = "crops"
