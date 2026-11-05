@@ -94,3 +94,7 @@ name = "crops"
 id = "2026-11-05-crops-3"
 name = "crops"
 n = 1
+
+[[job]]
+id = "2026-11-05-update-4"
+name = "update"
