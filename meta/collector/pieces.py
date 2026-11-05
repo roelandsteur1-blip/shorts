@@ -212,8 +212,8 @@ def fetch_video(c: dict, subject: dict, scorer, tmp: Path) -> Path:
     return out
 
 
-def fetch_photo(c: dict, tmp: Path) -> Path:
-    """A photo becomes a 5 s slow zoom (what quiz/ranking would show)."""
+def fetch_photo(c: dict, tmp: Path, seconds: float = 5.0) -> Path:
+    """A photo becomes a slow zoom (5 s: what quiz/ranking would show)."""
     rec = c.setdefault("fetch", {})
     t0 = time.time()
     r = sweep.S.get(c["file"], timeout=60)
@@ -223,7 +223,7 @@ def fetch_photo(c: dict, tmp: Path) -> Path:
     img = tmp / f"{c['label']}.jpg"
     im.save(img, quality=92)
     out = tmp / f"{c['label']}.mp4"
-    p = ffmpeg(["-loop", "1", "-i", str(img), "-t", "5", "-vf",
+    p = ffmpeg(["-loop", "1", "-i", str(img), "-t", f"{seconds:.2f}", "-vf",
                 "scale=1600:-2,zoompan=z='min(zoom+0.0008,1.12)':d=1:s=1280x720:fps=25",
                 "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out)])
     if p.returncode or not out.exists():

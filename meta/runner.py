@@ -50,13 +50,14 @@ ALLOWLIST = {
     "sweepx": ("meta.collector.sweep", ["--extra"], None),  # the keyed archives only (keys saved later)
     "pieces": ("meta.collector.pieces", ["--part", "{n}"], (1, 2)),  # collector research R4-R7, half the subjects each
     "crops": ("meta.collector.crops", ["--part", "{n}"], (1, 3)),  # collector research R6b: crop methods side by side
+    "round3": ("meta.collector.round3", ["--part", "{n}"], (1, 2)),  # collector research R9: real Shorts, new vs today
     "marks": ("meta.collector.marks", [], None),  # copies the /bench/footage review marks into the results
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "study": ("meta.study", [], None),  # competitor channel study (meta/study.toml), read-only
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_JOBS = ("pieces", "crops", "study", "marks")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_JOBS = ("pieces", "crops", "study", "marks", "round3")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

@@ -102,3 +102,13 @@ name = "update"
 [[job]]
 id = "2026-11-05-marks-1"
 name = "marks"
+
+[[job]]
+id = "2026-11-05-round3-1"
+name = "round3"
+n = 1
+
+[[job]]
+id = "2026-11-05-round3-2"
+name = "round3"
+n = 2
