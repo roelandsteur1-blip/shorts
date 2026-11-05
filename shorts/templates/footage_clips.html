@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Round 2{% endblock %}{% block body %}
+<h1>{{ s.name }} <span class="muted">{{ s.niche }} · {{ i + 1 }} / {{ total }}</span></h1>
+<form method="post" action="/bench/footage/clips/{{ i }}">
+<p><b>Tick the bad clips</b> <span class="muted">(wrong subject, ugly or unusable). Leave the good ones.</span></p>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
+{% for c in s.clips %}<label style="text-align:center;display:block">
+<video src="/bench/footage/clip/{{ c.file }}" autoplay loop muted playsinline preload="metadata" style="width:100%;border-radius:8px;background:#000"></video>
+<input type="checkbox" name="bad" value="{{ c.letter }}" {% if c.letter in bad %}checked{% endif %}> <b>{{ c.letter }}</b> bad</label>
+{% endfor %}</div>
+<p><button class="primary">Save and next</button>
+{% if i > 0 %}<a href="/bench/footage/clips/{{ i - 1 }}">back</a>{% endif %}
+<a href="/bench/footage" class="muted">stop for now</a></p>
+</form>
+{% endblock %}

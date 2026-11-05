@@ -160,3 +160,16 @@ def test_accept_all_approves_shorts_waiting_for_review(client, conn):
     assert (status[a], status[b], status[other], status[rej]) == ("approved", "approved", "rendered", "rejected")
     client.post("/review/approve-all", data={"channel": ""})
     assert conn.execute("SELECT status FROM shorts WHERE id=?", (other,)).fetchone()[0] == "approved"
+
+
+def test_footage_review_pages_render(client, tmp_path, monkeypatch):
+    from shorts.web import footage_review as fr
+    monkeypatch.setattr(fr, "OUT", tmp_path)
+    assert b"Footage collector review" in client.get("/bench/footage").data
+    (tmp_path / "pieces" / "clips").mkdir(parents=True)
+    (tmp_path / "pieces" / "clips" / "space-saturn-A.mp4").write_bytes(b"x")
+    (tmp_path / "pieces" / "made-part1.json").write_text(
+        '{"subjects": [{"niche": "space", "name": "Saturn", "candidates": [{"preview": "space-saturn-A.mp4"}]}]}')
+    r = client.get("/bench/footage/clips/0")
+    assert r.status_code == 200 and b"space-saturn-A.mp4" in r.data
+    assert client.get("/bench/footage/clips/1").status_code == 302

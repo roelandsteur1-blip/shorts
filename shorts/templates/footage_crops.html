@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% block title %}Round 2b{% endblock %}{% block body %}
+<h1>{{ g.name }} <span class="muted">{{ g.niche }} · {{ i + 1 }} / {{ total }}</span></h1>
+<video src="/bench/footage/grid/{{ g.file }}" autoplay loop muted playsinline controls style="width:100%;max-width:720px;border-radius:8px;background:#000"></video>
+<form method="post" action="/bench/footage/crops/{{ i }}">
+<p><b>Best crop:</b>
+{% for l in g.letters %}<label style="margin-right:10px"><input type="radio" name="best" value="{{ l }}" required {% if mark.best == l %}checked{% endif %}> {{ l }}</label>{% endfor %}
+<label><input type="radio" name="best" value="same" {% if mark.best == 'same' %}checked{% endif %}> about the same</label></p>
+<p><b>Cuts off the subject:</b>
+{% for l in g.letters %}<label style="margin-right:10px"><input type="checkbox" name="cut" value="{{ l }}" {% if l in (mark.cut or []) %}checked{% endif %}> {{ l }}</label>{% endfor %}</p>
+<p><button class="primary">Save and next</button>
+{% if i > 0 %}<a href="/bench/footage/crops/{{ i - 1 }}">back</a>{% endif %}
+<a href="/bench/footage" class="muted">stop for now</a></p>
+</form>
+{% endblock %}

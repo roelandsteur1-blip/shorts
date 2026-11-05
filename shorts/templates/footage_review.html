@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Footage review{% endblock %}{% block body %}
+<h1>Footage collector review</h1>
+<p class="muted">Temporary page for the footage collector research. Everything is blind: letters are random and today's library picks are mixed in with the new sources.</p>
+<div class="card"><h3 style="margin-top:0">Round 2: which clips are bad?</h3>
+<p>{{ subs|length }} subjects, each with its downloaded clips. Tick the ones that are bad (wrong subject, ugly, unusable). {{ clips_done }} of {{ subs|length }} done.</p>
+{% if subs %}<a class="button primary" href="/bench/footage/clips/{{ clips_done if clips_done < subs|length else 0 }}">{{ 'Continue' if clips_done else 'Start' }}</a>{% else %}<p class="muted">No clips on this server.</p>{% endif %}
+</div>
+<div class="card"><h3 style="margin-top:0">Round 2b: which crop is best?</h3>
+<p>{{ grids|length }} clips, each cropped 7 ways side by side. Pick the best and tick any that cut off the subject. 10 to 15 is enough. {{ crops_done }} of {{ grids|length }} done.</p>
+{% if grids %}<a class="button primary" href="/bench/footage/crops/{{ crops_done if crops_done < grids|length else 0 }}">{{ 'Continue' if crops_done else 'Start' }}</a>{% else %}<p class="muted">No crop grids on this server.</p>{% endif %}
+</div>
+{% endblock %}

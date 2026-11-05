@@ -1,6 +1,7 @@
 {% extends "base.html" %}{% block title %}Bench{% endblock %}{% block body %}
 <h1>Clip quality bench</h1>
 <p class="muted">Which ways of finding, timing, cropping and judging clips work best. A research run, separate from the daily pipeline (started on the server with <code>bash deploy/bench.sh start</code>).</p>
+<div class="card"><b>Footage collector research:</b> <a href="/bench/footage">review round 2 clips and crops</a></div>
 <div class="card">
 {% for p in progress.values() %}<p style="margin:4px 0"><b>{{ p.stage }}</b>: {{ p.done }} / {{ p.total }} <span class="muted">{{ p.note }}</span></p>
 <div class="bar"><div style="width:{{ p.done|pct(p.total) }}%"></div></div>
