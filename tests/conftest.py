@@ -31,8 +31,10 @@ class FakeEncoder:
 
 @pytest.fixture
 def settings(tmp_path):
-    # restock_below=0: tests never download footage unless they ask for it.
-    s = Settings(data_dir=tmp_path / "data", restock_below=0, music_min_tracks=0)
+    # restock_below=0: tests never download footage unless they ask for it. The collector and the
+    # detector crop reach archives, Claude and a model download: off unless a test turns them on.
+    s = Settings(data_dir=tmp_path / "data", restock_below=0, music_min_tracks=0, collector=False,
+                 render_detector_crop=False)
     s.ensure_dirs()
     return s
 

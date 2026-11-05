@@ -163,7 +163,10 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
     """Pick the lane's hero shots and write their scripts. Picked here, right before writing, so
     the scripts of the channels before it are saved and one-channel-per-video still holds."""
     ch = lane.channel
-    pending = hero.candidates(c, settings, ch.id, lane.count, query=ch.hero_query, fits=ch)
+    pending = topic_heroes(c, settings, ch, lane.count)
+    if len(pending) < lane.count:  # footage first for the rest (the collector found too little)
+        more = hero.candidates(c, settings, ch.id, lane.count, query=ch.hero_query, fits=ch)
+        pending += [sid for sid in more if sid not in pending][:lane.count - len(pending)]
     total[0] -= lane.count - len(pending)
     if not pending:
         log.warning("%s: no unused hero shots left: run 'shorts ingest' to grow the library", ch.id)
@@ -179,6 +182,23 @@ def _write_lane(c: sqlite3.Connection, settings: Settings, lane: Lane, total: li
         if not pending:
             break
         log.info("%s: picked %d more hero shots for the ones skipped", ch.id, len(pending))
+
+
+def topic_heroes(c: sqlite3.Connection, settings: Settings, ch: Channel, n: int) -> list[int]:
+    """Hero shots topic first (shorts/collector.py): Claude picks subjects, the collector finds a
+    checked clip of each. Empty when the collector is off or fails: then it's footage first."""
+    if not settings.collector or n <= 0:
+        return []
+    from . import collector
+    try:
+        heroes = collector.classic_heroes(c, settings, ch, n)
+    except llm.LLMLimitError:
+        raise
+    except Exception:  # noqa: BLE001 - footage first still works
+        log.exception("%s: topic-first hero shots failed; using footage first", ch.id)
+        return []
+    log.info("%s: %d of %d hero shots topic first", ch.id, len(heroes), n)
+    return heroes
 
 
 def run_steps(conn: sqlite3.Connection, settings: Settings, lanes: list[Lane],

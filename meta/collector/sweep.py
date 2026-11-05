@@ -137,7 +137,7 @@ def claude_qids(subjects: list[dict], matches: list[list[dict]], ask) -> dict[in
 def commons(search: str, kind: str, g: Get = get, width: int = 320) -> tuple[int, list[dict]]:
     d = g(COMMONS, action="query", format="json", generator="search", gsrsearch=search, gsrnamespace=6,
           gsrlimit=ROWS, gsrinfo="totalhits", prop="imageinfo", iiprop="url|size|mime|extmetadata",
-          iiurlwidth=width, iiextmetadatafilter="LicenseShortName|License|DateTimeOriginal")
+          iiurlwidth=width, iiextmetadatafilter="LicenseShortName|License|DateTimeOriginal|Artist")
     total = int(((d.get("query") or {}).get("searchinfo") or {}).get("totalhits") or 0)
     pages = sorted(((d.get("query") or {}).get("pages") or {}).values(), key=lambda p: p.get("index", 0))
     hits = []
@@ -150,8 +150,14 @@ def commons(search: str, kind: str, g: Get = get, width: int = 320) -> tuple[int
         hits.append(hit(p.get("title", ""), not lic.reject, lic.license or lic.reject, info.get("thumburl"),
                         ref=info.get("descriptionurl") or p.get("title"), kind=kind,
                         seconds=info.get("duration"), height=info.get("height"), bytes=info.get("size"),
-                        file=_commons_file(info), year=_year(meta.get("DateTimeOriginal"))))
+                        file=_commons_file(info), year=_year(meta.get("DateTimeOriginal")),
+                        creator=_plain(meta.get("Artist"))))
     return total or len(hits), hits
+
+
+def _plain(html) -> str:
+    """Commons gives the author as HTML (a link to their user page): the name only."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", str(html or ""))).strip()[:120]
 
 
 def _commons_file(info: dict) -> str | None:
@@ -279,7 +285,7 @@ def openverse(q: str, g: Get = get) -> tuple[int, list[dict]]:
     d = g(OPENVERSE, q=q, license="cc0,pdm,by", page_size=20)
     hits = [hit(r.get("title"), True, f"{r.get('license', '')} {r.get('license_version', '') or ''}".strip(),
                 r.get("thumbnail"), ref=r.get("foreign_landing_url"), kind="photo", provider=r.get("provider"),
-                file=r.get("url"))
+                file=r.get("url"), creator=str(r.get("creator") or "")[:120])
             for r in d.get("results") or []]
     return int(d.get("result_count") or len(hits)), hits
 

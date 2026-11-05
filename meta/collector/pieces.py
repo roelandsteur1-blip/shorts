@@ -63,10 +63,11 @@ def log(msg: str) -> None:
 
 # ---------- candidates ----------
 
-def candidates(subject: dict, lib, scorer, keys: dict) -> list[dict]:
-    """The best hits per chosen source, ranked by PE-Core on their thumbnails."""
+def candidates(subject: dict, lib, scorer, keys: dict, sources: list[tuple[str, int]] | None = None) -> list[dict]:
+    """The best hits per chosen source, ranked by PE-Core on their thumbnails. sources: (source,
+    how many) to search; default Roeland's round-1 pick for the subject's niche."""
     out = []
-    for src, n in SOURCES.get(subject["niche"], DEFAULT):
+    for src, n in sources if sources is not None else SOURCES.get(subject["niche"], DEFAULT):
         try:
             if src == "library":
                 if not lib:
@@ -74,6 +75,10 @@ def candidates(subject: dict, lib, scorer, keys: dict) -> list[dict]:
                 hits = sweep.library_hits(subject, lib)[1]
             elif src == "commons_video":
                 hits = sweep.commons(f'"{subject["name"]}" filetype:video', "video")[1]
+            elif src == "commons_depicts":
+                if not subject.get("qid"):
+                    continue
+                hits = sweep.commons(f"haswbstatement:P180={subject['qid']} filetype:video", "video")[1]
             elif src == "commons_photo":
                 q = subject.get("qid")
                 hits = sweep.commons(f"haswbstatement:P180={q} filetype:bitmap" if q else
@@ -151,12 +156,14 @@ def resolve(c: dict) -> str | None:
     return c.get("file")
 
 
-def best_second(src: str, secs: float, subject: dict, scorer, start: float = 0.0, end: float | None = None) -> tuple[float, list]:
+def best_second(src: str, secs: float, subject: dict, scorer, start: float = 0.0, end: float | None = None,
+                clip: float | None = None) -> tuple[float, list]:
     """Where in [start, end] the subject shows best: a few frames scored with PE-Core."""
+    clip = clip or CLIP
     end = end if end is not None else secs
-    span = max(0.0, end - start - CLIP)
+    span = max(0.0, end - start - clip)
     n = 1 if span < 2 else 3 if span < 30 or (src.startswith("http") and ".webm" in src) else 8
-    times = [start + span * (i + 0.5) / n + CLIP / 2 for i in range(n)]
+    times = [start + span * (i + 0.5) / n + clip / 2 for i in range(n)]
     frames = [(t, frame_at(src, t)) for t in times]
     frames = [(t, f) for t, f in frames if f]
     if not frames:
@@ -166,8 +173,10 @@ def best_second(src: str, secs: float, subject: dict, scorer, start: float = 0.0
     return frames[best][0], [(round(t, 1), s) for (t, _), s in zip(frames, scores)]
 
 
-def fetch_video(c: dict, subject: dict, scorer, tmp: Path) -> Path:
-    """Cut CLIP seconds of the candidate at its best moment into tmp/<label>.mp4 (720p, no audio)."""
+def fetch_video(c: dict, subject: dict, scorer, tmp: Path, seconds: float | None = None) -> Path:
+    """Cut `seconds` (default CLIP) of the candidate at its best moment into tmp/<label>.mp4 (720p,
+    no audio)."""
+    clip = seconds or CLIP
     rec = c.setdefault("fetch", {})
     t0 = time.time()
     url = resolve(c)
@@ -197,13 +206,13 @@ def fetch_video(c: dict, subject: dict, scorer, tmp: Path) -> Path:
         raise RuntimeError("unknown length")
     rec["video_seconds"] = round(secs)
     if c["source"] == "library":
-        at = float(c["start"]) + CLIP / 2
+        at = float(c["start"]) + clip / 2
         rec["sampled"] = []
     else:
-        at, rec["sampled"] = best_second(src, secs, subject, scorer)
-    start = max(0.0, min(at - CLIP / 2, secs - CLIP))
+        at, rec["sampled"] = best_second(src, secs, subject, scorer, clip=clip)
+    start = max(0.0, min(at - clip / 2, secs - clip))
     out = tmp / f"{c['label']}.mp4"
-    p = ffmpeg(["-ss", f"{start:.2f}", "-i", src, "-t", f"{CLIP}", "-an", "-vf", "scale=-2:720",
+    p = ffmpeg(["-ss", f"{start:.2f}", "-i", src, "-t", f"{clip}", "-an", "-vf", "scale=-2:720",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(out)])
     if p.returncode or not out.exists() or out.stat().st_size < 20_000:
         raise RuntimeError("cut failed: " + p.stderr.decode(errors="replace")[-200:])
@@ -237,7 +246,7 @@ def fetch_photo(c: dict, tmp: Path, seconds: float = 5.0) -> Path:
 class Gates:
     """Quality gates on 3 frames of the clip. Each tool is optional (None = gate off)."""
 
-    def __init__(self, scorer):
+    def __init__(self, scorer, brisque: bool = True):
         self.scorer = scorer
         self.ocr = None
         try:
@@ -247,6 +256,8 @@ class Gates:
             log(f"RapidOCR not available, text gate off: {e}")
         self.piq = None
         try:
+            if not brisque:  # dropped for production: didn't predict Roeland's marks (round 2)
+                raise ImportError("not used")
             import piq
             import torch
             self.piq, self.torch = piq, torch

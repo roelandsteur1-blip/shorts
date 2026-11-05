@@ -345,7 +345,11 @@ def build_render(conn: sqlite3.Connection, settings: Settings, channel: Channel,
         b["avail"] = max(b["end"] - start, 0.1)
 
     plans = plan_motion(blocks) if settings.render_zoom else [None] * len(blocks)
-    frames = _subject_paths(work, blocks, settings.render_subject_crop)
+    detect_text = None
+    if settings.render_detector_crop and settings.render_subject_crop:
+        row = conn.execute("SELECT topic FROM shorts WHERE id=?", (short_id,)).fetchone()
+        detect_text = (row[0] if row else None) or ""
+    frames = _subject_paths(work, blocks, settings.render_subject_crop, detect_text)
     for i, b in enumerate(blocks):
         if i and b["scene_id"] == blocks[i - 1]["scene_id"]:
             # Same shot as the block before: start where its window ended (no jump on the cut).
@@ -454,11 +458,12 @@ def sound_effects(blocks: list[dict], plans: list[dict | None]) -> list[str]:
     return out
 
 
-def _subject_paths(work: Path, blocks: list[dict], follow: bool = True) -> list[dict]:
+def _subject_paths(work: Path, blocks: list[dict], follow: bool = True, detect_text: str | None = None) -> list[dict]:
     """shorts/framing.py's subject path for every block (a few at once: each is one small ffmpeg
     read), cached in the render folder so a re-render doesn't read them again. Saliency and
     faces only: aiming the crop at the block's words with CLIP (framing.text_guide) missed the
-    subject more often in the clip-quality research. follow=False: the scene's stored centre."""
+    subject more often in the clip-quality research. follow=False: the scene's stored centre.
+    detect_text: the Short's subject, for blocks without their own visual: the detector crop is on."""
     from concurrent.futures import ThreadPoolExecutor
     from . import framing
     if not follow:
@@ -477,6 +482,16 @@ def _subject_paths(work: Path, blocks: list[dict], follow: bool = True) -> list[
 
     with ThreadPoolExecutor(max_workers=max(1, min(4, len(blocks), os.cpu_count() or 1))) as pool:
         out = list(pool.map(one, blocks))
+    if detect_text is not None:
+        # The subject's box (shorts/detect.py) wins over saliency; whole frame when it's wider.
+        from . import detect
+        for i, b in enumerate(blocks):
+            own = (b.get("visual") or "").strip()
+            text = own if own and own.lower() != "hero" else (detect_text or "").strip()
+            win = detect.subject_window(b["path"], b["src_start"], min(b["seconds"], b["avail"]),
+                                        b["width"] or W, b["height"] or H, text, cache) if text else None
+            if win:
+                out[i] = {**out[i], "x0": win["x0"], "x1": win["x1"], "whole": win["whole"]}
     framing.save_cache(work, cache)
     return out
 

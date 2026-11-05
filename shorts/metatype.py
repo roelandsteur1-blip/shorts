@@ -79,9 +79,8 @@ def make(conn: sqlite3.Connection, settings: Settings, channel: Channel, count: 
     while made < count and attempts < count * 2 and not llm.limit_reached():
         attempts += 1
         kind = _next_type(conn, channel, choices)
+        # Never another type instead (Roeland, 5 Nov 2026): a failed attempt is tried again with a new script.
         recs = _try(conn, settings, channel, niche, kind)
-        if not recs and channel.video_type == "mix" and kind != "textcard":
-            recs = _try(conn, settings, channel, niche, "textcard")  # too little footage: a text card instead
         for rec in recs:
             sid = save(conn, channel, rec)
             made += 1
@@ -110,6 +109,16 @@ def _one(conn: sqlite3.Connection, settings: Settings, channel: Channel, niche: 
             "SELECT title FROM shorts WHERE channel=? AND title IS NOT NULL ORDER BY id DESC LIMIT 40", (channel.id,))],
         "name": channel.name, "handle": "@" + channel.id,
     }
+    if settings.collector:
+        # Topic first with the new footage collector; today's footage-first maker of the same
+        # type only when that finds nothing.
+        from meta import topic
+        from .collector import Collector
+        lib["collector"] = Collector(conn, settings, channel)
+        recs = getattr(topic, kind)(niche, lib)
+        if recs:
+            return [dict(r, kind=kind) for r in recs]
+        log.info("%s: no %s topic first; trying the footage-first way", channel.id, kind)
     if kind == "textcard":
         from meta import textcard
         recs = textcard.make(niche, 1, [], lib=lib)

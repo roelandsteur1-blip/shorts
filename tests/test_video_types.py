@@ -43,21 +43,23 @@ def test_meta_channel_makes_finished_shorts_for_review(conn, settings, channel, 
 
     def fake_one(c, s, ch, niche, kind):
         calls.append(kind)
-        if kind == "quiz":
-            return []  # not enough footage: mix falls back to a text card
+        if kind == "quiz" and calls.count("quiz") == 1:
+            return []  # no footage this time: a quiz again with a new script, never another type
         return [{"kind": kind, "file": str(video), "title": "Can you name it?", "seconds": 12.0,
-                 "text": "A surprising fact.", "scene_ids": scenes[:1], "music": None}]
+                 "text": "A surprising fact.", "scene_ids": scenes[:3], "music": None,
+                 "rounds": [{"answer": f"clip {i}", "fact": "f"} for i in range(3)],
+                 "items": [{"rank": i + 1, "name": f"clip {i}", "value": f"{i} m"} for i in range(3)]}]
 
     monkeypatch.setattr(metatype, "_one", fake_one)
     monkeypatch.setattr(metatype, "available", lambda niche: ["textcard", "quiz", "ranking"])
     conn.execute("INSERT INTO shorts (channel, format_id, status) VALUES ('space', 'meta_textcard', 'rejected')")
     waiting = pipeline.make_many(conn, settings, [(meta_ch, 2, None)])
     assert waiting == {"space": 2}
-    assert calls[:2] == ["quiz", "textcard"]  # mix: next after the last text card, then the fallback
+    assert calls == ["quiz", "quiz", "ranking"]  # mix: next after the last text card; a failed quiz stays a quiz
     rows = conn.execute("SELECT * FROM shorts WHERE status='rendered' ORDER BY id").fetchall()
-    assert [r["format_id"] for r in rows] == ["meta_textcard", "meta_textcard"]
+    assert [r["format_id"] for r in rows] == ["meta_quiz", "meta_ranking"]
     sid = rows[0]["id"]
-    assert conn.execute("SELECT COUNT(*) FROM blocks WHERE short_id=?", (sid,)).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM blocks WHERE short_id=?", (sid,)).fetchone()[0] == 3
     meta = render.metadata(conn, channel, sid, settings)
     assert meta["title"] == "Can you name it?" and "clip 0" in meta["description"]
     # Never re-rendered from its blocks (Review's text edit, music re-render).

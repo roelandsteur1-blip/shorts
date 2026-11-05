@@ -34,6 +34,8 @@ class Settings:
     render_speed_ramps: bool = True   # render: nearly still shots without people play at 1.2x
     render_subject_crop: bool = True  # render: the 9:16 crop follows what stands out (saliency, faces), not the centre
     render_best_seconds: bool = True  # render: a b-roll clip starts at its seconds that best match the block, not at the scene start
+    collector: bool = True            # footage topic first (shorts/collector.py) for every Short type; off = footage first
+    render_detector_crop: bool = True  # render, classic: the 9:16 crop follows the subject's box (OWLv2), whole frame when it's wider
     script_sees_footage: bool = True  # script: Claude sees the hero frames and a clip menu, and picks a clip per block
     scene_detector: str = "fast"      # "fast" = one ffmpeg pass per video; "pyscenedetect" = the old way
     scene_fps: float = 10.0           # frames per second the fast scene detector looks at
