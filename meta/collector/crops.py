@@ -115,8 +115,12 @@ class Detector:
                 inp = self.proc(text=[[f"a photo of {text}"]], images=im, return_tensors="pt")
                 out = self.model(**inp)
                 side = max(W, H)  # OWLv2 pads to a square: boxes are relative to the padded side
-                res = self.proc.post_process_object_detection(out, threshold=0.0,
-                                                               target_sizes=self.torch.tensor([[side, side]]))[0]
+                sizes = self.torch.tensor([[side, side]])
+                # the name moved between transformers versions: try each spelling
+                post = (getattr(self.proc, "post_process_object_detection", None)
+                        or getattr(self.proc, "post_process_grounded_object_detection", None)
+                        or self.proc.image_processor.post_process_object_detection)
+                res = post(out, threshold=0.0, target_sizes=sizes)[0]
             else:
                 inp = self.proc(images=im, text=f"{text.lower()}.", return_tensors="pt")
                 out = self.model(**inp)

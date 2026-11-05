@@ -85,3 +85,7 @@ name = "crops"
 [[job]]
 id = "2026-11-05-study-1"
 name = "study"
+
+[[job]]
+id = "2026-11-05-crops-2"
+name = "crops"
