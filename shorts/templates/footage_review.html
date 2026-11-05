@@ -1,4 +1,8 @@
-{% extends "base.html" %}{% block title %}Footage review{% endblock %}{% block body %}
+{% extends "base.html" %}{% block title %}Footage review<div class="card"><h3 style="margin-top:0">Round 3: which Short is better?</h3>
+<p>{{ pairs|length }} pairs: the same kind of Short (ranking or quiz) made today's way and with the new collector, side by side under random letters. Pick the better one and tick any that shows the wrong thing. {{ shorts_done }} of {{ pairs|length }} done.</p>
+{% if pairs %}<a class="button primary" href="/bench/footage/shorts/{{ shorts_done if shorts_done < pairs|length else 0 }}">{{ 'Continue' if shorts_done else 'Start' }}</a>{% else %}<p class="muted">Not made yet: the server is making them now.</p>{% endif %}
+</div>
+{% endblock %}{% block body %}
 <h1>Footage collector review</h1>
 <p class="muted">Temporary page for the footage collector research. Everything is blind: letters are random and today's library picks are mixed in with the new sources.</p>
 <div class="card"><h3 style="margin-top:0">Round 2: which clips are bad?</h3>
@@ -8,5 +12,9 @@
 <div class="card"><h3 style="margin-top:0">Round 2b: which crop is best?</h3>
 <p>{{ grids|length }} clips, each cropped 7 ways side by side. Pick the best and tick any that cut off the subject. 10 to 15 is enough. {{ crops_done }} of {{ grids|length }} done.</p>
 {% if grids %}<a class="button primary" href="/bench/footage/crops/{{ crops_done if crops_done < grids|length else 0 }}">{{ 'Continue' if crops_done else 'Start' }}</a>{% else %}<p class="muted">No crop grids on this server.</p>{% endif %}
+</div>
+<div class="card"><h3 style="margin-top:0">Round 3: which Short is better?</h3>
+<p>{{ pairs|length }} pairs: the same kind of Short (ranking or quiz) made today's way and with the new collector, side by side under random letters. Pick the better one and tick any that shows the wrong thing. {{ shorts_done }} of {{ pairs|length }} done.</p>
+{% if pairs %}<a class="button primary" href="/bench/footage/shorts/{{ shorts_done if shorts_done < pairs|length else 0 }}">{{ 'Continue' if shorts_done else 'Start' }}</a>{% else %}<p class="muted">Not made yet: the server is making them now.</p>{% endif %}
 </div>
 {% endblock %}

@@ -29,6 +29,7 @@ def _marks() -> dict:
     m = _load(marks_path(), {})
     m.setdefault("clips", {})
     m.setdefault("crops", {})
+    m.setdefault("shorts", {})
     return m
 
 
@@ -66,13 +67,59 @@ def grids() -> list[dict]:
     return [r for _, r in sorted(rows.items()) if (OUT / "crops" / "review" / r["file"]).exists()]
 
 
+def pairs() -> list[dict]:
+    """Round 3: the same kind of Short made two ways, under random letters."""
+    rows = []
+    for f in sorted((OUT / "round3").glob("made-part*.json")):
+        for r in _load(f, {}).get("shorts", []):
+            files = {}
+            for letter, version in r.get("key", {}).items():
+                name = (r.get(version) or {}).get("file")
+                if name and (OUT / "round3" / "shorts" / name).exists():
+                    files[letter] = name
+            if len(files) == 2:
+                rows.append({"key": f"{r['niche']}-{r['kind']}", "niche": r["niche"], "kind": r["kind"],
+                             "files": sorted(files.items())})
+    return rows
+
+
 @bp.get("/bench/footage")
 def index():
     m = _marks()
-    subs, gr = subjects(), grids()
-    return render_template("footage_review.html", subs=subs, grids=gr,
+    m.setdefault("shorts", {})
+    subs, gr, pr = subjects(), grids(), pairs()
+    return render_template("footage_review.html", subs=subs, grids=gr, pairs=pr,
                            clips_done=sum(1 for s in subs if s["key"] in m["clips"]),
-                           crops_done=sum(1 for g in gr if g["file"] in m["crops"]))
+                           crops_done=sum(1 for g in gr if g["file"] in m["crops"]),
+                           shorts_done=sum(1 for p in pr if p["key"] in m["shorts"]))
+
+
+@bp.get("/bench/footage/shorts/<int:i>")
+def shorts(i: int):
+    pr = pairs()
+    if not pr:
+        abort(404)
+    if i >= len(pr):
+        return redirect(url_for("footage_review.index"))
+    p = pr[i]
+    return render_template("footage_shorts.html", p=p, i=i, total=len(pr), mark=_marks().get("shorts", {}).get(p["key"], {}))
+
+
+@bp.post("/bench/footage/shorts/<int:i>")
+def save_shorts(i: int):
+    pr = pairs()
+    if i >= len(pr):
+        abort(404)
+    p = pr[i]
+    letters = {lab for lab, _ in p["files"]}
+    best = request.form.get("best", "")
+    if best not in letters and best != "same":
+        abort(400)
+    m = _marks()
+    m.setdefault("shorts", {})[p["key"]] = {"best": best, "wrong": sorted(set(request.form.getlist("wrong")) & letters),
+                                            "note": request.form.get("note", "")[:500]}
+    _save(m)
+    return redirect(url_for("footage_review.shorts", i=i + 1))
 
 
 @bp.get("/bench/footage/clips/<int:i>")
@@ -138,6 +185,11 @@ def _media(folder: Path, name: str):
 @bp.get("/bench/footage/clip/<name>")
 def clip_file(name: str):
     return _media(OUT / "pieces" / "clips", name)
+
+
+@bp.get("/bench/footage/short/<name>")
+def short_file(name: str):
+    return _media(OUT / "round3" / "shorts", name)
 
 
 @bp.get("/bench/footage/grid/<name>")

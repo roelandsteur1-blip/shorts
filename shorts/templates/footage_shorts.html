@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Round 3{% endblock %}{% block body %}
+<h1>{{ p.niche }} {{ p.kind }} <span class="muted">{{ i + 1 }} / {{ total }}</span></h1>
+<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;max-width:640px">
+{% for l, f in p.files %}<div style="text-align:center"><video src="/bench/footage/short/{{ f }}" controls playsinline preload="metadata" style="width:100%;border-radius:8px;background:#000"></video><b>{{ l }}</b></div>
+{% endfor %}</div>
+<p class="muted">Play each with sound off or on, as you like. They may be about different subjects: judge which Short you'd rather upload.</p>
+<form method="post" action="/bench/footage/shorts/{{ i }}">
+<p><b>Better Short:</b>
+{% for l, f in p.files %}<label style="margin-right:10px"><input type="radio" name="best" value="{{ l }}" required {% if mark.best == l %}checked{% endif %}> {{ l }}</label>{% endfor %}
+<label><input type="radio" name="best" value="same" {% if mark.best == 'same' %}checked{% endif %}> about the same</label></p>
+<p><b>Shows the wrong thing somewhere:</b>
+{% for l, f in p.files %}<label style="margin-right:10px"><input type="checkbox" name="wrong" value="{{ l }}" {% if l in (mark.wrong or []) %}checked{% endif %}> {{ l }}</label>{% endfor %}</p>
+<p><input name="note" placeholder="note (optional)" value="{{ mark.note or '' }}" style="width:100%;max-width:640px"></p>
+<p><button class="primary">Save and next</button>
+{% if i > 0 %}<a href="/bench/footage/shorts/{{ i - 1 }}">back</a>{% endif %}
+<a href="/bench/footage" class="muted">stop for now</a></p>
+</form>
+{% endblock %}

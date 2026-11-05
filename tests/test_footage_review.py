@@ -43,3 +43,24 @@ def test_pages_save_marks(tmp_path, monkeypatch):
     assert m["crops"] == {"crop-space-saturn-A.mp4": {"best": ["C", "D"], "cut": ["C"]}}
     assert c.get("/bench/footage/grid/..%2Fx.mp4").status_code == 404
     assert c.get("/bench/footage/clip/space-saturn-A.mp4").status_code == 200
+
+
+def test_round3_pairs_and_marks(tmp_path, monkeypatch):
+    monkeypatch.setattr(fr, "OUT", tmp_path)
+    (tmp_path / "round3" / "shorts").mkdir(parents=True)
+    for n in ("space-quiz-B.mp4", "space-quiz-Q.mp4"):
+        (tmp_path / "round3" / "shorts" / n).write_bytes(b"x")
+    (tmp_path / "round3" / "made-part1.json").write_text(json.dumps({"shorts": [
+        {"niche": "space", "kind": "quiz", "key": {"Q": "new", "B": "today"},
+         "new": {"file": "space-quiz-Q.mp4"}, "today": {"file": "space-quiz-B.mp4"}},
+        {"niche": "space", "kind": "ranking", "key": {"A": "new", "C": "today"}, "new": {"error": "x"}, "today": {}}]}))
+    assert fr.pairs() == [{"key": "space-quiz", "niche": "space", "kind": "quiz",
+                           "files": [("B", "space-quiz-B.mp4"), ("Q", "space-quiz-Q.mp4")]}]
+    from flask import Flask
+    app = Flask(__name__, template_folder=str(__import__("pathlib").Path(fr.__file__).parent.parent / "templates"))
+    app.register_blueprint(fr.bp)
+    c = app.test_client()
+    assert c.post("/bench/footage/shorts/0", data={"best": "Q", "wrong": ["B"], "note": "hi"}).status_code == 302
+    assert c.post("/bench/footage/shorts/0", data={"best": "Z"}).status_code == 400
+    m = json.loads((tmp_path / "marks" / "footage.json").read_text())
+    assert m["shorts"] == {"space-quiz": {"best": "Q", "wrong": ["B"], "note": "hi"}}

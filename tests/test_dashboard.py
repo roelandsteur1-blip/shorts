@@ -173,3 +173,11 @@ def test_footage_review_pages_render(client, tmp_path, monkeypatch):
     r = client.get("/bench/footage/clips/0")
     assert r.status_code == 200 and b"space-saturn-A.mp4" in r.data
     assert client.get("/bench/footage/clips/1").status_code == 302
+    (tmp_path / "round3" / "shorts").mkdir(parents=True)
+    (tmp_path / "round3" / "shorts" / "space-quiz-A.mp4").write_bytes(b"x")
+    (tmp_path / "round3" / "shorts" / "space-quiz-B.mp4").write_bytes(b"x")
+    (tmp_path / "round3" / "made-part1.json").write_text(
+        '{"shorts": [{"niche": "space", "kind": "quiz", "key": {"A": "new", "B": "today"},'
+        ' "new": {"file": "space-quiz-A.mp4"}, "today": {"file": "space-quiz-B.mp4"}}]}')
+    assert b"Round 3" in client.get("/bench/footage").data
+    assert b"space-quiz-B.mp4" in client.get("/bench/footage/shorts/0").data
