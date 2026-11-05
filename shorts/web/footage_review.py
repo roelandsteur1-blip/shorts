@@ -78,7 +78,8 @@ def pairs() -> list[dict]:
                 if name and (OUT / "round3" / "shorts" / name).exists():
                     files[letter] = name
             if files:  # a single one when the other way made nothing: then "good enough?"
-                rows.append({"key": f"{r['niche']}-{r['kind']}", "niche": r["niche"], "kind": r["kind"],
+                key = f"{r['niche']}-{r['kind']}" + (f"-v{r['remade'] + 1}" if r.get("remade") else "")
+                rows.append({"key": key, "niche": r["niche"], "kind": r["kind"],
                              "files": sorted(files.items())})
     return rows
 

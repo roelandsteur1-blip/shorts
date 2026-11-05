@@ -51,13 +51,15 @@ ALLOWLIST = {
     "pieces": ("meta.collector.pieces", ["--part", "{n}"], (1, 2)),  # collector research R4-R7, half the subjects each
     "crops": ("meta.collector.crops", ["--part", "{n}"], (1, 3)),  # collector research R6b: crop methods side by side
     "round3": ("meta.collector.round3", ["--part", "{n}"], (1, 2)),  # collector research R9: real Shorts, new vs today
+    "round3new": ("meta.collector.round3", ["--part", "{n}", "--new-only"], (1, 2)),  # same, remake only the new versions
     "marks": ("meta.collector.marks", [], None),  # copies the /bench/footage review marks into the results
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "study": ("meta.study", [], None),  # competitor channel study (meta/study.toml), read-only
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_JOBS = ("pieces", "crops", "study", "marks", "round3")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_DIR = {"round3new": "round3"}  # jobs that write into another job's folder
+JSON_JOBS = ("pieces", "crops", "study", "marks", "round3", "round3new")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3
@@ -143,7 +145,7 @@ def publish(job_id: str, status: str, log_text: str, files: list[Path]) -> None:
     if status != "running" and name in SHEET_JOBS and sheets.exists():
         shutil.copytree(sheets, folder / "sheets", dirs_exist_ok=True)
     if name in JSON_JOBS:
-        for f in (OUT / name).glob("*.json"):
+        for f in (OUT / JSON_DIR.get(name, name)).glob("*.json"):
             shutil.copy(f, folder / f.name)
     jobs = sorted((RESULTS / "jobs").iterdir(), key=lambda p: p.stat().st_mtime)
     for old in jobs[:-5]:

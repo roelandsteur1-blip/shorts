@@ -125,3 +125,60 @@ def test_main_runs_both_versions_with_letters(tmp_path, monkeypatch):
     for r in d["shorts"]:
         assert sorted(r["key"].values()) == ["new", "today"]
         assert (tmp_path / "shorts" / r["new"]["file"]).exists() and (tmp_path / "shorts" / r["today"]["file"]).exists()
+
+
+def test_two_subjects_in_one_folder_keep_their_own_clips(tmp_path, monkeypatch):
+    """Round 3 bug: pieces are named K0, K1... so a shared folder let subject 2 overwrite subject 1."""
+    monkeypatch.setattr(round3.pieces, "candidates", lambda *a: [{"label": "x", "source": "commons_video", "title": "t"}])
+
+    def fake_fetch(c, subject, scorer, tmp):
+        p = tmp / f"{c['label']}.mp4"
+        p.write_text(subject["name"])
+        return p
+    monkeypatch.setattr(round3.pieces, "fetch_video", fake_fetch)
+    monkeypatch.setattr(round3.pieces, "clip_frames", lambda p, s: [])
+    monkeypatch.setattr(round3.pieces, "strip", lambda f: b"")
+    monkeypatch.setattr(round3.pieces, "duration", lambda p: 8.0)
+    monkeypatch.setattr(round3, "probe_size", lambda p: (1280, 720))
+
+    class G:
+        def check(self, frames):
+            return {"faults": [], "old_look": 0.0}
+    a, _ = round3.collect(round3.subject("space", "Saturn", None), 7.0, None, None, G(), {}, tmp_path, lambda i: {"K0"})
+    b, _ = round3.collect(round3.subject("space", "Jupiter", None), 7.0, None, None, G(), {}, tmp_path, lambda i: {"K0"})
+    assert Path(a["path"]).read_text() == "Saturn" and Path(b["path"]).read_text() == "Jupiter"
+
+
+def test_new_only_keeps_todays_version_and_letters(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setenv("PIECES_NO_REEXEC", "1")
+    monkeypatch.setattr(round3, "OUT", tmp_path)
+    (tmp_path / "shorts").mkdir()
+    (tmp_path / "shorts" / "space-ranking-T.mp4").write_bytes(b"old")
+    (tmp_path / "made-part1.json").write_text(json.dumps({"shorts": [
+        {"niche": "space", "kind": "ranking", "key": {"N": "new", "T": "today"}, "new": {"file": "space-ranking-N.mp4"},
+         "today": {"title": "old", "file": "space-ranking-T.mp4"}}]}))
+    monkeypatch.setattr(round3.sweep, "open_library", lambda: (_Settings(), _Conn()))
+    monkeypatch.setattr(round3.sweep, "load_keys", lambda s: {})
+    monkeypatch.setattr(round3.sweep, "Scorer", lambda s: None)
+    monkeypatch.setattr(round3.pieces, "Gates", lambda s: None)
+
+    def fake_new(niche, lib, scorer, gates, keys, tmp, ask, out):
+        out.write_bytes(b"new")
+        return {"title": "new"}
+    monkeypatch.setattr(round3, "new_ranking", fake_new)
+    monkeypatch.setattr(round3, "new_quiz", fake_new)
+    monkeypatch.setattr(round3, "old_short", lambda *a: {"title": "today quiz"})
+    round3.main(["--niche", "space", "--new-only"])
+    d = json.loads((tmp_path / "made-part1.json").read_text())
+    r = d["shorts"][0]
+    assert r["key"] == {"N": "new", "T": "today"} and r["today"]["title"] == "old" and r["remade"] == 1
+    assert (tmp_path / "shorts" / "space-ranking-N.mp4").read_bytes() == b"new"
+    assert (tmp_path / "shorts" / "space-ranking-T.mp4").read_bytes() == b"old"
+    assert d["shorts"][1]["today"]["title"] == "today quiz"  # no earlier quiz: made both ways
+
+
+def test_runner_allows_round3_new_only():
+    from meta import runner
+    cmd = runner.command({"id": "2026-11-05-round3new-1", "name": "round3new", "n": 1})
+    assert cmd[-3:] == ["--part", "1", "--new-only"] and runner.JSON_DIR["round3new"] == "round3"

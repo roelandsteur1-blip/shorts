@@ -121,3 +121,13 @@ n = 1
 [[job]]
 id = "2026-11-05-marks-2"
 name = "marks"
+
+[[job]]
+id = "2026-11-05-round3new-1"
+name = "round3new"
+n = 2
+
+[[job]]
+id = "2026-11-05-round3new-2"
+name = "round3new"
+n = 1

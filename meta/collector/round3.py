@@ -80,6 +80,10 @@ def collect(subject: dict, need: float, lib, scorer, gates, keys: dict, tmp: Pat
     """One clip of `need` seconds for the subject, or None. Returns (clip for render_segments, log)."""
     rec = {"name": subject["name"], "tried": []}
     t0 = time.time()
+    # own folder per subject: pieces are named by label (K0, K1...), so subjects sharing a folder
+    # overwrote each other's clips and a Short showed one subject's footage for several items
+    tmp = tmp / ("".join(ch if ch.isalnum() else "_" for ch in subject["name"].lower()) or "subject")
+    tmp.mkdir(parents=True, exist_ok=True)
     cands = [c for c in pieces.candidates(subject, lib[:2] if lib else None, scorer, keys) if "error" not in c]
     cands = order(cands)
     for i, c in enumerate(cands):
@@ -224,6 +228,7 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--part", type=int, choices=(1, 2), default=1)
     ap.add_argument("--niche", choices=NICHES)
+    ap.add_argument("--new-only", action="store_true", help="remake only the new versions; keep today's from the last run")
     a = ap.parse_args(argv)
     if pieces.RESEARCH_PY.exists() and Path(sys.prefix).resolve() != pieces.RESEARCH_PY.parent.parent.resolve() \
             and not os.environ.get("PIECES_NO_REEXEC"):
@@ -249,14 +254,27 @@ def main(argv=None) -> None:
     rng = random.Random(f"round3-part{a.part}-{datetime.now():%Y%m%d%H%M}")
     made_file = OUT / f"made-part{a.part}.json"
     rows, t_all = [], time.time()
+    earlier = {}
+    if a.new_only and made_file.exists():
+        earlier = {(r["niche"], r["kind"]): r for r in json.loads(made_file.read_text(encoding="utf-8")).get("shorts", [])}
     with tempfile.TemporaryDirectory(prefix="round3-") as tmpd:
         for niche in niches:
             for kind in ("ranking", "quiz"):
                 letters = rng.sample("ABCDEFGHJKLMNPQRSTUVWXYZ", 2)
                 row = {"niche": niche, "kind": kind, "key": {}}
+                prev = earlier.get((niche, kind))
+                if prev:  # same letters, today's version kept as it was
+                    by_version = {v: l for l, v in prev["key"].items()}
+                    letters = [by_version["new"], by_version["today"]]
+                    row["key"][letters[1]] = "today"
+                    row["today"] = prev.get("today", {})
+                    row["remade"] = prev.get("remade", 0) + 1  # the review page asks again for a remade pair
                 for version, letter in zip(("new", "today"), letters):
+                    if version in row:
+                        continue
                     t0 = time.time()
                     dst = shorts_dir / f"{niche}-{kind}-{letter}.mp4"
+                    dst.unlink(missing_ok=True)
                     log(f"{niche} {kind} ({version})")
                     try:
                         if version == "new":

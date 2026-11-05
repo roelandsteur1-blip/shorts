@@ -74,3 +74,12 @@ def test_round3_pairs_and_marks(tmp_path, monkeypatch):
     m = json.loads((tmp_path / "marks" / "footage.json").read_text())
     assert m["shorts"]["space-quiz"] == {"best": "Q", "wrong": ["B"], "note": "hi"}
     assert m["shorts"]["space-ranking"]["best"] == "bad"
+
+
+def test_remade_pair_gets_a_new_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(fr, "OUT", tmp_path)
+    (tmp_path / "round3" / "shorts").mkdir(parents=True)
+    (tmp_path / "round3" / "shorts" / "space-quiz-Q.mp4").write_bytes(b"x")
+    (tmp_path / "round3" / "made-part1.json").write_text(json.dumps({"shorts": [
+        {"niche": "space", "kind": "quiz", "remade": 1, "key": {"Q": "new", "B": "today"}, "new": {"file": "space-quiz-Q.mp4"}}]}))
+    assert fr.pairs()[0]["key"] == "space-quiz-v2"
