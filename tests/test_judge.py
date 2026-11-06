@@ -17,16 +17,16 @@ def video(path, seconds=3, size="640x360"):
     return path
 
 
-def v(shows=True, conf=5, action=3, subject=3, wow=3, looks=3, same=True, era=True, why="x", viral=3):
+def v(shows=True, conf=5, action=3, subject=3, wow=3, looks=3, same=True, era=True, why="x", viral=3, vintage=3):
     return judge._clean({"shows": shows, "confidence": conf, "action": action, "subject": subject, "wow": wow,
-                         "looks": looks, "viral": viral, "same_shot": same, "era_ok": era, "why": why})
+                         "looks": looks, "viral": viral, "vintage": vintage, "same_shot": same, "era_ok": era, "why": why})
 
 
 def test_interest_and_passes():
-    assert judge.interest({"action": 5, "subject": 5, "wow": 5, "viral": 5, "looks": 5}) == 5.0
-    assert judge.interest({"action": 1, "subject": 1, "wow": 1, "viral": 1, "looks": 1}) == 1.0
+    assert judge.interest({"action": 5, "subject": 5, "wow": 5, "viral": 5, "vintage": 5, "looks": 5}) == 5.0
+    assert judge.interest({"action": 1, "subject": 1, "wow": 1, "viral": 1, "vintage": 1, "looks": 1}) == 1.0
     assert judge.interest({}) == 1.0
-    assert v(action=5, subject=3, wow=3, looks=1)["interest"] == pytest.approx(0.3 * 5 + 0.2 * 3 * 3 + 0.1)
+    assert v(action=5, subject=3, wow=3, looks=1)["interest"] == pytest.approx(0.25 * 5 + (0.15 + 0.15 + 0.2 + 0.15) * 3 + 0.1)
     assert judge.passes(v()) and not judge.passes(v(conf=3)) and not judge.passes(v(shows=False))
     assert not judge.passes(v(same=False)) and not judge.passes(v(era=False)) and not judge.passes(None)
     clean = judge._clean({"shows": "yes", "confidence": 9, "action": "x"})
@@ -65,7 +65,7 @@ def test_gemini_judge(monkeypatch, tmp_path):
             return Resp(429, {"error": {"details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "0s"}]}})
         sent.update(json)
         answer = {"clips": [{"label": "A", "shows": True, "confidence": 5, "why": "rings", "same_shot": True,
-                             "era_ok": True, "action": 4, "subject": 5, "wow": 4, "viral": 4, "looks": 4}, {"label": "Z", "shows": True}]}
+                             "era_ok": True, "action": 4, "subject": 5, "wow": 4, "viral": 4, "vintage": 4, "looks": 4}, {"label": "Z", "shows": True}]}
         return Resp(200, {"candidates": [{"content": {"parts": [{"text": __import__("json").dumps(answer)}]}}]})
 
     monkeypatch.setattr(judge.requests, "post", post)
@@ -130,7 +130,7 @@ def test_collector_picks_most_interesting(conn, settings, channel, tmp_path, mon
     c._tools = (None, Gates(), {})
     assert c.find("Saturn V", need=2.0) == ids[1]
     assert seen["clips"][0]["path"] == str(paths[0]) and seen["clips"][0]["seconds"] == 2.0
-    assert c.log[0]["interest"] == 4.0  # action 5, wow 5, subject/viral/looks 3
+    assert c.log[0]["interest"] == 3.8  # action 5, wow 5, the rest 3
     # every clip dull -> none from the library
     c2 = col.Collector(conn, settings, channel, judge=lambda *a: {"L0": v(1, 5, 1, 1, 1, 1)})
     c2._tools = (None, Gates(), {})
@@ -211,3 +211,43 @@ def test_judge_page(tmp_path, monkeypatch):
     m = json.loads((tmp_path / "marks" / "footage.json").read_text())
     assert m["judge"]["space/Saturn"] == {"best": "B", "boring": ["A"], "wrong": [], "note": ""}
     assert c.get("/bench/footage/judge/1").status_code == 302
+
+
+def test_video_before_photo_and_old_first():
+    def m(label, kind="video", interest=3.0, old=None):
+        return {"label": label, "kind": kind, "gates": {"faults": [], "old_look": old},
+                "verdict": {"interest": interest}}
+    # a duller video beats a more interesting photo
+    assert col.choose([m("P", "photo", 4.5), m("V", interest=3.0)], {"P", "V"}, "space")["label"] == "V"
+    assert col.choose([m("P", "photo", 4.5)], {"P"}, "space")["label"] == "P"  # photo when nothing else
+    # old niches: an old-looking clip first, then interest
+    assert col.choose([m("A", interest=4.5, old=-0.1), m("B", interest=3.0, old=0.1)], {"A", "B"}, "history")["label"] == "B"
+    assert col.choose([m("A", interest=4.5), m("B", interest=3.0)], {"A", "B"}, "space")["label"] == "A"
+
+
+def test_hook_keeps_looking_for_video(conn, settings, channel, tmp_path, monkeypatch):
+    import meta.textcard as tc
+    from shorts import embed
+    monkeypatch.setattr(tc, "find_clips", lambda *a, **k: [])
+    monkeypatch.setattr(embed, "embed_pending", lambda *a, **k: 0)
+    cands = [{"source": "openverse", "kind": "photo", "title": f"p{i}", "licence": "cc0", "ref": f"r{i}", "file": "x"}
+             for i in range(3)] + [{"source": "commons_video", "title": "film", "licence": "public-domain",
+                                    "ref": "v", "file": "y"}]
+    monkeypatch.setattr(pieces, "candidates", lambda *a, **k: [dict(c) for c in cands])
+    monkeypatch.setattr(pieces, "fetch_photo", lambda c, tmp, seconds=5.0: video(tmp / f"{c['label']}.mp4", 2))
+    monkeypatch.setattr(pieces, "fetch_video", lambda c, s, sc, tmp, seconds=None: video(tmp / f"{c['label']}.mp4", 2))
+    monkeypatch.setattr(pieces, "clip_frames", lambda path, secs: [object()])
+    monkeypatch.setattr(pieces, "strip", lambda frames: b"x")
+
+    class Gates:
+        def check(self, frames):
+            return {"faults": []}
+
+    def run(hook):
+        c = col.Collector(conn, settings, dataclasses.replace(
+            channel, collector_sources=["Openverse photos", "Commons video (name)"]),
+            judge=lambda clips, *a: {x["label"]: v() for x in clips})
+        c._tools = (None, Gates(), {})
+        c.find("Saturn V", need=2.0, hook=hook)
+        return c.log[0]["from"]
+    assert run(hook=True) == "commons_video"

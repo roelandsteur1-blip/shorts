@@ -49,6 +49,7 @@ def load_subjects(pieces_dir: Path = PIECES, marks_file: Path = OUT / "marks" / 
                 if c.get("preview") and land.exists() and "gates" in c:
                     clips.append({"label": c["label"], "path": str(land), "preview": c["preview"],
                                   "bad": c["label"] in bad, "gates": c["gates"], "source": c.get("source", ""),
+                                  "kind": c.get("kind", "video"),
                                   "old_yes": bool(c.get("claude_shows"))})
             if clips:
                 rows.append({"key": key, "niche": s["niche"], "name": s["name"], "clips": clips})
@@ -225,7 +226,7 @@ def save(rows: list[dict], models: list[str], errors: list[str], final: bool = F
            "subjects": len(done), "clips": sum(len(s["clips"]) for s in done), "metrics": mets, "new": new,
            "pairs": pairs, "same": same, "only_old": only_old, "only_new": only_new, "errors": errors,
            "rows": [{k: s[k] for k in ("key", "niche", "name", "picks", "verdicts")} |
-                    {"clips": [{k: c[k] for k in ("label", "bad", "old_yes", "source", "preview")} for c in s["clips"]]}
+                    {"clips": [{k: c[k] for k in ("label", "bad", "old_yes", "source", "preview", "kind")} for c in s["clips"]]}
                     for s in done]}
     (HERE / "made.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
     (HERE / "report.md").write_text(report(res), encoding="utf-8")

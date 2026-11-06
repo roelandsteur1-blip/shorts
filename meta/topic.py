@@ -88,6 +88,14 @@ def _avoid(lib: dict) -> str:
     return "; ".join(lib.get("avoid", [])[-40:]) or "none yet"
 
 
+def _find(collector, name: str, show, need: float, hook: bool = False):
+    """collector.find; hook = the Short's first shot (video strongly preferred over a photo)."""
+    try:
+        return collector.find(name, show, need=need, hook=hook)
+    except TypeError:  # a collector without the hook option (tests' fakes)
+        return collector.find(name, show, need=need)
+
+
 def _clips(lib: dict, wanted: list[tuple[str, str | None]], need: float, enough: int, failed: list[str],
            least: int | None = None) -> list:
     """[(index into wanted, clip)] for the first `enough` subjects that have footage; stops early
@@ -100,7 +108,7 @@ def _clips(lib: dict, wanted: list[tuple[str, str | None]], need: float, enough:
             break
         if len(wanted) - i < least - len(got):
             break  # too few left to fill the Short: a new script instead
-        sid = lib["collector"].find(name, show, need=need)
+        sid = _find(lib["collector"], name, show, need, hook=not got)
         if sid is None:
             failed.append(name)
         else:
@@ -224,7 +232,7 @@ def textcard(niche: str, lib: dict) -> list[dict]:
                 continue
             text = fix or post["text"]
             secs = tc.seconds_for(text)
-            sid = lib["collector"].find(post["subject"], post.get("show"), need=secs)
+            sid = _find(lib["collector"], post["subject"], post.get("show"), secs, hook=True)  # the card's only clip
             if sid is None:
                 failed.append(post["subject"])
                 continue

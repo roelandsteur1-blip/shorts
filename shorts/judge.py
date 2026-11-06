@@ -9,7 +9,8 @@ Two judges answer the same questions about a set of clips of ONE subject:
 
 Every verdict has: shows (bool), confidence 1-5, why (one line), same_shot (no cut / title card),
 era_ok (old film where the niche needs it) and five interest parts 1-5: action, subject, wow,
-viral (would people rewatch/comment/share it), looks.
+viral (would people rewatch/comment/share it), vintage (old footage scores higher: Roeland,
+6 Nov), looks. Photos (slow zoom) score action <= 2, and the collector prefers video anyway.
 
 `settings.footage_judge` picks what the collector uses:
   "claude"  - today's blind check (3 frames, yes/no); no interest score
@@ -37,7 +38,7 @@ log = logging.getLogger(__name__)
 API = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODEL = "gemini-3.8-flash"     # matched against the API's model list (newest flash first)
 GEMINI_THINKING = "low"               # thinkingLevel; None = the model's default
-WEIGHTS = {"action": 0.30, "subject": 0.20, "wow": 0.20, "viral": 0.20, "looks": 0.10}
+WEIGHTS = {"action": 0.25, "subject": 0.15, "wow": 0.15, "viral": 0.20, "vintage": 0.15, "looks": 0.10}
 MIN_INTEREST = 2.5                    # clips under this are not used
 MIN_CONFIDENCE = 4                    # "shows" counts only from this confidence up
 OLD_NICHES = {"oldcity", "history", "retrotech"}
@@ -58,11 +59,15 @@ QUESTIONS = """For EACH clip answer:
   - "wow": would a viewer stop scrolling: unusual angle, rare moment, scale, close-up? 1 = dull.
   - "viral": viral potential: would this moment make people rewatch, comment or share (jaw-dropping,
     "how is that real", satisfying, dramatic, funny, record-breaking)? 1 = nobody would share it.
+  - "vintage": how old it looks: our viewers find old footage more interesting. 5 = clearly old archive
+    film (black and white, early colour, film grain), 3 = 1970s-90s look, 1 = clearly modern digital footage.
   - "looks": clean picture, not washed out, blurry, tiny or shaky; works cropped to a vertical frame?
+Some clips are a still PHOTO with an added slow zoom: real video is worth more to us, so for a photo
+"action" is at most 2.
 Be strict and use the whole 1-5 range: most archive clips are a 2 or 3 on "wow" and "viral".
 
 Return JSON only: {{"clips": [{{"label": "A", "shows": true, "confidence": 5, "why": "...", "same_shot": true,
-"era_ok": true, "action": 3, "subject": 4, "wow": 2, "viral": 2, "looks": 3}}]}}"""
+"era_ok": true, "action": 3, "subject": 4, "wow": 2, "viral": 2, "vintage": 4, "looks": 3}}]}}"""
 
 SUBJECT_RULE = ('the named subject "{name}" is clearly and unmistakably identifiable (a different '
                 'building, animal, plane or object that merely looks similar is false; ignore any title '

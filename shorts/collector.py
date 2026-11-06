@@ -106,9 +106,10 @@ class Collector:
 
     # ---------- the collector ----------
 
-    def find(self, name: str, show: str | None = None, need: float = 8.0) -> int | None:
+    def find(self, name: str, show: str | None = None, need: float = 8.0, hook: bool = False) -> int | None:
         """A scene id of at least `need` seconds that shows `name`, or None. The scene counts as
-        used from now on (a second find() never returns it)."""
+        used from now on (a second find() never returns it). hook = the Short's first shot: a photo
+        is only used when no archive candidate gave a usable video."""
         subject = {"niche": self.niche, "name": name, "wikidata": name, "show": show or f"a clear view of {name}"}
         rec = {"name": name, "library": 0, "archive": 0}
         t0 = time.time()
@@ -117,7 +118,7 @@ class Collector:
             if self.use_library:
                 sid = self._from_library(subject, need, rec)
             if sid is None and self.archives:
-                sid = self._from_archives(subject, need, rec)
+                sid = self._from_archives(subject, need, rec, hook)
         except llm.LLMLimitError:
             raise
         except Exception as e:  # noqa: BLE001 - one subject must never stop a Short or a run
@@ -170,7 +171,7 @@ class Collector:
         r = self.conn.execute("SELECT asset_id FROM scenes WHERE id=?", (scene_id,)).fetchone()
         return r[0] if r else None
 
-    def _from_archives(self, subject: dict, need: float, rec: dict) -> int | None:
+    def _from_archives(self, subject: dict, need: float, rec: dict, hook: bool = False) -> int | None:
         from meta.collector import pieces
         scorer, gates, keys = self.tools()
         if {"commons_photo", "commons_depicts"} & {s for s, _ in self.archives}:
@@ -194,6 +195,9 @@ class Collector:
                 if got:
                     ok |= self.check(got, subject, need)
                 pick = choose(made, ok, self.niche)
+                more = at + PARALLEL < len(cands)
+                if pick and hook and pick.get("kind") == "photo" and more:
+                    continue  # first shot: keep looking for a video
                 if pick:
                     rec["from"] = pick["source"]
                     _note(rec, pick)
@@ -244,14 +248,16 @@ def _note(rec: dict, pick: dict) -> None:
 
 
 def choose(made: list[dict], ok: set[str], niche: str) -> dict | None:
-    """The clip to use: passed the judge and the gates (dark is fine in space); for old-footage
-    niches an old-looking clip first; then the most interesting (newer judges), else the first in order."""
+    """The clip to use: passed the judge and the gates (dark is fine in space). Order: video before
+    photo (Roeland, 6 Nov); for old-footage niches an old-looking clip first; then the most
+    interesting (newer judges), else the first in order (the sort is stable)."""
     rejects = REJECTS - ({"black"} if niche == "space" else set())
     good = [m for m in made if m["label"] in ok and not (rejects & set(m["gates"].get("faults", [])))]
-    good.sort(key=lambda m: -((m.get("verdict") or {}).get("interest") or 0))  # stable: order kept on ties
-    if niche in OLD_NICHES:
-        old = [m for m in good if (m["gates"].get("old_look") or 0) > AGE_CUT]
-        good = old + [m for m in good if m not in old]
+
+    def key(m):
+        old = niche in OLD_NICHES and (m["gates"].get("old_look") or 0) > AGE_CUT
+        return (m.get("kind") == "photo", not old, -((m.get("verdict") or {}).get("interest") or 0))
+    good.sort(key=key)
     return good[0] if good else None
 
 
@@ -372,7 +378,7 @@ def classic_heroes(conn: sqlite3.Connection, settings: Settings, channel: Channe
         name = str(s.get("name") or "").strip()
         if not name:
             continue
-        sid = col.find(name, s.get("show"), need=HERO_SECONDS)
+        sid = col.find(name, s.get("show"), need=HERO_SECONDS, hook=True)
         if sid is not None and sid not in out:
             out.append(sid)
     return out

@@ -127,7 +127,7 @@ class FakeCollector:
     def __init__(self, conn, have):
         self.conn, self.have, self.asked = conn, have, []
 
-    def find(self, name, show=None, need=8.0):
+    def find(self, name, show=None, need=8.0, hook=False):
         self.asked.append(name)
         return self.have.get(name)
 
@@ -225,7 +225,7 @@ def test_classic_heroes_topic_first(conn, settings, channel, monkeypatch):
             self.prompt = prompt
             return {"subjects": [{"name": "Saturn V", "show": "launch"}, {"name": "Nothing"}, {"name": "Apollo 11"}]}
 
-        def find(self, name, show=None, need=8.0):
+        def find(self, name, show=None, need=8.0, hook=False):
             self.asked.append((name, need))
             return {"Saturn V": 11, "Apollo 11": 12}.get(name)
 

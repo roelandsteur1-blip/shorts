@@ -222,7 +222,8 @@ def fetch_video(c: dict, subject: dict, scorer, tmp: Path, seconds: float | None
 
 
 def fetch_photo(c: dict, tmp: Path, seconds: float = 5.0) -> Path:
-    """A photo becomes a slow zoom (5 s: what quiz/ranking would show)."""
+    """A photo becomes a zoom of 1.0 -> 1.25 over the clip (5 s: what quiz/ranking would show), so
+    there is visible movement (Roeland, 6 Nov: a photo needs movement)."""
     rec = c.setdefault("fetch", {})
     t0 = time.time()
     r = sweep.S.get(c["file"], timeout=60)
@@ -233,7 +234,8 @@ def fetch_photo(c: dict, tmp: Path, seconds: float = 5.0) -> Path:
     im.save(img, quality=92)
     out = tmp / f"{c['label']}.mp4"
     p = ffmpeg(["-loop", "1", "-i", str(img), "-t", f"{seconds:.2f}", "-vf",
-                "scale=1600:-2,zoompan=z='min(zoom+0.0008,1.12)':d=1:s=1280x720:fps=25",
+                f"scale=1600:-2,zoompan=z='min(zoom+{0.25 / max(1.0, seconds * 25):.5f},1.25)':d=1:"
+                "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps=25",
                 "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(out)])
     if p.returncode or not out.exists():
         raise RuntimeError("zoom failed: " + p.stderr.decode(errors="replace")[-200:])
