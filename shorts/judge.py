@@ -190,8 +190,14 @@ def gemini_call(key: str, model: str, parts: list[dict], tries: int = 6) -> str:
             "generationConfig": {"responseMimeType": "application/json", "temperature": 0}}
     wait = 20.0
     for attempt in range(tries):
-        r = requests.post(f"{API}/models/{model}:generateContent", headers={"x-goog-api-key": key},
-                          json=body, timeout=300)
+        try:
+            r = requests.post(f"{API}/models/{model}:generateContent", headers={"x-goog-api-key": key},
+                              json=body, timeout=180)
+        except requests.Timeout:
+            if attempt >= 1:
+                raise JudgeError("Gemini timed out twice")
+            log.info("Gemini timed out, trying once more")
+            continue
         if r.status_code == 200:
             data = r.json()
             try:

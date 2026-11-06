@@ -14,6 +14,7 @@ import argparse
 import json
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -144,27 +145,35 @@ def main(argv=None) -> None:
     HERE.mkdir(parents=True, exist_ok=True)
     models = [m.strip() for m in a.gemini.split(",") if m.strip()] if key else []
     errors = [] if key else ["no Gemini key saved: only Claude judges"]
+    fails: dict[str, int] = {}  # a Gemini model that fails 3 subjects in a row is dropped
     log(f"{len(rows)} subjects, {sum(len(s['clips']) for s in rows)} clips; Gemini models {models or 'none'}")
     for i, s in enumerate(rows, 1):
         clips = [{"label": c["label"], "path": c["path"], "start": 0.0,
                   "seconds": min(SECONDS, judge_duration(c["path"]))} for c in s["clips"]]
         s["verdicts"] = {"today": {}}
         t0 = time.time()
-        for m in models:
-            try:
-                s["verdicts"][f"gemini {m}"] = judge.gemini_judge(key, clips, s["name"], s["niche"], model=m)
-            except Exception as e:  # noqa: BLE001 - the other judges still run
-                errors.append(f"{s['key']} gemini {m}: {str(e)[:200]}")
-                log(f"  gemini {m} failed: {str(e)[:200]}")
-        try:
-            s["verdicts"]["claude+"] = judge.claude_judge(settings, clips, s["name"], s["niche"], model=a.claude_model)
-        except llm.LLMLimitError as e:
-            errors.append(f"Claude usage limit: {e}")
+        # all judges of one subject at once: the slowest decides the time, not the sum
+        with ThreadPoolExecutor(max_workers=1 + len(models)) as pool:
+            futs = {pool.submit(judge.gemini_judge, key, clips, s["name"], s["niche"], model=m): f"gemini {m}"
+                    for m in models if fails.get(m, 0) < 3}
+            futs[pool.submit(judge.claude_judge, settings, clips, s["name"], s["niche"], model=a.claude_model)] = "claude+"
+            limit = None
+            for f, name in futs.items():
+                try:
+                    s["verdicts"][name] = f.result()
+                    if name.startswith("gemini"):
+                        fails[name[7:]] = 0
+                except llm.LLMLimitError as e:
+                    limit = e
+                except Exception as e:  # noqa: BLE001 - the other judges still count
+                    errors.append(f"{s['key']} {name}: {str(e)[:200]}")
+                    log(f"  {name} failed: {str(e)[:200]}")
+                    if name.startswith("gemini"):
+                        fails[name[7:]] = fails.get(name[7:], 0) + 1
+        if limit:
+            errors.append(f"Claude usage limit: {limit}")
             log("Claude usage limit reached: stopping")
-            rows = rows[:i - 1] + [s]
             break
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"{s['key']} claude+: {str(e)[:200]}")
         for m in models:
             g, c = s["verdicts"].get(f"gemini {m}"), s["verdicts"].get("claude+")
             if g and c:
