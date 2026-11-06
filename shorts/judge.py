@@ -8,7 +8,8 @@ Two judges answer the same questions about a set of clips of ONE subject:
   identity and judges the rest as well.
 
 Every verdict has: shows (bool), confidence 1-5, why (one line), same_shot (no cut / title card),
-era_ok (old film where the niche needs it) and four interest parts 1-5: action, subject, wow, looks.
+era_ok (old film where the niche needs it) and five interest parts 1-5: action, subject, wow,
+viral (would people rewatch/comment/share it), looks.
 
 `settings.footage_judge` picks what the collector uses:
   "claude"  - today's blind check (3 frames, yes/no); no interest score
@@ -35,7 +36,7 @@ log = logging.getLogger(__name__)
 
 API = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODEL = "gemini-3.8-flash"     # matched against the API's model list (newest flash first)
-WEIGHTS = {"action": 0.35, "subject": 0.25, "wow": 0.25, "looks": 0.15}
+WEIGHTS = {"action": 0.30, "subject": 0.20, "wow": 0.20, "viral": 0.20, "looks": 0.10}
 MIN_INTEREST = 2.5                    # clips under this are not used
 MIN_CONFIDENCE = 4                    # "shows" counts only from this confidence up
 OLD_NICHES = {"oldcity", "history", "retrotech"}
@@ -54,11 +55,13 @@ QUESTIONS = """For EACH clip answer:
   - "action": does something visibly happen (launch, take-off, wave breaking, animal moving)? 1 = static.
   - "subject": one clear subject, big enough to see on a phone? 1 = tiny, lost or cluttered.
   - "wow": would a viewer stop scrolling: unusual angle, rare moment, scale, close-up? 1 = dull.
+  - "viral": viral potential: would this moment make people rewatch, comment or share (jaw-dropping,
+    "how is that real", satisfying, dramatic, funny, record-breaking)? 1 = nobody would share it.
   - "looks": clean picture, not washed out, blurry, tiny or shaky; works cropped to a vertical frame?
-Be strict and use the whole 1-5 range: most archive clips are a 2 or 3 on "wow".
+Be strict and use the whole 1-5 range: most archive clips are a 2 or 3 on "wow" and "viral".
 
 Return JSON only: {{"clips": [{{"label": "A", "shows": true, "confidence": 5, "why": "...", "same_shot": true,
-"era_ok": true, "action": 3, "subject": 4, "wow": 2, "looks": 3}}]}}"""
+"era_ok": true, "action": 3, "subject": 4, "wow": 2, "viral": 2, "looks": 3}}]}}"""
 
 SUBJECT_RULE = ('the named subject "{name}" is clearly and unmistakably identifiable (a different '
                 'building, animal, plane or object that merely looks similar is false; ignore any title '

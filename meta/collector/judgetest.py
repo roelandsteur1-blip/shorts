@@ -21,6 +21,7 @@ OUT = Path.home() / "meta-out"
 HERE = OUT / "judgetest"
 PIECES = OUT / "pieces"
 SECONDS = 8.0
+RUN = datetime.now().strftime("%Y%m%d-%H%M")  # this run's id: page marks are per run (letters differ)
 
 
 def log(msg: str) -> None:
@@ -200,7 +201,7 @@ def save(rows: list[dict], models: list[str], errors: list[str], final: bool = F
             rng.shuffle(letters)
             prev = {c["label"]: c for c in s["clips"]}
             v = s["verdicts"][new].get(n) or {}
-            pairs.append({"key": s["key"], "niche": s["niche"], "name": s["name"],
+            pairs.append({"key": f"{RUN}:{s['key']}", "niche": s["niche"], "name": s["name"],
                           "files": sorted([(letters[0], prev[o]["preview"]), (letters[1], prev[n]["preview"])]),
                           "versions": {letters[0]: "today", letters[1]: "new"},
                           "clips": {letters[0]: o, letters[1]: n}, "new_why": v.get("why", ""),

@@ -17,16 +17,16 @@ def video(path, seconds=3, size="640x360"):
     return path
 
 
-def v(shows=True, conf=5, action=3, subject=3, wow=3, looks=3, same=True, era=True, why="x"):
+def v(shows=True, conf=5, action=3, subject=3, wow=3, looks=3, same=True, era=True, why="x", viral=3):
     return judge._clean({"shows": shows, "confidence": conf, "action": action, "subject": subject, "wow": wow,
-                         "looks": looks, "same_shot": same, "era_ok": era, "why": why})
+                         "looks": looks, "viral": viral, "same_shot": same, "era_ok": era, "why": why})
 
 
 def test_interest_and_passes():
-    assert judge.interest({"action": 5, "subject": 5, "wow": 5, "looks": 5}) == 5.0
-    assert judge.interest({"action": 1, "subject": 1, "wow": 1, "looks": 1}) == 1.0
+    assert judge.interest({"action": 5, "subject": 5, "wow": 5, "viral": 5, "looks": 5}) == 5.0
+    assert judge.interest({"action": 1, "subject": 1, "wow": 1, "viral": 1, "looks": 1}) == 1.0
     assert judge.interest({}) == 1.0
-    assert v(action=5, subject=3, wow=3, looks=1)["interest"] == pytest.approx(0.35 * 5 + 0.25 * 3 + 0.25 * 3 + 0.15)
+    assert v(action=5, subject=3, wow=3, looks=1)["interest"] == pytest.approx(0.3 * 5 + 0.2 * 3 * 3 + 0.1)
     assert judge.passes(v()) and not judge.passes(v(conf=3)) and not judge.passes(v(shows=False))
     assert not judge.passes(v(same=False)) and not judge.passes(v(era=False)) and not judge.passes(None)
     clean = judge._clean({"shows": "yes", "confidence": 9, "action": "x"})
@@ -65,7 +65,7 @@ def test_gemini_judge(monkeypatch, tmp_path):
             return Resp(429, {"error": {"details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "0s"}]}})
         sent.update(json)
         answer = {"clips": [{"label": "A", "shows": True, "confidence": 5, "why": "rings", "same_shot": True,
-                             "era_ok": True, "action": 4, "subject": 5, "wow": 4, "looks": 4}, {"label": "Z", "shows": True}]}
+                             "era_ok": True, "action": 4, "subject": 5, "wow": 4, "viral": 4, "looks": 4}, {"label": "Z", "shows": True}]}
         return Resp(200, {"candidates": [{"content": {"parts": [{"text": __import__("json").dumps(answer)}]}}]})
 
     monkeypatch.setattr(judge.requests, "post", post)
@@ -130,7 +130,7 @@ def test_collector_picks_most_interesting(conn, settings, channel, tmp_path, mon
     c._tools = (None, Gates(), {})
     assert c.find("Saturn V", need=2.0) == ids[1]
     assert seen["clips"][0]["path"] == str(paths[0]) and seen["clips"][0]["seconds"] == 2.0
-    assert c.log[0]["interest"] == 4.2  # action 5, wow 5, subject/looks 3
+    assert c.log[0]["interest"] == 4.0  # action 5, wow 5, subject/viral/looks 3
     # every clip dull -> none from the library
     c2 = col.Collector(conn, settings, channel, judge=lambda *a: {"L0": v(1, 5, 1, 1, 1, 1)})
     c2._tools = (None, Gates(), {})
