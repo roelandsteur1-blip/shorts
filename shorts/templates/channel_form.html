@@ -3,7 +3,7 @@
 {% if created %}<p class="ok">Channel saved. Finish the steps on the right, then press Try it.</p>{% endif %}
 {% if saved %}<p class="ok">Saved (previous version kept as {{ d.id }}.toml.bak).</p>{% endif %}
 {% for e in errors %}<p class="bad">{{ e }}</p>{% endfor %}
-<div class="grid" style="grid-template-columns:1fr 340px">
+<div class="grid side">
 <form method="post" action="{{ '/channels/new' if new else '/channels/' ~ d.id }}" id="chform">
 <div class="card"><h3 style="margin-top:0">Video type</h3>
 <label>What kind of Short this channel makes<select name="video_type" id="video_type">{% for k, v in video_types.items() %}<option value="{{ k }}" {{ 'selected' if k == (d.video_type or 'classic') }}>{{ v }}</option>{% endfor %}</select></label>
@@ -35,9 +35,6 @@
 <label>Extra search terms (one per line)<textarea name="search_terms" rows="4">{{ (d.search_terms or [])|join('\n') }}</textarea></label>
 <label>Music searches (one per line; added to the shared music library's searches, which always include ambient, cinematic, calm piano, epic orchestral)<textarea name="music_terms" rows="3">{{ (d.music_terms or [])|join('\n') }}</textarea></label>
 <label>What a scroll-stopping first frame looks like (for picking hero shots)<input type="text" name="hero_query" value="{{ d.hero_query or '' }}" placeholder="default: a stunning dramatic space image"></label>
-</div>
-
-% endif %}
 </div>
 
 <div class="card"><h3 style="margin-top:0">Formats</h3>

@@ -13,7 +13,7 @@ CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p
 <button class="primary">Test all</button></form>
 <span class="muted" style="font-size:12px;flex-basis:100%">A test searches one page and checks the rights of the first 5 results. Nothing is downloaded.</span>
 </div>
-<table><tr><th>Source</th><th>License</th><th>Downloaded</th><th>Rejected (rights)</th><th></th></tr>
+<table class="stack labels"><tr><th>Source</th><th>License</th><th>Downloaded</th><th>Rejected (rights)</th><th></th></tr>
 {% for r in rows %}<tr id="src-{{ r.mod.NAME }}">
 <td><b>{{ r.mod.LABEL }}</b> <span class="muted">{{ r.mod.NAME }}</span><br>
 {% set cls = {'connected': 'ok', 'failing': 'bad', 'needs-key': 'warn', 'untested': 'warn'}.get(r.state, 'muted') %}
@@ -38,7 +38,7 @@ CC BY-SA footage is always skipped (the Short would have to be CC BY-SA too).</p
 </table>
 <h2 id="research-keys">Research keys</h2>
 <p class="muted">Free keys for archives the footage collector research is testing. They are only used by the research jobs for now.</p>
-<table>{% for k in research %}<tr><td><b>{{ k.label }}</b><br><span class="{{ 'ok' if k.has_key else 'warn' }}">{{ 'Key saved' if k.has_key else 'No key yet' }}</span></td>
+<table class="stack">{% for k in research %}<tr><td><b>{{ k.label }}</b><br><span class="{{ 'ok' if k.has_key else 'warn' }}">{{ 'Key saved' if k.has_key else 'No key yet' }}</span></td>
 <td><form method="post" action="/sources-research-key/{{ k.name }}">
 <input type="password" name="api_key" placeholder="{{ 'key saved: paste to replace' if k.has_key else 'API key (free)' }}" autocomplete="off">
 <button>Save key</button> <a href="{{ k.url }}" target="_blank" rel="noopener">get a free key</a></form></td></tr>{% endfor %}

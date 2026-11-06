@@ -1,19 +1,20 @@
 {% extends "base.html" %}{% block title %}Review{% endblock %}{% block body %}
+<h1>Review</h1>
 <form method="get" style="max-width:300px"><input type="hidden" name="status" value="{{ status }}">
 <select name="channel" onchange="this.form.submit()"><option value="">All channels</option>
 {% for ch in channels %}<option value="{{ ch.id }}" {{ 'selected' if ch.id == channel }}>{{ ch.name }}</option>{% endfor %}</select></form>
-<p>{% for st, label in [('rendered','To review'),('approved','Approved'),('scheduled','Scheduled'),('uploaded','Uploaded'),('rejected','Rejected'),('failed','Failed')] %}
-<a href="/review?status={{ st }}{% if channel %}&channel={{ channel }}{% endif %}" class="{{ 'on' if st == status }}">{{ label }} ({{ counts.get(st, 0) }})</a> &nbsp;
+<p class="tabs">{% for st, label in [('rendered','To review'),('approved','Approved'),('scheduled','Scheduled'),('uploaded','Uploaded'),('rejected','Rejected'),('failed','Failed')] %}
+<a href="/review?status={{ st }}{% if channel %}&channel={{ channel }}{% endif %}" class="{{ 'on' if st == status }}">{{ label }} ({{ counts.get(st, 0) }})</a>
 {% endfor %}</p>
 {% if status == 'rendered' and shorts %}
 <form method="post" action="/review/approve-all"
  onsubmit="return confirm('Approve all {{ shorts|length }} Shorts waiting for review{% if channel %} on this channel{% endif %}? They will be uploaded like any approved Short.')">
 <input type="hidden" name="channel" value="{{ channel or '' }}"><button class="primary">Accept all ({{ shorts|length }})</button></form>
 {% endif %}
-<table><tr><th>#</th><th>Channel</th><th>Title</th><th>Hook</th><th>Length</th></tr>
+<table class="stack shortlist"><tr><th>#</th><th>Channel</th><th>Title</th><th>Hook</th><th>Length</th></tr>
 {% for s in shorts %}<tr>
-<td><a href="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">{{ s.id }}</a></td><td>{{ s.channel }}</td>
-<td><a href="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">{{ s.title }}</a></td>
-<td>{{ s.hook }}</td><td>{{ '%.0f'|format(s.duration or 0) }}s</td>
+<td><a href="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">#{{ s.id }}</a></td><td class="muted">{{ s.channel }}</td>
+<td><b><a href="/short/{{ s.id }}{% if channel %}?channel={{ channel }}{% endif %}">{{ s.title }}</a></b></td>
+<td class="muted">{{ s.hook }}</td><td>{{ '%.0f'|format(s.duration or 0) }}s</td>
 </tr>{% endfor %}</table>
 {% endblock %}

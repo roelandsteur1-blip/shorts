@@ -19,7 +19,7 @@ Each Short gets the least-used track (over all channels) in the mood of its scri
 <p class="muted">YouTube checks for claims right after upload, before a Short goes public (YouTube Studio, Content tab, "Copyright" restriction).
 If a track is claimed, press <b>Claimed</b>: it is never used again and Shorts with it that are not uploaded yet are re-rendered.
 For an uploaded Short, use "Replace song" or "Mute song" in YouTube Studio.</p>
-<table><tr><th></th><th>Track</th><th>Mood</th><th>Used</th><th title="Engaged views of the Shorts with this track, against their channel's usual at the same age. Better tracks get picked more often.">Performance</th><th>Licence</th><th></th></tr>
+<table class="stack labels"><tr><th></th><th>Track</th><th>Mood</th><th>Used</th><th title="Engaged views of the Shorts with this track, against their channel's usual at the same age. Better tracks get picked more often.">Performance</th><th>Licence</th><th></th></tr>
 {% for t in tracks %}<tr{% if t.status == 'claimed' %} style="opacity:.5"{% endif %}>
 <td style="width:260px">{% if t.status == 'ok' %}<audio controls preload="none" src="/music/file/{{ t.id }}#t={{ t.start }}" style="width:250px;height:32px"></audio>{% endif %}</td>
 <td><b>{{ t.title }}</b>{% if t.creator %} <span class="muted">by {{ t.creator }}</span>{% endif %}<br>
