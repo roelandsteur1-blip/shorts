@@ -37,7 +37,8 @@ AGE_CUT = 0.02                       # old_look above this = old film (round 2, 
 OLD_NICHES = {"oldcity", "history", "retrotech"}
 PARALLEL = 3                         # archive pieces fetched (and checked) at a time
 LIBRARY_TRIES = 4                    # library clips checked before going to the archives
-REJECTS = {"black", "text on screen"}  # the only gates that predicted bad clips (round 2)
+REJECTS = {"black", "text on screen", "cut"}  # gates that predicted bad clips (round 2); cut = another shot
+                                              # inside the part we'd show (Roeland, filter test 6 Nov)
 # Source test columns -> what the collector searches, and how many hits of each it may fetch.
 COLUMNS = {
     "Commons video (name)": ("commons_video", 3),
@@ -213,8 +214,13 @@ class Collector:
             frames = pieces.clip_frames(path, pieces.duration(str(path)) or need)
             if not frames:
                 return None
-            return dict(c, path=str(path), start=0.0, seconds=pieces.duration(str(path)) or need,
-                        gates=gates.check(frames), strip=pieces.strip(frames))
+            secs = pieces.duration(str(path)) or need
+            g = gates.check(frames)
+            if c.get("kind") != "photo":
+                from meta.textcard import has_cut
+                if has_cut(str(path), 0.0, min(secs, need)):
+                    g = dict(g, faults=list(g.get("faults", [])) + ["cut"])
+            return dict(c, path=str(path), start=0.0, seconds=secs, gates=g, strip=pieces.strip(frames))
         except Exception as e:  # noqa: BLE001 - next candidate
             log.info("collector: %s %s failed: %s", c["source"], c.get("title", "")[:60], str(e)[:160])
             return None

@@ -150,7 +150,7 @@ def main(argv=None) -> None:
     log(f"{len(rows)} subjects, {sum(len(s['clips']) for s in rows)} clips; Gemini models {models or 'none'}")
     for i, s in enumerate(rows, 1):
         clips = [{"label": c["label"], "path": c["path"], "start": 0.0,
-                  "seconds": min(SECONDS, judge_duration(c["path"]))} for c in s["clips"]]
+                  "seconds": min(20.0, judge_duration(c["path"]))} for c in s["clips"]]
         s["verdicts"] = {"today": {}}
         t0 = time.time()
         # all judges of one subject at once: the slowest decides the time, not the sum
