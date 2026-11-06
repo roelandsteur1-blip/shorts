@@ -84,12 +84,49 @@ def pairs() -> list[dict]:
     return rows
 
 
+def judge_pairs() -> list[dict]:
+    """Footage filter test (meta/collector/judgetest.py): per subject the clip today's check would
+    use vs the new judge's, under random letters."""
+    rows = _load(OUT / "judgetest" / "made.json", {}).get("pairs", [])
+    return [r for r in rows if all((OUT / "pieces" / "clips" / f).exists() for _, f in r.get("files", []))]
+
+
+@bp.get("/bench/footage/judge/<int:i>")
+def judge(i: int):
+    pr = judge_pairs()
+    if not pr:
+        abort(404)
+    if i >= len(pr):
+        return redirect(url_for("footage_review.index"))
+    p = pr[i]
+    return render_template("footage_judge.html", p=p, i=i, total=len(pr), mark=_marks().get("judge", {}).get(p["key"], {}))
+
+
+@bp.post("/bench/footage/judge/<int:i>")
+def save_judge(i: int):
+    pr = judge_pairs()
+    if i >= len(pr):
+        abort(404)
+    p = pr[i]
+    letters = {lab for lab, _ in p["files"]}
+    best = request.form.get("best", "")
+    if best not in letters and best not in ("same", "bad"):
+        abort(400)
+    m = _marks()
+    m.setdefault("judge", {})[p["key"]] = {
+        "best": best, "boring": sorted(set(request.form.getlist("boring")) & letters),
+        "wrong": sorted(set(request.form.getlist("wrong")) & letters), "note": request.form.get("note", "")[:500]}
+    _save(m)
+    return redirect(url_for("footage_review.judge", i=i + 1))
+
+
 @bp.get("/bench/footage")
 def index():
     m = _marks()
     m.setdefault("shorts", {})
-    subs, gr, pr = subjects(), grids(), pairs()
-    return render_template("footage_review.html", subs=subs, grids=gr, pairs=pr,
+    subs, gr, pr, jp = subjects(), grids(), pairs(), judge_pairs()
+    return render_template("footage_review.html", subs=subs, grids=gr, pairs=pr, judge_pairs=jp,
+                           judge_done=sum(1 for p in jp if p["key"] in m.get("judge", {})),
                            clips_done=sum(1 for s in subs if s["key"] in m["clips"]),
                            crops_done=sum(1 for g in gr if g["file"] in m["crops"]),
                            shorts_done=sum(1 for p in pr if p["key"] in m["shorts"]))

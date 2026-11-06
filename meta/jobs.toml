@@ -151,3 +151,11 @@ name = "update"
 [[job]]
 id = "2026-11-06-update-7"
 name = "update"
+
+[[job]]
+id = "2026-11-06-update-8"
+name = "update"
+
+[[job]]
+id = "2026-11-06-judgetest-1"
+name = "judgetest"

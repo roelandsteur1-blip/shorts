@@ -1,10 +1,10 @@
-{% extends "base.html" %}{% block title %}Footage review<div class="card"><h3 style="margin-top:0">Round 3: which Short is better?</h3>
-<p>{{ pairs|length }} pairs: the same kind of Short (ranking or quiz) made today's way and with the new collector, side by side under random letters. Pick the better one and tick any that shows the wrong thing. {{ shorts_done }} of {{ pairs|length }} done.</p>
-{% if pairs %}<a class="button primary" href="/bench/footage/shorts/{{ shorts_done if shorts_done < pairs|length else 0 }}">{{ 'Continue' if shorts_done else 'Start' }}</a>{% else %}<p class="muted">Not made yet: the server is making them now.</p>{% endif %}
-</div>
-{% endblock %}{% block body %}
+{% extends "base.html" %}{% block title %}Footage review{% endblock %}{% block body %}
 <h1>Footage collector review</h1>
 <p class="muted">Temporary page for the footage collector research. Everything is blind: letters are random and today's library picks are mixed in with the new sources.</p>
+<div class="card"><h3 style="margin-top:0">Footage filter: today's check vs the new judge</h3>
+<p>{{ judge_pairs|length }} subjects where the new filter (Gemini + Claude, with an interest score) would use a different clip than today's check. Pick the clip you'd rather see in a Short, and tick any that is boring or wrong. {{ judge_done }} of {{ judge_pairs|length }} done.</p>
+{% if judge_pairs %}<a class="button primary" href="/bench/footage/judge/{{ judge_done if judge_done < judge_pairs|length else 0 }}">{{ 'Continue' if judge_done else 'Start' }}</a>{% else %}<p class="muted">Not made yet: the server is running the test now.</p>{% endif %}
+</div>
 <div class="card"><h3 style="margin-top:0">Round 2: which clips are bad?</h3>
 <p>{{ subs|length }} subjects, each with its downloaded clips. Tick the ones that are bad (wrong subject, ugly, unusable). {{ clips_done }} of {{ subs|length }} done.</p>
 {% if subs %}<a class="button primary" href="/bench/footage/clips/{{ clips_done if clips_done < subs|length else 0 }}">{{ 'Continue' if clips_done else 'Start' }}</a>{% else %}<p class="muted">No clips on this server.</p>{% endif %}

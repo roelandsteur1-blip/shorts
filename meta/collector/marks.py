@@ -18,6 +18,7 @@ def main() -> None:
     print(f"round 2: {len(clips)} subjects marked, {sum(len(v) for v in clips.values())} clips bad")
     print(f"round 2b: {len(crops)} grids marked")
     print(f"round 3: {len(m.get('shorts', {}))} pairs marked")
+    print(f"footage filter: {len(m.get('judge', {}))} pairs marked")
 
 
 if __name__ == "__main__":

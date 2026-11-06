@@ -52,6 +52,7 @@ ALLOWLIST = {
     "crops": ("meta.collector.crops", ["--part", "{n}"], (1, 3)),  # collector research R6b: crop methods side by side
     "round3": ("meta.collector.round3", ["--part", "{n}"], (1, 2)),  # collector research R9: real Shorts, new vs today
     "round3new": ("meta.collector.round3", ["--part", "{n}", "--new-only"], (1, 2)),  # same, remake only the new versions
+    "judgetest": ("meta.collector.judgetest", [], None),  # footage judges vs Roeland's round-2 marks + side by side
     "marks": ("meta.collector.marks", [], None),  # copies the /bench/footage review marks into the results
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "study": ("meta.study", [], None),  # competitor channel study (meta/study.toml), read-only
@@ -59,7 +60,7 @@ ALLOWLIST = {
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
 JSON_DIR = {"round3new": "round3"}  # jobs that write into another job's folder
-JSON_JOBS = ("pieces", "crops", "study", "marks", "round3", "round3new")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_JOBS = ("pieces", "crops", "study", "marks", "round3", "round3new", "judgetest")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

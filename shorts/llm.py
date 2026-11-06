@@ -92,8 +92,9 @@ def result_envelope(stdout: str) -> dict | None:
 
 
 def ask(prompt: str, claude_cmd: str = "claude", timeout: int = 600, conn=None, stage: str = "claude",
-        images: list[bytes] | None = None) -> str:
-    """images: JPEGs sent along with the prompt (Claude Code takes images only as stream-json)."""
+        images: list[bytes] | None = None, model: str = "") -> str:
+    """images: JPEGs sent along with the prompt (Claude Code takes images only as stream-json).
+    model: a Claude Code --model value ("opus", "sonnet"); empty = the plan's default."""
     global _limit_hit
     if _limit_hit:
         raise LLMLimitError(_limit_hit)
@@ -106,6 +107,8 @@ def ask(prompt: str, claude_cmd: str = "claude", timeout: int = 600, conn=None, 
         stdin = image_message(prompt, images)
     else:
         cmd, stdin = [exe, "-p", "--output-format", "json", *lean_flags(exe)], prompt
+    if model:
+        cmd += ["--model", model]
     # Run in an empty folder so Claude Code doesn't pick up this repo's files as context.
     with tempfile.TemporaryDirectory() as cwd:
         try:
@@ -164,11 +167,13 @@ def extract_json(text: str):
 
 
 def ask_json(prompt: str, claude_cmd: str = "claude", retries: int = 1, conn=None, stage: str = "claude",
-             images: list[bytes] | None = None):
+             images: list[bytes] | None = None, model: str = ""):
     last: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            return extract_json(_ask(prompt, claude_cmd, conn, stage, images))
+            text = (_ask(prompt, claude_cmd, conn, stage, images, model) if model
+                    else _ask(prompt, claude_cmd, conn, stage, images))
+            return extract_json(text)
         except LLMLimitError:
             raise
         except (LLMError, json.JSONDecodeError) as e:
@@ -177,9 +182,9 @@ def ask_json(prompt: str, claude_cmd: str = "claude", retries: int = 1, conn=Non
     raise LLMError(str(last))
 
 
-def _ask(prompt: str, claude_cmd: str, conn, stage: str, images: list[bytes] | None = None) -> str:
+def _ask(prompt: str, claude_cmd: str, conn, stage: str, images: list[bytes] | None = None, model: str = "") -> str:
     """ask() with timing info and images when it is the real one (tests replace ask with a 2-3
     argument fake)."""
     if ask.__module__ == __name__ and getattr(ask, "__name__", "") == "ask":
-        return ask(prompt, claude_cmd, conn=conn, stage=stage, images=images)
+        return ask(prompt, claude_cmd, conn=conn, stage=stage, images=images, model=model)
     return ask(prompt, claude_cmd)

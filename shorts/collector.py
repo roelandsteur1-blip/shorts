@@ -7,8 +7,11 @@ research: final report", 5 November 2026).
    (shorts/sourcetest.py), best thumbnails first (PE-Core), fetching only the piece we need
    (small files whole, big ones cut remotely, photos as a slow zoom), 3 at a time.
 3. The check on every clip: no very dark clips (except space), no text-heavy ones (when RapidOCR
-   is installed), then Claude's blind check on 3 frames ("does this show X?": 92% good by
-   Roeland's eye in round 2). No BRISQUE or sharpness score: they didn't predict his marks.
+   is installed), then the judge (settings.footage_judge, shorts/judge.py): today's Claude blind
+   check on 3 frames ("does this show X?": 92% good by Roeland's eye in round 2), or the newer
+   judges that also score how interesting a clip is: then the most interesting passing clip wins
+   and clips under judge.MIN_INTEREST are not used. No BRISQUE or sharpness score: they didn't
+   predict his marks.
 4. For old-footage niches (old cities, history, retro tech) an old-looking clip wins.
 
 A clip from an archive is added to the library (asset + one scene, with its licence and credit),
@@ -53,7 +56,8 @@ WHERE = {"commons": "Wikimedia Commons", "openverse": "Openverse"}
 class Collector:
     """One per channel and run. find() returns a library scene id that shows the subject."""
 
-    def __init__(self, conn: sqlite3.Connection, settings: Settings, channel: Channel, verify=None, ask_json=None):
+    def __init__(self, conn: sqlite3.Connection, settings: Settings, channel: Channel, verify=None, ask_json=None,
+                 judge=None):
         from . import metatype, sourcetest
         self.conn, self.settings, self.channel = conn, settings, channel
         self.niche = metatype.niche_for(channel) or channel.id
@@ -62,6 +66,7 @@ class Collector:
         self.archives = [COLUMNS[c] for c in columns if c in COLUMNS]
         self.used: set[int] = set(db.used_scene_ids(conn, channel.id))
         self._verify = verify
+        self._judge = judge  # tests: fn(clips, name, niche, show) -> {label: verdict}
         self._ask = ask_json or (lambda prompt: llm.ask_json(prompt, settings.claude_cmd, retries=1))
         self._tools = None
         self.log: list[dict] = []  # one record per subject: where its clip came from, how long it took
@@ -81,6 +86,23 @@ class Collector:
             return self._verify(items)
         from meta.common import verify
         return verify(llm, self.settings, items)
+
+    def check(self, made: list[dict], subject: dict, need: float) -> set[str]:
+        """Labels of the clips that pass the judge. The newer judges also leave a verdict (with an
+        interest score) on each clip, which choose() ranks by."""
+        if not made:
+            return set()
+        from . import judge
+        if self._judge is None and (self._verify or judge.mode(self.settings) == "claude"):
+            return self.verify([(m["label"], m["strip"], subject["name"]) for m in made])
+        clips = [{"label": m["label"], "path": m["path"], "start": m.get("start") or 0.0,
+                  "seconds": min(need, m.get("seconds") or need)} for m in made]
+        show = subject.get("show") or ""
+        verdicts = (self._judge(clips, subject["name"], self.niche, show) if self._judge
+                    else judge.judge(self.settings, clips, subject["name"], self.niche, show))
+        for m in made:
+            m["verdict"] = verdicts.get(m["label"])
+        return {lab for lab, v in verdicts.items() if judge.passes(v) and v["interest"] >= judge.MIN_INTEREST}
 
     # ---------- the collector ----------
 
@@ -126,12 +148,14 @@ class Collector:
             if not frames:
                 continue
             made.append({"label": f"L{i}", "scene": c["id"], "gates": gates.check(frames),
-                         "strip": pieces.strip(frames)})
+                         "strip": pieces.strip(frames), "path": c["path"], "start": c["start"],
+                         "seconds": c["end"] - c["start"] if c.get("end") else need})
         rec["library"] = len(made)
-        ok = self.verify([(m["label"], m["strip"], subject["name"]) for m in made]) if made else set()
+        ok = self.check(made, subject, need)
         pick = choose(made, ok, self.niche)
         if pick:
             rec["from"] = "library"
+            _note(rec, pick)
             return pick["scene"]
         return None
 
@@ -168,10 +192,11 @@ class Collector:
                 rec["archive"] += len(got)
                 made += got
                 if got:
-                    ok |= self.verify([(m["label"], m["strip"], subject["name"]) for m in got])
+                    ok |= self.check(got, subject, need)
                 pick = choose(made, ok, self.niche)
                 if pick:
                     rec["from"] = pick["source"]
+                    _note(rec, pick)
                     return add_to_library(self.conn, self.settings, self.channel, pick, subject)
         return None
 
@@ -184,7 +209,8 @@ class Collector:
             frames = pieces.clip_frames(path, pieces.duration(str(path)) or need)
             if not frames:
                 return None
-            return dict(c, path=str(path), gates=gates.check(frames), strip=pieces.strip(frames))
+            return dict(c, path=str(path), start=0.0, seconds=pieces.duration(str(path)) or need,
+                        gates=gates.check(frames), strip=pieces.strip(frames))
         except Exception as e:  # noqa: BLE001 - next candidate
             log.info("collector: %s %s failed: %s", c["source"], c.get("title", "")[:60], str(e)[:160])
             return None
@@ -211,11 +237,18 @@ def _research_tools() -> None:
             sys.path.append(str(site))
 
 
+def _note(rec: dict, pick: dict) -> None:
+    v = pick.get("verdict")
+    if v:
+        rec.update(interest=v["interest"], why=v["why"])
+
+
 def choose(made: list[dict], ok: set[str], niche: str) -> dict | None:
-    """The clip to use: passed Claude's check and the gates (dark is fine in space); for old-footage
-    niches an old-looking clip first, else the first in order."""
+    """The clip to use: passed the judge and the gates (dark is fine in space); for old-footage
+    niches an old-looking clip first; then the most interesting (newer judges), else the first in order."""
     rejects = REJECTS - ({"black"} if niche == "space" else set())
     good = [m for m in made if m["label"] in ok and not (rejects & set(m["gates"].get("faults", [])))]
+    good.sort(key=lambda m: -((m.get("verdict") or {}).get("interest") or 0))  # stable: order kept on ties
     if niche in OLD_NICHES:
         old = [m for m in good if (m["gates"].get("old_look") or 0) > AGE_CUT]
         good = old + [m for m in good if m not in old]
