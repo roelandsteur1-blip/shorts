@@ -37,7 +37,8 @@ log = logging.getLogger(__name__)
 
 API = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODEL = "gemini-3.8-flash"     # matched against the API's model list (newest flash first)
-GEMINI_THINKING = "low"               # thinkingLevel; None = the model's default
+GEMINI_THINKING = "medium"            # thinkingLevel (3.8 Flash default); Roeland: low may judge "viral" worse
+GEMINI_BATCH = 3                      # clips per Gemini request: ten videos + medium thinking ran past 5 min
 WEIGHTS = {"action": 0.25, "subject": 0.15, "wow": 0.15, "viral": 0.20, "vintage": 0.15, "looks": 0.10}
 MIN_INTEREST = 2.5                    # clips under this are not used
 MIN_CONFIDENCE = 4                    # "shows" counts only from this confidence up
@@ -193,8 +194,8 @@ def gemini_model(key: str, wanted: str = GEMINI_MODEL) -> str:
 
 def gemini_config(thinking: str | None = GEMINI_THINKING) -> dict:
     """No temperature: Gemini 3 models are tuned for the default 1.0 and can loop below it.
-    Thinking 'low': this is a look-and-score task, not a puzzle; the default (medium on 3.8
-    Flash) over ten videos ran past our timeouts."""
+    Thinking 'medium' (3.8 Flash's default): kept for the judgement calls (viral, wow); requests
+    carry GEMINI_BATCH clips so it finishes in time."""
     cfg: dict = {"responseMimeType": "application/json"}
     if thinking:
         cfg["thinkingConfig"] = {"thinkingLevel": thinking}
@@ -207,7 +208,7 @@ def gemini_call(key: str, model: str, parts: list[dict], tries: int = 6, config:
     for attempt in range(tries):
         try:
             r = requests.post(f"{API}/models/{model}:generateContent", headers={"x-goog-api-key": key},
-                              json=body, timeout=180)
+                              json=body, timeout=300)
         except requests.Timeout:
             if attempt >= 1:
                 raise JudgeError("Gemini timed out twice")
@@ -234,14 +235,30 @@ def gemini_call(key: str, model: str, parts: list[dict], tries: int = 6, config:
             time.sleep(min(delay, 120))
             wait *= 1.5
             continue
+        if r.status_code == 400 and "thinking" in r.text.lower() and "thinkingConfig" in body["generationConfig"]:
+            body["generationConfig"] = {k: v for k, v in body["generationConfig"].items() if k != "thinkingConfig"}
+            log.info("Gemini %s doesn't take this thinking level: its default instead", model)
+            continue
         raise JudgeError(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
     raise JudgeError("Gemini: too many retries")
 
 
 def gemini_judge(key: str, clips: list[dict], name: str, niche: str, show: str = "",
-                 model: str = GEMINI_MODEL) -> dict[str, dict]:
-    """clips: [{label, path, start?, seconds?}] -> {label: verdict}. One request per subject."""
+                 model: str = GEMINI_MODEL, thinking: str | None = GEMINI_THINKING) -> dict[str, dict]:
+    """clips: [{label, path, start?, seconds?}] -> {label: verdict}. GEMINI_BATCH clips per
+    request, the requests at the same time."""
+    from concurrent.futures import ThreadPoolExecutor
     mid = gemini_model(key, model)
+    batches = [clips[i:i + GEMINI_BATCH] for i in range(0, len(clips), GEMINI_BATCH)]
+    out: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=len(batches) or 1) as pool:
+        for got in pool.map(lambda b: _gemini_batch(key, mid, b, name, niche, show, thinking), batches):
+            out.update(got)
+    return out
+
+
+def _gemini_batch(key: str, mid: str, clips: list[dict], name: str, niche: str, show: str,
+                  thinking: str | None) -> dict[str, dict]:
     subj, era = _rules(niche, name)
     labels = [c["label"] for c in clips]
     parts: list[dict] = [{"text": GEMINI_PROMPT.format(niche=niche, name=name, show=f" ({show})" if show else "",
@@ -250,7 +267,7 @@ def gemini_judge(key: str, clips: list[dict], name: str, niche: str, show: str =
         data = excerpt(c["path"], c.get("start", 0.0), c.get("seconds", CLIP_SECONDS))
         parts += [{"text": f"Clip {c['label']}:"},
                   {"inline_data": {"mime_type": "video/mp4", "data": base64.b64encode(data).decode("ascii")}}]
-    return _parse(gemini_call(key, mid, parts), labels)
+    return _parse(gemini_call(key, mid, parts, config=gemini_config(thinking)), labels)
 
 
 # ---------- Claude ----------

@@ -3,8 +3,8 @@
 with Google's token counts (prompt, thoughts, answer) and finish reason. Output in the job log and
 ~/meta-out/geminiprobe/made.json.
 
-Variants: today's request (temperature 0, default thinking), no temperature, no temperature +
-thinking low, and one clip instead of ten. Both 3.8 Flash and 3 Flash, for comparison."""
+Variants: the first request (temperature 0, default thinking), no temperature, no temperature +
+thinking low, and 3 clips at thinking medium / low / high (do the scores differ?). Both 3.8 Flash and 3 Flash, for comparison."""
 from __future__ import annotations
 
 import base64
@@ -49,7 +49,9 @@ def main() -> None:
         ("today: temperature 0, default thinking", {"responseMimeType": "application/json", "temperature": 0}, clips),
         ("no temperature, default thinking", {"responseMimeType": "application/json"}, clips),
         ("no temperature, thinking low", judge.gemini_config("low"), clips),
-        ("no temperature, thinking low, 1 clip", judge.gemini_config("low"), clips[:1]),
+        ("no temperature, thinking medium, 3 clips", judge.gemini_config("medium"), clips[:3]),
+        ("no temperature, thinking low, 3 clips", judge.gemini_config("low"), clips[:3]),
+        ("no temperature, thinking high, 3 clips", judge.gemini_config("high"), clips[:3]),
     ]
     rows = []
     for model in ("gemini-3.8-flash", "gemini-3-flash"):
@@ -76,7 +78,10 @@ def main() -> None:
                            error=(d.get("error") or {}).get("message", "")[:200])
                 try:
                     text = "".join(p.get("text", "") for p in d["candidates"][0]["content"]["parts"])
-                    row["parsed"] = len(judge._parse(text, [c["label"] for c in cl]))
+                    got = judge._parse(text, [c["label"] for c in cl])
+                    row["parsed"] = len(got)
+                    row["scores"] = {k: {x: v[x] for x in ("shows", "confidence", "interest", "viral", "wow", "why")}
+                                     for k, v in got.items()}
                 except (KeyError, IndexError, ValueError):
                     row["parsed"] = 0
             except Exception as e:  # noqa: BLE001
