@@ -10,12 +10,13 @@ from .common import conn, settings
 from .jobs import start_job
 
 bp = Blueprint("sources", __name__)
-# Keys for archives the footage collector research tries before they become real sources
-# (meta/collector). Stored like the other keys in secrets/api_keys.json, never in the repo.
+# Keys for archives (and the Gemini clip judge) the footage research tries before they become real
+# sources (meta/collector). Stored like the other keys in secrets/api_keys.json, never in the repo.
 RESEARCH_KEYS = {
     "dvids": ("DVIDS (US military video)", "https://api.dvidshub.net/"),
     "smithsonian": ("Smithsonian Open Access (api.data.gov key)", "https://api.data.gov/signup/"),
     "nara": ("US National Archives catalog", "https://www.archives.gov/research/catalog/help/api"),
+    "gemini": ("Google Gemini API (footage check test)", "https://aistudio.google.com/apikey"),
 }
 TEST_WAIT = 45  # seconds the page waits for a test; a slower archive keeps going and saves its result later
 _pool = ThreadPoolExecutor(max_workers=8)
