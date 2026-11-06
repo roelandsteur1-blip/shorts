@@ -179,7 +179,3 @@ name = "geminiprobe"
 [[job]]
 id = "2026-11-06-judgetest-3"
 name = "judgetest"
-
-[[job]]
-id = "2026-11-06-judgetest-4"
-name = "judgetest"
