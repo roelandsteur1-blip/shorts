@@ -181,3 +181,21 @@ def test_footage_review_pages_render(client, tmp_path, monkeypatch):
         ' "new": {"file": "space-quiz-A.mp4"}, "today": {"file": "space-quiz-B.mp4"}}]}')
     assert b"Round 3" in client.get("/bench/footage").data
     assert b"space-quiz-B.mp4" in client.get("/bench/footage/shorts/0").data
+
+
+def test_reject_all_rejects_shorts_waiting_for_review(client, conn):
+    def add(channel, status):
+        return conn.execute("INSERT INTO shorts (channel, format_id, status) VALUES (?, 'f', ?)",
+                            (channel, status)).lastrowid
+    a, b, other, ok = add("space", "rendered"), add("space", "rendered"), add("history", "rendered"), add("space", "approved")
+    conn.commit()
+    page = client.get("/review").data
+    assert b"Reject all (3)" in page and b"confirm('Reject all 3" in page
+    assert b"Reject all" not in client.get("/review?status=approved").data
+    r = client.post("/review/reject-all", data={"channel": "space"})
+    assert r.status_code == 302 and "channel=space" in r.headers["Location"]
+    rows = {i: (s, why) for i, s, why in conn.execute("SELECT id, status, reject_reason FROM shorts")}
+    assert (rows[a], rows[b]) == (("rejected", None), ("rejected", None))
+    assert rows[other][0] == "rendered" and rows[ok][0] == "approved"
+    client.post("/review/reject-all", data={"channel": ""})
+    assert conn.execute("SELECT status FROM shorts WHERE id=?", (other,)).fetchone()[0] == "rejected"

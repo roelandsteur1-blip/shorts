@@ -43,9 +43,8 @@ def index():
                            channel=channel, channels=channels())
 
 
-@bp.post("/review/approve-all")
-def approve_all():
-    """Approve every Short waiting for review (only the chosen channel's when filtered)."""
+def _set_all_waiting(status: str):
+    """Give every Short waiting for review a new status (only the chosen channel's when filtered)."""
     channel = request.form.get("channel") or None
     sql, args = "SELECT id FROM shorts WHERE status='rendered'", []
     if channel:
@@ -53,8 +52,19 @@ def approve_all():
         args.append(channel)
     c = conn()
     for (sid,) in c.execute(sql, args).fetchall():
-        db.set_short(c, sid, status="approved")
+        db.set_short(c, sid, status=status)
     return redirect(url_for("review.index", channel=channel))
+
+
+@bp.post("/review/approve-all")
+def approve_all():
+    return _set_all_waiting("approved")
+
+
+@bp.post("/review/reject-all")
+def reject_all():
+    """No reject reason is stored, so the script prompt doesn't learn from a bulk reject."""
+    return _set_all_waiting("rejected")
 
 
 @bp.get("/short/<int:sid>")
