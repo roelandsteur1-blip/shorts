@@ -37,7 +37,7 @@ class Settings:
     collector: bool = True            # footage topic first (shorts/collector.py) for every Short type; off = footage first
     # Which judge checks the collector's clips (shorts/judge.py): "claude" = the 3-frame yes/no check;
     # "claude+" / "gemini" / "both" = identity + interest score (best clip wins, dull ones dropped).
-    footage_judge: str = "claude"
+    footage_judge: str = "claude+"   # Roeland's side-by-side 6 Nov: new 8, same 5, today 3
     gemini_model: str = "gemini-3-flash"  # judge "gemini"/"both"; key on the Sources page (Research keys)
     judge_claude_model: str = ""      # Claude Code --model for the judge ("opus"); empty = the plan's default
     render_detector_crop: bool = True  # render, classic: the 9:16 crop follows the subject's box (OWLv2), whole frame when it's wider

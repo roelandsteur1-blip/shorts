@@ -41,7 +41,7 @@ GEMINI_MODEL = "gemini-3-flash"       # matched against the API's model list. 3.
 GEMINI_THINKING = "medium"            # thinkingLevel (3.8 Flash default); Roeland: low may judge "viral" worse
 GEMINI_BATCH = 10                     # clips per Gemini request (3 Flash: 10 clips in 15 s; fewer requests = free quota)
 WEIGHTS = {"action": 0.25, "subject": 0.15, "wow": 0.15, "viral": 0.20, "vintage": 0.15, "looks": 0.10}
-MIN_INTEREST = 2.5                    # clips under this are not used
+MIN_INTEREST = 2.0                    # clips under this are not used (2.5 left 5 of 30 test subjects empty)
 MIN_CONFIDENCE = 4                    # "shows" counts only from this confidence up
 OLD_NICHES = {"oldcity", "history", "retrotech"}
 CLIP_SECONDS = 8.0                    # the part of a clip the judges see (what a Short shows)

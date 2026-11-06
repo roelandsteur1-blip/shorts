@@ -141,8 +141,8 @@ def test_collector_picks_most_interesting(conn, settings, channel, tmp_path, mon
 
 
 def test_collector_today_check_unchanged(conn, settings, channel, monkeypatch):
-    # footage_judge "claude" (the default) still uses the old yes/no verify
-    assert settings.footage_judge == "claude"
+    # footage_judge "claude" still uses the old yes/no verify
+    settings = dataclasses.replace(settings, footage_judge="claude")
     c = col.Collector(conn, settings, channel, verify=lambda items: {"A"})
     assert c.check([{"label": "A", "strip": b"x", "path": "p"}], {"name": "x"}, 8.0) == {"A"}
 
