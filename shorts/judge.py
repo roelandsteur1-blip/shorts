@@ -36,6 +36,7 @@ log = logging.getLogger(__name__)
 
 API = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_MODEL = "gemini-3.8-flash"     # matched against the API's model list (newest flash first)
+GEMINI_THINKING = "low"               # thinkingLevel; None = the model's default
 WEIGHTS = {"action": 0.30, "subject": 0.20, "wow": 0.20, "viral": 0.20, "looks": 0.10}
 MIN_INTEREST = 2.5                    # clips under this are not used
 MIN_CONFIDENCE = 4                    # "shows" counts only from this confidence up
@@ -185,9 +186,18 @@ def gemini_model(key: str, wanted: str = GEMINI_MODEL) -> str:
     return pick
 
 
-def gemini_call(key: str, model: str, parts: list[dict], tries: int = 6) -> str:
-    body = {"contents": [{"role": "user", "parts": parts}],
-            "generationConfig": {"responseMimeType": "application/json", "temperature": 0}}
+def gemini_config(thinking: str | None = GEMINI_THINKING) -> dict:
+    """No temperature: Gemini 3 models are tuned for the default 1.0 and can loop below it.
+    Thinking 'low': this is a look-and-score task, not a puzzle; the default (medium on 3.8
+    Flash) over ten videos ran past our timeouts."""
+    cfg: dict = {"responseMimeType": "application/json"}
+    if thinking:
+        cfg["thinkingConfig"] = {"thinkingLevel": thinking}
+    return cfg
+
+
+def gemini_call(key: str, model: str, parts: list[dict], tries: int = 6, config: dict | None = None) -> str:
+    body = {"contents": [{"role": "user", "parts": parts}], "generationConfig": config or gemini_config()}
     wait = 20.0
     for attempt in range(tries):
         try:

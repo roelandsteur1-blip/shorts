@@ -1,9 +1,10 @@
 {% extends "base.html" %}{% block title %}Footage filter{% endblock %}{% block body %}
 <h1>{{ p.name }} <span class="muted">{{ p.niche }} · {{ i + 1 }} / {{ total }}</span></h1>
 <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;max-width:640px">
-{% for l, f in p.files %}<div style="text-align:center"><video src="/bench/footage/clip/{{ f }}" controls playsinline loop preload="metadata" style="width:100%;border-radius:8px;background:#000"></video><b>{{ l }}</b></div>
+{% for l, f in p.files %}{% set ver = (p.versions or {}).get(l) %}<div style="text-align:center"><video src="/bench/footage/clip/{{ f }}" controls playsinline loop preload="metadata" style="width:100%;border-radius:8px;background:#000"></video><b>{{ l }}</b> · {% if ver == 'new' %}<b style="color:var(--accent,#2a7)">New filter</b>{% elif ver == 'today' %}<b>Today's filter</b>{% endif %}
+{% if ver == 'new' and (p.new_interest or p.new_why) %}<div class="muted" style="font-size:.85em;text-align:left">interest {{ p.new_interest }}{% if p.new_why %}: {{ p.new_why }}{% endif %}</div>{% endif %}</div>
 {% endfor %}</div>
-<p class="muted">Two clips of the same subject, each picked by a different filter. Which one would you rather see in a Short?</p>
+<p class="muted">Two clips of the same subject: one picked by today's filter, one by the new filter. Which one would you rather see in a Short? Tell me in the note if the new filter's reason is wrong.</p>
 <form method="post" action="/bench/footage/judge/{{ i }}">
 <p><b>Better clip:</b>
 {% for l, f in p.files %}<label style="margin-right:10px"><input type="radio" name="best" value="{{ l }}" required {% if mark.best == l %}checked{% endif %}> {{ l }}</label>{% endfor %}

@@ -197,13 +197,15 @@ def test_judge_page(tmp_path, monkeypatch):
     (tmp_path / "judgetest").mkdir()
     (tmp_path / "judgetest" / "made.json").write_text(json.dumps({"pairs": [
         {"key": "space/Saturn", "niche": "space", "name": "Saturn",
-         "files": [["A", "space-saturn-A.mp4"], ["B", "space-saturn-B.mp4"]]}]}))
+         "files": [["A", "space-saturn-A.mp4"], ["B", "space-saturn-B.mp4"]],
+         "versions": {"A": "today", "B": "new"}, "new_interest": 3.9, "new_why": "rings visible"}]}))
     from flask import Flask
     app = Flask(__name__, template_folder=str(__import__("pathlib").Path(fr.__file__).parent.parent / "templates"))
     app.register_blueprint(fr.bp)
     c = app.test_client()
     r = c.get("/bench/footage/judge/0")
     assert r.status_code == 200 and b"space-saturn-B.mp4" in r.data
+    assert b"New filter" in r.data and b"Today's filter" in r.data and b"rings visible" in r.data
     assert c.post("/bench/footage/judge/0", data={"best": "B", "boring": ["A", "Q"]}).status_code == 302
     assert c.post("/bench/footage/judge/0", data={"best": "Q"}).status_code == 400
     m = json.loads((tmp_path / "marks" / "footage.json").read_text())
