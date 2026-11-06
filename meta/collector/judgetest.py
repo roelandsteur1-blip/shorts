@@ -132,7 +132,7 @@ def report(res: dict) -> str:
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=0, help="only the first N subjects (a quick try)")
-    ap.add_argument("--gemini", default="gemini-3.8-flash,gemini-3-flash")
+    ap.add_argument("--gemini", default="gemini-3-flash")
     ap.add_argument("--claude-model", default="", help="Claude Code --model for the claude+ judge")
     a = ap.parse_args(argv)
     from meta.common import open_library
@@ -167,7 +167,7 @@ def main(argv=None) -> None:
                 except llm.LLMLimitError as e:
                     limit = e
                 except Exception as e:  # noqa: BLE001 - the other judges still count
-                    errors.append(f"{s['key']} {name}: {str(e)[:200]}")
+                    errors.append(f"{s['key']} {name}: {str(e)[:600]}")
                     log(f"  {name} failed: {str(e)[:200]}")
                     if name.startswith("gemini"):
                         fails[name[7:]] = fails.get(name[7:], 0) + 1

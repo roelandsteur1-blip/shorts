@@ -70,7 +70,8 @@ def test_gemini_judge(monkeypatch, tmp_path):
 
     monkeypatch.setattr(judge.requests, "post", post)
     monkeypatch.setattr(judge.time, "sleep", lambda s: None)
-    out = judge.gemini_judge("KEY", [{"label": "A", "path": str(clip), "seconds": 2.0}], "Saturn", "space")
+    out = judge.gemini_judge("KEY", [{"label": "A", "path": str(clip), "seconds": 2.0}], "Saturn", "space",
+                             model="gemini-3.8-flash")
     assert set(out) == {"A"} and out["A"]["interest"] > 3 and judge.passes(out["A"])
     assert calls[-1].endswith("models/gemini-3.8-flash-preview-10-2026:generateContent")
     parts = sent["contents"][0]["parts"]

@@ -36,9 +36,10 @@ from . import llm
 log = logging.getLogger(__name__)
 
 API = "https://generativelanguage.googleapis.com/v1beta"
-GEMINI_MODEL = "gemini-3.8-flash"     # matched against the API's model list (newest flash first)
+GEMINI_MODEL = "gemini-3-flash"       # matched against the API's model list. 3.8 Flash: free tier overloaded
+                                      # (503 / no answer in 10 min, geminiprobe-1, 6 Nov); 3 Flash: 10 clips in 15 s
 GEMINI_THINKING = "medium"            # thinkingLevel (3.8 Flash default); Roeland: low may judge "viral" worse
-GEMINI_BATCH = 3                      # clips per Gemini request: ten videos + medium thinking ran past 5 min
+GEMINI_BATCH = 10                     # clips per Gemini request (3 Flash: 10 clips in 15 s; fewer requests = free quota)
 WEIGHTS = {"action": 0.25, "subject": 0.15, "wow": 0.15, "viral": 0.20, "vintage": 0.15, "looks": 0.10}
 MIN_INTEREST = 2.5                    # clips under this are not used
 MIN_CONFIDENCE = 4                    # "shows" counts only from this confidence up
@@ -229,8 +230,10 @@ def gemini_call(key: str, model: str, parts: list[dict], tries: int = 6, config:
                         delay = float(str(d.get("retryDelay", "0s")).rstrip("s") or 0) + 2
             except ValueError:
                 pass
-            if r.status_code == 429 and "PerDay" in r.text:
-                raise JudgeError("Gemini daily free limit reached")
+            if r.status_code == 429:
+                log.warning("Gemini quota: %s", r.text[:1500])
+                if "PerDay" in r.text:
+                    raise JudgeError("Gemini daily free limit reached: " + r.text[:600])
             log.info("Gemini HTTP %s, waiting %.0f s", r.status_code, delay)
             time.sleep(min(delay, 120))
             wait *= 1.5

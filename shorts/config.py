@@ -38,7 +38,7 @@ class Settings:
     # Which judge checks the collector's clips (shorts/judge.py): "claude" = the 3-frame yes/no check;
     # "claude+" / "gemini" / "both" = identity + interest score (best clip wins, dull ones dropped).
     footage_judge: str = "claude"
-    gemini_model: str = "gemini-3.8-flash"  # judge "gemini"/"both"; key on the Sources page (Research keys)
+    gemini_model: str = "gemini-3-flash"  # judge "gemini"/"both"; key on the Sources page (Research keys)
     judge_claude_model: str = ""      # Claude Code --model for the judge ("opus"); empty = the plan's default
     render_detector_crop: bool = True  # render, classic: the 9:16 crop follows the subject's box (OWLv2), whole frame when it's wider
     script_sees_footage: bool = True  # script: Claude sees the hero frames and a clip menu, and picks a clip per block
