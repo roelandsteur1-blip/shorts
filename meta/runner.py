@@ -58,11 +58,12 @@ ALLOWLIST = {
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "study": ("meta.study", [], None),  # competitor channel study (meta/study.toml), read-only
     "jobsinfo": ("meta.jobsinfo", [], None),  # read-only: recent dashboard jobs + service restarts
+    "pagetime": ("meta.pagetime", [], None),  # how fast the dashboard pages are and where the time goes (read-only)
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
 JSON_DIR = {"round3new": "round3"}  # jobs that write into another job's folder
-JSON_JOBS = ("pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_JOBS = ("pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3
