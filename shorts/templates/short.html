@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% block title %}#{{ s.id }}{% endblock %}{% block body %}
 <h1>#{{ s.id }} · {{ s.topic }} <span class="muted" style="font-size:16px">{{ s.channel }}</span></h1>
 <div class="grid">
-<div>{% if s.video_path %}<video src="/video/{{ s.id }}" controls autoplay loop playsinline></video>{% endif %}
+<div>{% if s.video_path %}<video src="/video/{{ s.id }}" controls autoplay loop playsinline preload="auto"></video> <a class="muted" style="font-size:12px" href="/video/{{ s.id }}?full=1" target="_blank">full quality</a>{% endif %}
 <p class="muted">{{ s.format_id }} · {{ '%.1f'|format(s.duration or 0) }}s · status {{ s.status }}{% if s.reject_reason %} · {{ s.reject_reason }}{% endif %}</p>
 {% if family|length > 1 %}<p class="muted">Short {% for f in family %}{% if f.id == s.id %}{{ loop.index }}{% endif %}{% endfor %} of {{ family|length }} from this video:
 {% for f in family if f.id != s.id %}<a href="/short/{{ f.id }}">#{{ f.id }}</a> <span class="muted">({{ f.status }})</span> {% endfor %}</p>{% endif %}</div>
@@ -40,8 +40,32 @@
 {% if next_id %}<p><a id="next" href="/short/{{ next_id }}{% if channel %}?channel={{ channel }}{% endif %}">Skip to next →</a></p>{% endif %}
 <p class="muted hide-phone" style="font-size:12px">Keys: <kbd>A</kbd> approve · <kbd>R</kbd> reject with the reason above · <kbd>N</kbd> next · <kbd>E</kbd> edit text · <kbd>Space</kbd> pause</p>
 </form></div></div>
-{% if next_id %}<video src="/video/{{ next_id }}" preload="auto" muted style="display:none" aria-hidden="true"></video>{% endif %}
+{% if next_id %}<video id="next-video" data-src="/video/{{ next_id }}" preload="auto" muted style="display:none" aria-hidden="true"></video>{% endif %}
 <script>
+// Load the next Short only once this one can play through, so the two don't share the bandwidth.
+(() => {
+  const nv = document.getElementById("next-video"); if (!nv) return;
+  const cur = document.querySelector("video[controls]");
+  const go = () => { if (!nv.src) { nv.src = nv.dataset.src; nv.load(); } };
+  if (!cur || cur.readyState >= 4) go(); else { cur.addEventListener("canplaythrough", go, {once: true}); setTimeout(go, 8000); }
+})();
+// Approve / reject: save in the background and go straight to the next Short (no waiting on the server).
+(() => {
+  const form = document.querySelector("form.review-first"), next = document.getElementById("next");
+  if (!form || !next) return;
+  form.addEventListener("submit", e => {
+    const action = e.submitter && e.submitter.value;
+    if (action !== "approve" && action !== "reject") return;
+    e.preventDefault();
+    const body = new FormData(form); body.set("action", action);
+    let left = false;
+    const leave = () => { if (!left) { left = true; location.href = next.href; } };
+    fetch(form.getAttribute("action"), {method: "POST", body, keepalive: true, redirect: "manual"})
+      .then(r => { if (r.type === "opaqueredirect" || r.ok) leave(); else { left = true; alert("Saving failed (" + r.status + "): try again"); } })
+      .catch(() => { left = true; alert("Saving failed: no connection to the dashboard"); });
+    setTimeout(leave, 1500);  // a slow save still finishes in the background
+  });
+})();
 // Review without the mouse; the next Short is already loading in the background (hidden video above).
 document.addEventListener("keydown", e => {
   const t = e.target.tagName;

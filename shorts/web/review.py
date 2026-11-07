@@ -5,7 +5,7 @@ import json
 
 from flask import Blueprint, abort, redirect, render_template, request, send_file, url_for
 
-from .. import db, script, tags as taglayers
+from .. import db, preview, script, tags as taglayers
 from ..config import load_channel
 from .common import channel_or_404, channels, conn, settings
 from .jobs import start_job
@@ -39,6 +39,8 @@ def index():
         f"""SELECT s.* FROM shorts s WHERE {where} ORDER BY s.id""", args).fetchall()
     count_sql = "SELECT status, COUNT(*) FROM shorts" + (" WHERE channel=?" if channel else "") + " GROUP BY status"
     counts = dict(c.execute(count_sql, [channel] if channel else []).fetchall())
+    if status == "rendered":
+        _queue_previews(c, 0, channel)
     return render_template("review.html", shorts=shorts, status=status, counts=counts,
                            channel=channel, channels=channels())
 
@@ -84,6 +86,8 @@ def short(sid: int):
             WHERE (s.status != 'rejected' OR s.id = ?) AND sc.asset_id =
                   (SELECT asset_id FROM scenes WHERE id = ?) ORDER BY s.id""", (sid, s["hero_scene_id"])).fetchall()
     channel = request.args.get("channel") or None
+    if s["status"] == "rendered":
+        _queue_previews(c, sid, channel)
     post = taglayers.pick(json.loads(s["tags"] or "[]"))
     try:
         post, niche, broad = taglayers.layers(post, load_channel(s["channel"], settings().config_dir), settings())
@@ -99,7 +103,21 @@ def video(sid: int):
     s = conn().execute("SELECT video_path FROM shorts WHERE id=?", (sid,)).fetchone()
     if not s or not s["video_path"]:
         abort(404)
-    return send_file(s["video_path"], mimetype="video/mp4", conditional=True)
+    light = None if request.args.get("full") else preview.ready(settings(), sid, s["video_path"])
+    if light is None and not request.args.get("full"):
+        preview.queue_for(settings(), [{"id": sid, "video_path": s["video_path"]}])
+    return send_file(light or s["video_path"], mimetype="video/mp4", conditional=True)
+
+
+def _queue_previews(c, after: int, channel: str | None, n: int = 30) -> None:
+    """Light copies of the Shorts waiting for review, the next ones first."""
+    sql = "SELECT id, video_path FROM shorts WHERE status='rendered' AND video_path IS NOT NULL"
+    args: list = []
+    if channel:
+        sql += " AND channel=?"
+        args.append(channel)
+    rows = c.execute(sql + " ORDER BY id >= ? DESC, id LIMIT ?", [*args, after, n]).fetchall()
+    preview.queue_for(settings(), rows)
 
 
 @bp.post("/short/<int:sid>")
