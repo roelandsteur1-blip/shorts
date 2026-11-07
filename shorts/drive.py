@@ -339,7 +339,12 @@ def fill(conn: sqlite3.Connection, settings: Settings, channel: Channel, yt, mat
     from .upload import body_for, can_manage, iso
     from .ytstats import parse_time, state_of
 
-    if not matched or not can_manage(settings, channel):
+    if not matched:
+        return 0
+    if not can_manage(settings, channel):
+        log.warning("%s: %d phone upload(s) found, but the YouTube login may not change videos: press Connect again "
+                    "under YouTube on the channel's Settings page; title etc. are set on the next check",
+                    channel.id, len(matched))
         return 0
     now = now or datetime.now(timezone.utc)
     done = 0
