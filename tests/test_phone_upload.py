@@ -143,3 +143,9 @@ def test_channel_page_shows_phone_option(settings):
 
 def test_norm_ignores_case_hashtags_and_punctuation():
     assert drive.norm("Why *octopuses* have 3 hearts?! 🐙 #shorts") == drive.norm("why octopuses have 3 hearts")
+
+
+def test_upload_without_drive_login_skips_cleanly(conn, settings, channel, tmp_path):
+    sid = _approved(conn, tmp_path)
+    assert upload.upload_approved(conn, settings, phone(channel)) == []  # no token-drive.json
+    assert conn.execute("SELECT status FROM shorts WHERE id=?", (sid,)).fetchone()[0] == "approved"

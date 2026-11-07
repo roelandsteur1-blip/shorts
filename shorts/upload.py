@@ -299,7 +299,11 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
     from . import drive
     if drive.is_phone(channel):
         # Upload via phone: to Google Drive instead (no YouTube quota used); returns Short ids.
-        return [str(i) for i in drive.send_approved(conn, settings, channel, limit)]
+        try:
+            return [str(i) for i in drive.send_approved(conn, settings, channel, limit)]
+        except drive.NotConnected as e:
+            log.warning("'%s' uploads via the phone: %s. Its approved Shorts stay approved.", channel.id, e)
+            return []
     rows = conn.execute("SELECT * FROM shorts WHERE channel=? AND status='approved' ORDER BY id",
                         (channel.id,)).fetchall()
     if limit is not None:
