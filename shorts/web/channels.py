@@ -81,9 +81,8 @@ def form_to_data(form, base: dict) -> dict:
 
 def _context(data: dict, errors=None, new=False) -> dict:
     cats = categorize.load_categories(settings())
-    counts = dict(conn().execute(
-        """SELECT c.category, COUNT(*) FROM scene_categories c JOIN scenes sc ON sc.id = c.scene_id
-            WHERE c.confidence > 0 AND sc.rejected = 0 GROUP BY c.category""").fetchall())
+    from .cache import category_counts
+    counts = category_counts()
     # Other channels' looks and voices: each channel should look and sound like itself.
     others = {c.id: c for c in all_channels(settings().config_dir) if c.id != data.get("id")}
     same_voice = [c.name for c in others.values() if data.get("voice") and c.voice == data.get("voice")]

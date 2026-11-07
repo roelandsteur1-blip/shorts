@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, redirect, render_template, request, url_for
 
-from ..hero import shorts_left
+from . import cache
 from ..upload import token_path
 from .common import channels, conn, settings
 
@@ -17,49 +18,105 @@ log = logging.getLogger(__name__)
 
 YT_CACHE_SECONDS = 600  # Home asks YouTube for the schedule at most this often per channel
 _yt_cache: dict[str, tuple[float, str | None, list[dict]]] = {}
+_refreshing: set[str] = set()   # channels whose schedule is being fetched in the background
+_lock = threading.Lock()
+
+
+def _last_upload(c, ch) -> str | None:
+    return c.execute("SELECT MAX(uploaded_at) FROM shorts WHERE channel=?", (ch.id,)).fetchone()[0]
+
+
+def _known_ids(c, ch) -> list[str]:
+    # Every video id we know for the channel, not only ones we think are scheduled: YouTube's
+    # uploads list can lag behind fresh uploads, and a status here can be out of date.
+    return [r[0] for r in c.execute(
+        """SELECT youtube_id FROM shorts WHERE channel=? AND youtube_id IS NOT NULL
+           UNION SELECT youtube_id FROM yt_videos WHERE channel=?""", (ch.id, ch.id))]
+
+
+def _fetch(s, ch, known):
+    from .. import ytstats
+    try:
+        return ytstats.scheduled(s, ch, known)
+    except Exception as e:  # noqa: BLE001 - offline, expired login, quota: show our own data
+        log.warning("%s: could not read the schedule from YouTube: %s", ch.id, e)
+        return None
+
+
+def _store(c, ch, last, res) -> None:
+    _yt_cache[ch.id] = (time.monotonic(), last, res[0])
+    # the same answer carries the subscriber count: keep it for the card and Stats
+    c.execute("""INSERT INTO yt_sync (channel, subscribers, subscribers_at) VALUES (?, ?, datetime('now'))
+                 ON CONFLICT(channel) DO UPDATE SET subscribers=excluded.subscribers,
+                     subscribers_at=excluded.subscribers_at""", (ch.id, res[1]))
+
+
+def refresh_in_background(s, chs) -> None:
+    """Fetch these channels' schedules from YouTube in a background thread (its own database
+    connection), so no page waits for YouTube. A channel already being fetched is skipped."""
+    from .. import db
+
+    with _lock:
+        chs = [ch for ch in chs if ch.id not in _refreshing]
+        _refreshing.update(ch.id for ch in chs)
+    if not chs:
+        return
+
+    def run():
+        try:
+            c = db.connect(s.db_path)
+            try:
+                jobs = [(ch, _known_ids(c, ch), _last_upload(c, ch)) for ch in chs]
+                with ThreadPoolExecutor(max_workers=min(len(jobs), 5)) as pool:
+                    results = list(pool.map(lambda j: _fetch(s, j[0], j[1]), jobs))
+                for (ch, _, last), res in zip(jobs, results):
+                    if res is not None:
+                        _store(c, ch, last, res)
+                c.commit()
+            finally:
+                c.close()
+        except Exception:  # noqa: BLE001 - a background refresh must never take the dashboard down
+            log.exception("background schedule refresh failed")
+        finally:
+            with _lock:
+                _refreshing.difference_update(ch.id for ch in chs)
+
+    threading.Thread(target=run, name="yt-schedule", daemon=True).start()
+
+
+def warm_up(s, chs) -> None:
+    """At start: fetch every connected channel's schedule, so the first Home visit is fast too."""
+    refresh_in_background(s, [ch for ch in chs if token_path(s, ch.id).exists()])
 
 
 def youtube_schedule(chs) -> dict[str, list[dict] | None]:
-    """Scheduled videos per connected channel, straight from YouTube (cached a few minutes, the
-    channels fetched side by side). None = YouTube couldn't be asked: Home falls back to our data."""
-    from .. import ytstats
-
-    s, c, out, todo = settings(), conn(), {}, []
+    """Scheduled videos per connected channel, straight from YouTube. An answer up to
+    YT_CACHE_SECONDS old is used as it is; an older one is still shown while a background thread
+    asks YouTube again, so pages never wait on YouTube once it answered. Only a channel never asked
+    yet, or one with a new upload since (by a job in another process), is fetched while the page
+    waits (channels side by side). None = YouTube couldn't be asked: Home falls back to our data."""
+    s, c, out, todo, stale = settings(), conn(), {}, [], []
     for ch in chs:
         if not token_path(s, ch.id).exists():
             continue
-        # A new upload (by a job in another process) makes the cached answer stale at once.
-        last = c.execute("SELECT MAX(uploaded_at) FROM shorts WHERE channel=?", (ch.id,)).fetchone()[0]
+        last = _last_upload(c, ch)
         hit = _yt_cache.get(ch.id)
-        if hit and hit[1] == last and time.monotonic() - hit[0] < YT_CACHE_SECONDS:
+        if hit and hit[1] == last:
             out[ch.id] = hit[2]
+            if time.monotonic() - hit[0] >= YT_CACHE_SECONDS:
+                stale.append(ch)
         else:
-            # Every video id we know for the channel, not only ones we think are scheduled: YouTube's
-            # uploads list can lag behind fresh uploads, and a status here can be out of date.
-            known = [r[0] for r in c.execute(
-                """SELECT youtube_id FROM shorts WHERE channel=? AND youtube_id IS NOT NULL
-                   UNION SELECT youtube_id FROM yt_videos WHERE channel=?""", (ch.id, ch.id))]
-            todo.append((ch, known, last))
-
-    def fetch(job):
-        ch, known, _ = job
-        try:
-            return ytstats.scheduled(s, ch, known)
-        except Exception as e:  # noqa: BLE001 - offline, expired login, quota: show our own data
-            log.warning("%s: could not read the schedule from YouTube: %s", ch.id, e)
-            return None
+            todo.append((ch, _known_ids(c, ch), last))
 
     if todo:
         with ThreadPoolExecutor(max_workers=min(len(todo), 5)) as pool:
-            for (ch, _, last), res in zip(todo, pool.map(fetch, todo)):
+            for (ch, _, last), res in zip(todo, pool.map(lambda j: _fetch(s, j[0], j[1]), todo)):
                 out[ch.id] = res and res[0]
                 if res is not None:
-                    _yt_cache[ch.id] = (time.monotonic(), last, res[0])
-                    # the same answer carries the subscriber count: keep it for the card and Stats
-                    c.execute("""INSERT INTO yt_sync (channel, subscribers, subscribers_at) VALUES (?, ?, datetime('now'))
-                                 ON CONFLICT(channel) DO UPDATE SET subscribers=excluded.subscribers,
-                                     subscribers_at=excluded.subscribers_at""", (ch.id, res[1]))
+                    _store(c, ch, last, res)
         c.commit()
+    if stale:
+        refresh_in_background(s, stale)
     return out
 
 
@@ -76,7 +133,7 @@ def channel_card(ch, yt: list[dict] | None = None) -> dict:
     start, end = now.strftime("%Y-%m-%dT%H:%M:%SZ"), (now + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     planned = [v["publish_at"] for v in yt] if yt is not None else _our_schedule(ch, start)
     week = sum(start <= p < end for p in planned)
-    left, videos = shorts_left(c, settings(), ch.id, fits=ch)
+    foot = cache.footage(ch)
     last_job = c.execute("SELECT * FROM jobs WHERE channel=? ORDER BY id DESC LIMIT 1", (ch.id,)).fetchone()
     subs = c.execute("SELECT subscribers FROM yt_sync WHERE channel=?", (ch.id,)).fetchone()
     return {
@@ -90,9 +147,9 @@ def channel_card(ch, yt: list[dict] | None = None) -> dict:
         "week_times": ", ".join(datetime.fromisoformat(p.replace("Z", "+00:00")).strftime("%a %H:%M")
                                 for p in sorted(planned) if start <= p < end),
         "from_youtube": yt is not None,
-        "footage_left": left,
-        "footage_videos": videos,
-        "categories": [(cat, shorts_left(c, settings(), ch.id, [cat], fits=ch)[0]) for cat in ch.categories],
+        "footage_left": foot["left"],
+        "footage_videos": foot["videos"],
+        "categories": [(cat, foot["categories"].get(cat, 0)) for cat in ch.categories],
         "last_job": last_job,
         "subscribers": subs[0] if subs else None,
     }

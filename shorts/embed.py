@@ -266,14 +266,14 @@ def _counts(conn: sqlite3.Connection) -> tuple:
             WHERE embedding IS NOT NULL AND rejected = 0""").fetchone())
 
 
-def pe_status(conn: sqlite3.Connection) -> dict:
-    n, _, _, tried, ready = _counts(conn)
+def pe_status(conn: sqlite3.Connection, counts: tuple | None = None) -> dict:
+    n, _, _, tried, ready = counts or _counts(conn)
     return {"scenes": n, "ready": ready, "unreadable": tried - ready, "share": tried / n if n else 0.0}
 
 
-def search_space(conn: sqlite3.Connection, settings: Settings) -> str:
+def search_space(conn: sqlite3.Connection, settings: Settings, counts: tuple | None = None) -> str:
     """'pe' when the new search is on and nearly every searchable scene has been through it."""
-    n, _, _, tried, ready = _counts(conn)
+    n, _, _, tried, ready = counts or _counts(conn)
     return "pe" if settings.search_pe and ready and tried >= PE_READY * n else "clip"
 
 

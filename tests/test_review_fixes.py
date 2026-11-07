@@ -151,6 +151,7 @@ def test_old_off_niche_rows_move_to_channel_fit(tmp_path):
     c.execute("INSERT INTO off_niche (channel, asset_id, reason) VALUES ('body', 7, 'a flood')")
     c.commit()
     c.close()
+    db._READY.clear()  # as a new process would: an older program filled off_niche
     c = db.connect(tmp_path / "x.db")
     assert c.execute("SELECT fits, niche, method FROM channel_fit WHERE channel='body' AND asset_id=7").fetchone()[:] == (0, "*", "script")
     assert c.execute("SELECT COUNT(*) FROM off_niche").fetchone()[0] == 0

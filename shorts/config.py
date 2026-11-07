@@ -1,6 +1,7 @@
 """Settings and per-channel configuration."""
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import tomllib
@@ -16,9 +17,19 @@ ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = Path(os.environ.get("SHORTS_CONFIG_DIR") or ROOT / "config")
 
 
+_toml_cache: dict[str, tuple[bytes, dict]] = {}
+
+
 def _load_toml(path: Path) -> dict:
+    """A parsed TOML file; parsed again only when its text changed (dashboard pages read every
+    channel file several times, and parsing is the slow part). Callers get their own copy."""
     with open(path, "rb") as f:
-        return tomllib.load(f)
+        raw = f.read()
+    hit = _toml_cache.get(str(path))
+    if hit is None or hit[0] != raw:
+        hit = (raw, tomllib.loads(raw.decode("utf-8")))
+        _toml_cache[str(path)] = hit
+    return copy.deepcopy(hit[1])
 
 
 @dataclass

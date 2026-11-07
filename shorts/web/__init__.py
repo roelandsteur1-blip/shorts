@@ -4,11 +4,12 @@ Tailscale makes it reachable from your own devices).
 Server-rendered Flask pages; heavy work runs as background jobs (shorts/jobs.py)."""
 from __future__ import annotations
 
+import gzip
 from pathlib import Path
 
-from flask import Flask, g
+from flask import Flask, g, request
 
-from ..config import Settings
+from ..config import Settings, all_channels
 from ..jobs import Runner
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
@@ -25,6 +26,8 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
         seed_channels(settings)    # new channels prepared in config/channel-seeds
         from ..drive import start_checker
         start_checker(settings)    # upload via phone: spot Shorts posted from the phone every 30 min
+        from .home import warm_up
+        warm_up(settings, all_channels(settings.config_dir))  # YouTube's schedule ready before the first visit
 
     from . import bench, channels, footage_review, home, jobs, library, music, review, schedule, sources, stats, voices
     for module in (home, review, jobs, library, sources, music, voices, channels, schedule, stats, bench, footage_review):
@@ -35,6 +38,22 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
         c = g.pop("conn", None)
         if c is not None:
             c.close()
+
+    @app.after_request
+    def compress(resp):
+        """Pages go out gzipped (often 5-10x smaller): quicker on the phone over Tailscale."""
+        if (resp.direct_passthrough or resp.status_code != 200 or "Content-Encoding" in resp.headers
+                or resp.mimetype not in ("text/html", "application/json", "text/css", "text/javascript")
+                or "gzip" not in request.headers.get("Accept-Encoding", "")):
+            return resp
+        data = resp.get_data()
+        if len(data) < 1000:
+            return resp
+        resp.set_data(gzip.compress(data, compresslevel=5))
+        resp.headers["Content-Encoding"] = "gzip"
+        resp.headers["Content-Length"] = str(len(resp.get_data()))
+        resp.vary.add("Accept-Encoding")
+        return resp
 
     @app.template_filter("pct")
     def pct(done, total):

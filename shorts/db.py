@@ -285,7 +285,19 @@ CREATE TABLE IF NOT EXISTS channel_fit (
     PRIMARY KEY (channel, asset_id)
 );
 CREATE INDEX IF NOT EXISTS channel_fit_asset ON channel_fit(asset_id);
+CREATE INDEX IF NOT EXISTS blocks_short ON blocks(short_id);
+CREATE INDEX IF NOT EXISTS blocks_scene ON blocks(scene_id);
+CREATE INDEX IF NOT EXISTS facts_short ON facts(short_id);
+CREATE INDEX IF NOT EXISTS shorts_youtube ON shorts(youtube_id);
+CREATE INDEX IF NOT EXISTS shorts_hero ON shorts(hero_scene_id);
 """
+
+
+_READY: dict[str, int] = {}  # database file -> its number of tables etc. once this process set it up
+
+
+def _master_size(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) FROM sqlite_master").fetchone()[0]
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
@@ -298,9 +310,14 @@ def connect(path: Path | str) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")  # safe with WAL; far fewer disk flushes
     conn.execute("PRAGMA busy_timeout = 30000")  # dashboard, renders and Claude threads write at once
+    key = None if str(path) == ":memory:" else str(path.resolve())
+    if key is not None and _READY.get(key) == _master_size(conn):
+        return conn  # tables and columns already checked in this process: every dashboard page opens one
     first_sync = not conn.execute("SELECT 1 FROM sqlite_master WHERE name='yt_videos'").fetchone()
     conn.executescript(SCHEMA)
     _migrate(conn)
+    if key is not None:
+        _READY[key] = _master_size(conn)
     if first_sync:
         # Stats now follow YouTube: whatever is live on a channel counts, so the old "hidden" marks go.
         # They never stopped footage or topics being reused: a Short blocks reuse just by existing.

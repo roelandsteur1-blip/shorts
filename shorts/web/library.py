@@ -4,7 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, send_file, url_for
 
 from .. import categorize, embed, fit
-from ..library import shorts_left
+from . import cache
 from .common import channels, conn, settings
 from .jobs import start_job
 
@@ -12,33 +12,29 @@ bp = Blueprint("library", __name__)
 PAGE = 60
 
 
-def _counts() -> dict[str, int]:
-    return dict(conn().execute(
-        """SELECT c.category, COUNT(*) FROM scene_categories c JOIN scenes sc ON sc.id = c.scene_id
-            WHERE c.confidence > 0 AND sc.rejected = 0 GROUP BY c.category""").fetchall())
-
-
 @bp.get("/library")
 def index():
     c = conn()
     cats = categorize.load_categories(settings())
-    counts = _counts()
-    left = {cat.id: [(ch, shorts_left(c, settings(), ch, cat.id))
-                     for ch in channels() if cat.id in ch.categories] for cat in cats}
+    counts = cache.category_counts()
+    chans = channels()
+    foot = {ch.id: cache.footage(ch) for ch in chans}
+    left = {cat.id: [(ch, foot[ch.id]["categories"].get(cat.id, 0))
+                     for ch in chans if cat.id in ch.categories] for cat in cats}
     unsorted = c.execute("SELECT COUNT(*) FROM scenes WHERE rejected = 0 AND sorted = 0").fetchone()[0]
     methods = dict(c.execute("SELECT method, COUNT(*) FROM scene_categories WHERE confidence > 0 GROUP BY method"))
-    chans = channels()
     waiting = fit.pending(c, chans)
     per_channel = []
     for ch in chans:
         yes, no = (c.execute(f"""SELECT COUNT(*) FROM channel_fit f JOIN assets a ON a.id = f.asset_id
                                 WHERE f.channel=? AND f.fits=? AND f.niche IN (?, '{fit.ANY_NICHE}') AND {fit.USABLE}""",
                              (ch.id, v, ch.niche)).fetchone()[0] for v in (1, 0))
-        per_channel.append({"ch": ch, "fits": yes, "no": no, "left": shorts_left(c, settings(), ch),
+        per_channel.append({"ch": ch, "fits": yes, "no": no, "left": foot[ch.id]["left"],
                             "waiting": sum(ch in v for v in waiting.values())})
+    search = cache.search_counts()
     return render_template("library.html", cats=cats, counts=counts, left=left,
                            unsorted=unsorted, methods=methods, per_channel=per_channel,
-                           pe=embed.pe_status(c), space=embed.search_space(c, settings()), pe_ready=embed.PE_READY)
+                           pe=embed.pe_status(c, search), space=embed.search_space(c, settings(), search), pe_ready=embed.PE_READY)
 
 
 @bp.get("/library/channel/<cid>")

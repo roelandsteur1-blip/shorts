@@ -143,10 +143,15 @@ def per_video(conn: sqlite3.Connection, settings: Settings, channel: str,
     """Per video that can still open a Short on this channel: how many more (an estimate: as many
     heroes as its budget allows that also lie segment_seconds apart; the look-alike check is left
     out, it needs CLIP), how many it gave already, and its budget. Most Shorts left first."""
+    return _per_video(conn, settings, _eligible(conn, settings, channel, False, categories, fits),
+                      earlier_heroes(conn, channel))
+
+
+def _per_video(conn: sqlite3.Connection, settings: Settings, eligible: list[sqlite3.Row],
+               earlier: dict[int, list[sqlite3.Row]], titles: bool = True) -> list[dict]:
     by_asset: dict[int, list[sqlite3.Row]] = {}
-    for r in _eligible(conn, settings, channel, False, categories, fits):
+    for r in eligible:
         by_asset.setdefault(r["asset_id"], []).append(r)
-    earlier = earlier_heroes(conn, channel)
     out = []
     for aid, rows in by_asset.items():
         starts = [p["start"] for p in earlier.get(aid, [])]
@@ -156,7 +161,7 @@ def per_video(conn: sqlite3.Connection, settings: Settings, channel: str,
                 break
             if far_enough(settings, r["start"], starts):
                 starts.append(r["start"])
-        title = conn.execute("SELECT title FROM assets WHERE id=?", (aid,)).fetchone()[0]
+        title = conn.execute("SELECT title FROM assets WHERE id=?", (aid,)).fetchone()[0] if titles else None
         out.append({"asset_id": aid, "title": title, "duration": rows[0]["duration"],
                     "made": made, "budget": cap, "left": len(starts) - made})
     return sorted(out, key=lambda v: -v["left"])
@@ -196,3 +201,38 @@ def learned_bonus(conn: sqlite3.Connection, channel: str, asset_ids: list[int]) 
         vals = [kw_mean[k.strip()] for k in kws[aid].lower().split(",") if k.strip() in kw_mean]
         out.append(float(np.clip(np.mean(vals) if vals else 0.0, -0.15, 0.15)))
     return np.array(out)
+
+
+def data_version(conn: sqlite3.Connection) -> tuple:
+    """Changes whenever footage arrives, a Short is made or changes status, or a fit/category is
+    stored: the dashboard then works its cached footage numbers out again (web/cache.py)."""
+    return conn.execute(
+        """SELECT (SELECT MAX(id) FROM scenes), (SELECT COUNT(*) FROM scenes WHERE rejected = 0),
+                  (SELECT MAX(id) FROM assets), (SELECT COUNT(*) FROM assets WHERE needs_check = 0 AND claimed IS NULL),
+                  (SELECT MAX(id) FROM shorts), (SELECT MAX(updated_at) FROM shorts),
+                  (SELECT COUNT(*) FROM shorts WHERE status = 'rejected'),
+                  (SELECT COUNT(*) FROM channel_fit), (SELECT MAX(at) FROM channel_fit),
+                  (SELECT COUNT(*) FROM scene_categories), (SELECT MAX(id) FROM blocks)""").fetchone()[:]
+
+
+def footage_summary(conn: sqlite3.Connection, settings: Settings, channel: Channel) -> dict:
+    """What the dashboard shows about a channel's footage: {"left": Shorts left, "videos": videos
+    they come from, "categories": {category: Shorts left in it}}. Same numbers as shorts_left(),
+    in one pass over the scenes instead of one per category (the dashboard caches it, web/cache.py)."""
+    rows = _eligible(conn, settings, channel.id, False, None, channel)
+    earlier = earlier_heroes(conn, channel.id)
+    videos = _per_video(conn, settings, rows, earlier, titles=False)
+    cats: dict[str, int] = {}
+    if channel.categories:
+        ids = {r["id"] for r in rows}
+        marks = ",".join("?" * len(channel.categories))
+        in_cat: dict[str, set[int]] = {}
+        for sid, cat in conn.execute(f"""SELECT scene_id, category FROM scene_categories
+                                         WHERE confidence > 0 AND category IN ({marks})""", list(channel.categories)):
+            if sid in ids:
+                in_cat.setdefault(cat, set()).add(sid)
+        for cat in channel.categories:
+            keep = in_cat.get(cat, set())
+            cats[cat] = sum(v["left"] for v in _per_video(conn, settings, [r for r in rows if r["id"] in keep],
+                                                           earlier, titles=False))
+    return {"left": sum(v["left"] for v in videos), "videos": len(videos), "categories": cats}

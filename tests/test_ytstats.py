@@ -1,4 +1,5 @@
 import json
+import time
 """Stats straight from YouTube (ytstats.py): every video on the channel, its state, live numbers,
 Analytics once it has them, and the Stats page built from that."""
 from datetime import date, datetime, timezone
@@ -330,3 +331,25 @@ def test_schedule_page_follows_youtube(conn, settings, channel, client, yt):
     assert sched.index("Made in Studio") < sched.index("Ours")
     row = conn.execute("SELECT status, publish_at FROM shorts WHERE id=?", (sid,)).fetchone()
     assert tuple(row) == ("scheduled", moved)
+
+
+def test_home_shows_old_schedule_while_refreshing_in_background(conn, settings, channel, client, yt):
+    from datetime import timedelta
+
+    from shorts.web import home
+    home._yt_cache.clear()
+    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
+    yt.add("one", privacy="private", publish_at=soon)
+    (settings.secrets_dir / "token-space.json").write_text("{}")
+    with client.application.app_context():
+        assert len(home.youtube_schedule([channel])["space"]) == 1
+        yt.add("two", privacy="private", publish_at=soon)
+        t, last, videos = home._yt_cache["space"]
+        home._yt_cache["space"] = (t - home.YT_CACHE_SECONDS - 1, last, videos)  # expired
+        calls = len(yt.calls)
+        assert len(home.youtube_schedule([channel])["space"]) == 1  # the old answer, at once
+    for _ in range(100):  # the background thread asks YouTube again
+        if home._yt_cache["space"][0] > t and not home._refreshing:
+            break
+        time.sleep(0.05)
+    assert len(yt.calls) > calls and len(home._yt_cache["space"][2]) == 2
