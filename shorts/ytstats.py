@@ -185,7 +185,12 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
                            "use Connect YouTube on its Settings page")
     # Shorts posted from the phone (upload via phone, shorts/drive.py): link them by title.
     from . import drive
-    for vid, sid in drive.match(conn, channel, items, now).items():
+    found = drive.match(conn, channel, items, now)
+    try:
+        drive.fill(conn, settings, channel, yt, {**drive.unfilled(conn, channel), **found}, items, now)
+    except Exception as e:  # noqa: BLE001 - setting the title must not fail the stats
+        log.warning("%s: setting title etc. on phone uploads: %s", channel.id, e)
+    for vid, sid in found.items():
         ours[vid] = conn.execute("SELECT id, youtube_id, publish_at, status FROM shorts WHERE id=?", (sid,)).fetchone()
 
     videos = []

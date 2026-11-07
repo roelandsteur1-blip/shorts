@@ -22,6 +22,24 @@ SCOPES = [
 ]
 
 
+MANAGE = "https://www.googleapis.com/auth/youtube"  # change videos: upload via phone sets title etc.
+
+
+def scopes_for(channel: Channel) -> list[str]:
+    """A channel that uploads via the phone also needs to change its videos afterwards (drive.fill)."""
+    return SCOPES + [MANAGE] if (channel.upload_via or "api") == "phone" else SCOPES
+
+
+def can_manage(settings: Settings, channel: Channel) -> bool:
+    """The saved login may change videos (Connect YouTube again after switching to upload via phone)."""
+    try:
+        scopes = json.loads(token_path(settings, channel.id).read_text(encoding="utf-8")).get("scopes") or []
+    except (OSError, ValueError):
+        return False
+    scopes = scopes.split() if isinstance(scopes, str) else scopes
+    return MANAGE in scopes or "https://www.googleapis.com/auth/youtube.force-ssl" in scopes
+
+
 def _client_secret(settings: Settings) -> Path:
     path = settings.secrets_dir / "client_secret.json"
     if not path.exists():
@@ -55,7 +73,9 @@ def credentials(settings: Settings, channel: Channel, interactive: bool = True):
     expired = login_expired_path(settings, channel.id)
     creds = None
     if token.exists():
-        creds = Credentials.from_authorized_user_file(str(token), SCOPES)
+        # The scopes the login was given (a phone channel's include MANAGE); asking for others on refresh fails.
+        saved = json.loads(token.read_text(encoding="utf-8")).get("scopes")
+        creds = Credentials.from_authorized_user_file(str(token), None if saved else SCOPES)
     if creds and creds.expired and creds.refresh_token:
         try:
             creds.refresh(Request())
@@ -68,7 +88,7 @@ def credentials(settings: Settings, channel: Channel, interactive: bool = True):
         if not interactive:
             raise LoginExpired(f"the YouTube login for '{channel.name}' has expired: use Connect YouTube "
                                "on its Settings page")
-        flow = InstalledAppFlow.from_client_secrets_file(str(_client_secret(settings)), SCOPES)
+        flow = InstalledAppFlow.from_client_secrets_file(str(_client_secret(settings)), scopes_for(channel))
         print(f"Log in with the Google account that owns the '{channel.name}' channel.")
         if _headless():
             # Server without a browser: Google sends the login back to localhost:8765 on the server,
@@ -414,7 +434,12 @@ def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
         done = upload_approved(c, settings, ch, limit=share[ch.id], interactive=False)
         return f"{len(done)} to Google Drive for the phone" if drive.is_phone(ch) else f"uploaded {len(done)}"
 
-    out = _per_channel(settings, list(share), upload, UPLOADS_AT_ONCE)
+    # Phone channels one after another (only one channel at a time goes on Drive), then the rest.
+    phone = [cid for cid, n in share.items() if n is None]
+    out = {}
+    for cid in phone:
+        out.update(_per_channel(settings, [cid], upload, 1))
+    out.update(_per_channel(settings, [cid for cid in share if cid not in phone], upload, UPLOADS_AT_ONCE))
     for cid, result in fetch_stats_all(conn, settings).items():
         out[cid] = f"{out.get(cid, '')}, {result}".lstrip(", ")
     return out

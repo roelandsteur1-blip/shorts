@@ -344,7 +344,10 @@ ADDED_COLUMNS = [
     ("yt_sync", "subscribers_at", "TEXT"),
     ("blocks", "clip_start", "REAL"),                      # where in the source video a b-roll block starts (inpoint.py)
     ("scenes", "pe", "BLOB"),
-    ("shorts", "drive_files", "TEXT"),                     # JSON Drive file ids while a phone Short waits on Drive (drive.py)                              # 3 Perception Encoder vectors, float16 (embed.py); b'' = unreadable
+    ("shorts", "drive_files", "TEXT"),
+    ("shorts", "phone_key", "TEXT"),                       # upload via phone: the words he types as title (drive.key_words)
+    ("shorts", "filled", "INTEGER"),
+    ("shorts", "drive_at", "TEXT"),                        # upload via phone: when it went to Drive                       # upload via phone: 0 = posted, title etc. not set yet; 1 = set                     # JSON Drive file ids while a phone Short waits on Drive (drive.py)                              # 3 Perception Encoder vectors, float16 (embed.py); b'' = unreadable
 ]
 
 

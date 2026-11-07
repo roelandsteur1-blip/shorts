@@ -98,29 +98,22 @@ Results: `~/shorts-data/bench/report.md`.
 ## Upload via phone (trending sounds in the YouTube app)
 
 For channels set to **Upload via phone** (channel Settings, "How Shorts get to YouTube"), Shorts are
-made without music and Daily upload puts them in Google Drive instead of posting them
-(`shorts/drive.py`, background in project files: research/app-music-workflow.md).
+made without music and go to Google Drive instead of YouTube (`shorts/drive.py`, background in
+project files: research/app-music-workflow.md). Only one channel's Shorts are in the folder at a
+time; Home shows "On your phone now: <channel>". When they are all posted, the next channel's
+approved Shorts follow within 30 minutes.
 
 One-time setup:
-1. Google Cloud console, project `shorts-pipeline`: APIs & Services, Library, **Google Drive API**, Enable.
-2. Laptop: `ssh -i KEY -L 8765:localhost:8765 SERVER`, then on the channel's Settings page press
+1. Google Cloud console, project `shorts-pipeline`: enable the **Google Drive API**.
+2. Laptop: `ssh -i KEY -L 8765:localhost:8765 SERVER`, then on a phone channel's Settings page press
    **Connect Google Drive** and open the login link from the job page in the laptop's browser.
    One login covers all channels; the app only sees files it made itself (scope drive.file).
-3. Phone: install **Autosync for Google Drive** (MetaCtrl), sync the Drive folder `Shorts for phone`
-   with a phone folder, sync method **two-way**.
+3. With the same tunnel, press **Connect again** under YouTube on every phone channel: the server
+   now also asks permission to change the channel's videos (to set title, description, tags and time).
+4. Phone: install **Autosync for Google Drive** (MetaCtrl) and sync `Shorts for phone` two-way.
 
-Every day: open the synced folder (or gallery), post each Short in the YouTube app (+, Short, pick it
-from the gallery, Add sound, paste the title from its .txt exactly, Schedule at the time in the
-.txt). Within 30 minutes the dashboard finds the upload by its title, links it for stats, and moves
-the Drive files to the trash, so Autosync removes them from the phone. "Check now" on the channel's
-Settings page does it right away.
-
-## Jobs through restarts
-
-Since 2026-11-07 a dashboard restart (an update, a crash) no longer kills a running make: the job
-keeps running and the new dashboard follows it again. The unit file needs `KillMode=process` for
-that. On a server set up before that date, run once:
-
-    sudo sed -i 's/^KillMode=control-group/KillMode=process/' /etc/systemd/system/shorts-dashboard.service && sudo systemctl daemon-reload
-
-(Jobs started before this version ran still end with a restart; jobs started after it survive.)
+Posting: switch to the channel Home names, then for each Short in the gallery: +, Short, pick it,
+Add sound, title = **the first 3 words on screen**, visibility **Private**, Upload. Within 30
+minutes the server finds it (by those words, or by its length when there's a typo), sets the real
+title, description, tags and publish time, and trashes the Drive file, so Autosync removes it from
+the phone. "Check now" on the channel's Settings page does it right away.

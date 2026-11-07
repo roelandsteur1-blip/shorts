@@ -76,32 +76,94 @@ def test_channel_setting_saved(settings, channel):
     assert chans.validate(data, set(data.get("categories") or [])) == []
 
 
+def _block(conn, sid, text):
+    conn.execute("INSERT INTO blocks (short_id, idx, text, seconds) VALUES (?, 0, ?, 3)", (sid, text))
+    conn.commit()
+
+
 def test_approved_shorts_go_to_drive(conn, settings, channel, tmp_path, monkeypatch):
     monkeypatch.setattr("shorts.render.metadata", lambda c, ch, sid, s: {
         "title": "Why octopuses have three hearts", "description": "A fact.", "tags": ["octopus", "ocean"]})
     ch = phone(channel)
     sid = _approved(conn, tmp_path)
+    _block(conn, sid, "*Octopuses* have three hearts, and two stop when they swim.")
     drv = FakeDrive()
     assert drive.send_approved(conn, settings, ch, drv=drv, now=NOW) == [sid]
     row = conn.execute("SELECT * FROM shorts WHERE id=?", (sid,)).fetchone()
     assert row["status"] == "on_drive" and row["publish_at"] == "2026-11-07T17:00:00Z"
+    assert row["phone_key"] == "Octopuses have three"
     ids = json.loads(row["drive_files"])
-    names = {drv.files_[i]["name"] for i in ids}
-    assert names == {f"11-07 1800 Why octopuses have three hearts ({sid}).mp4",
-                     f"11-07 1800 Why octopuses have three hearts ({sid}).txt"}
+    assert [drv.files_[i]["name"] for i in ids] == ["Octopuses have three - 07-11 18.00.mp4"]  # no .txt
     folders = [f for f in drv.files_.values() if f.get("mimeType") == drive.FOLDER]
-    assert [f["name"] for f in folders] == ["Shorts for phone", ch.name]
-    note = next(drv.files_[i]["text"] for i in ids if drv.files_[i]["name"].endswith(".txt"))
-    assert "Why octopuses have three hearts" in note and "18:00" in note and "octopus, ocean" in note
+    assert [f["name"] for f in folders] == ["Shorts for phone"]
     # the slot is taken: the next Short gets the next day
     assert upload.next_slots(conn, ch, 1, now=NOW)[0].day == 8
-    # a second run makes no new folders
-    sid2 = _approved(conn, tmp_path, "Mars has the tallest volcano")
-    monkeypatch.setattr("shorts.render.metadata", lambda c, ch, s, st: {"title": "Mars has the tallest volcano",
-                                                                        "description": "", "tags": []})
-    drive.send_approved(conn, settings, ch, drv=drv, now=NOW)
-    assert len([f for f in drv.files_.values() if f.get("mimeType") == drive.FOLDER]) == 2
-    assert conn.execute("SELECT status FROM shorts WHERE id=?", (sid2,)).fetchone()[0] == "on_drive"
+    # a Short starting with the same 3 words waits until the first is posted; another one goes, no new folders
+    sid2 = _approved(conn, tmp_path, "Octopus blood is blue")
+    _block(conn, sid2, "Octopuses have three kinds of blood? No: one, and it is blue.")
+    sid3 = _approved(conn, tmp_path, "Mars volcano")
+    _block(conn, sid3, "Mars has the tallest volcano.")
+    assert drive.send_approved(conn, settings, ch, drv=drv, now=NOW) == [sid3]
+    assert len([f for f in drv.files_.values() if f.get("mimeType") == drive.FOLDER]) == 1
+    assert conn.execute("SELECT status FROM shorts WHERE id=?", (sid2,)).fetchone()[0] == "approved"
+    assert conn.execute("SELECT phone_key FROM shorts WHERE id=?", (sid3,)).fetchone()[0] == "Mars has the"
+
+
+class FakeYT:
+    def __init__(self):
+        self.updates = []
+
+    def videos(self):
+        return self
+
+    def update(self, part, body):
+        self.updates.append((part, body))
+        return FakeReq({})
+
+
+def test_typed_words_matched_and_title_set(conn, settings, channel, tmp_path, monkeypatch):
+    monkeypatch.setattr("shorts.render.metadata", lambda c, ch, sid, s: {
+        "title": "Why octopuses have three hearts", "description": "A fact.", "tags": ["octopus"]})
+    ch = phone(channel)
+    a, b = _approved(conn, tmp_path), _approved(conn, tmp_path, "Blue blood")
+    db.set_short(conn, a, status="on_drive", phone_key="Octopuses have three", publish_at="2026-11-07T17:00:00Z",
+                 duration=21.4, drive_at="2026-11-07T10:00:00Z")
+    db.set_short(conn, b, status="on_drive", phone_key="Blue blood flows", publish_at="2026-11-08T17:00:00Z",
+                 duration=27.0, drive_at="2026-11-07T10:00:00Z")
+    items = {"v1": {"snippet": {"title": "blue blood flows #shorts"}, "status": {"privacyStatus": "private"}},
+             # typo in the words: found by its length (21 s)
+             "v2": {"snippet": {"title": "Octopus have tree", "publishedAt": "2026-11-07T11:00:00Z"},
+                    "status": {"privacyStatus": "private"}, "contentDetails": {"duration": "PT21S"}},
+             # same length but posted before it went to Drive: not it
+             "old": {"snippet": {"title": "?", "publishedAt": "2026-11-01T11:00:00Z"},
+                     "status": {"privacyStatus": "public"}, "contentDetails": {"duration": "PT27S"}}}
+    assert drive.match(conn, ch, items, NOW) == {"v1": b, "v2": a}
+    yt = FakeYT()
+    assert drive.fill(conn, settings, ch, yt, {"v1": b}, items, NOW) == 0  # no manage login yet: nothing changed
+    upload.token_path(settings, ch.id).write_text(json.dumps({"scopes": upload.scopes_for(ch)}), encoding="utf-8")
+    assert drive.fill(conn, settings, ch, yt, drive.unfilled(conn, ch), items, NOW) == 2
+    part, body = next(u for u in yt.updates if u[1]["id"] == "v1")
+    assert part == "snippet,status" and body["snippet"]["title"] == "Why octopuses have three hearts"
+    assert body["status"]["publishAt"] == "2026-11-08T17:00:00Z" and body["status"]["privacyStatus"] == "private"
+    row = conn.execute("SELECT status, filled FROM shorts WHERE id=?", (b,)).fetchone()
+    assert (row["status"], row["filled"]) == ("scheduled", 1)
+    assert drive.unfilled(conn, ch) == {}
+
+
+def test_fill_keeps_his_own_schedule(conn, settings, channel, tmp_path, monkeypatch):
+    monkeypatch.setattr("shorts.render.metadata", lambda c, ch, sid, s: {"title": "T", "description": "", "tags": []})
+    ch = phone(channel)
+    upload.token_path(settings, ch.id).write_text(json.dumps({"scopes": upload.scopes_for(ch)}), encoding="utf-8")
+    sid = _approved(conn, tmp_path)
+    items = {"v": {"snippet": {"title": "x"}, "status": {"privacyStatus": "private", "publishAt": "2026-11-09T10:00:00Z"}}}
+    yt = FakeYT()
+    assert drive.fill(conn, settings, ch, yt, {"v": sid}, items, NOW) == 1
+    assert yt.updates[0][0] == "snippet" and "status" not in yt.updates[0][1]
+
+
+def test_api_channels_keep_their_scopes(channel):
+    assert upload.MANAGE not in upload.scopes_for(channel)
+    assert upload.MANAGE in upload.scopes_for(phone(channel))
 
 
 def test_upload_from_phone_found_and_drive_cleaned(conn, settings, channel, tmp_path):
@@ -149,3 +211,22 @@ def test_upload_without_drive_login_skips_cleanly(conn, settings, channel, tmp_p
     sid = _approved(conn, tmp_path)
     assert upload.upload_approved(conn, settings, phone(channel)) == []  # no token-drive.json
     assert conn.execute("SELECT status FROM shorts WHERE id=?", (sid,)).fetchone()[0] == "approved"
+
+
+def test_one_channel_at_a_time_on_the_phone(conn, settings, channel, tmp_path, monkeypatch):
+    monkeypatch.setattr("shorts.render.metadata", lambda c, ch, sid, s: {"title": "T", "description": "", "tags": []})
+    space = phone(channel)
+    ocean = dataclasses.replace(space, id="ocean", name="Ocean")
+    a = _approved(conn, tmp_path, "Space one")
+    b = _approved(conn, tmp_path, "Ocean one")
+    conn.execute("UPDATE shorts SET channel='ocean' WHERE id=?", (b,))
+    conn.commit()
+    drv = FakeDrive()
+    assert drive.send_approved(conn, settings, space, drv=drv, now=NOW) == [a]
+    assert drive.send_approved(conn, settings, ocean, drv=drv, now=NOW) == []  # space is still on the phone
+    assert drive.on_phone(conn)["channel"] == "space"
+    monkeypatch.setattr("shorts.config.all_channels", lambda d=None: [space, ocean])
+    assert drive.send_next(conn, settings, drv=drv, now=NOW) == []  # not empty yet
+    db.set_short(conn, a, status="scheduled", youtube_id="v1")  # posted
+    assert drive.send_next(conn, settings, drv=drv, now=NOW) == [b]
+    assert drive.on_phone(conn)["channel"] == "ocean"

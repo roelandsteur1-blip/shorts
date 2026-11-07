@@ -1,14 +1,19 @@
 """Upload via phone (research/app-music-workflow.md): for channels with upload_via = "phone" the
 daily upload doesn't post to YouTube. It puts each approved Short (rendered without music) in
-Google Drive, in "<drive_folder>/<channel name>/", with a .txt next to it holding the title,
+Google Drive, in "<drive_folder>/" (one channel at a time: the app shows no folders, Home says
+which channel is on the phone), with a .txt next to it holding the title,
 description, tags and publish time. The Autosync app on Roeland's phone keeps that folder in sync
 with a phone folder, so the Shorts show up in the gallery; he posts them in the YouTube app with a
-trending sound ("Add sound") and schedules them there.
+trending sound ("Add sound"). As title he types only the first words on screen, which the file
+on screen (key_words, always exactly 3) and posts it as Private without picking a time. Two Shorts
+of a channel that start with the same words are never on Drive at the same time.
 
 The stats sync (and check_all every 30 minutes from the dashboard) looks for new videos on the
-channel whose title matches a Short waiting on Drive. A match gets the YouTube id and state like
-an API upload (so stats and learning work), and its Drive files go to the Drive trash, which
-Autosync mirrors by deleting them from the phone.
+channel whose title starts with a waiting Short's key words (or is its full title). A match gets
+the YouTube id like an API upload (so stats and learning work); with the "manage" YouTube login
+(Connect YouTube again, see upload.scopes_for) the server then sets the real title, description,
+tags and, for a private video, the publish time. Its Drive file goes to the Drive trash, which
+Autosync mirrors by deleting it from the phone.
 
 The Drive login uses scope drive.file: the app only sees the files and folders it made itself."""
 from __future__ import annotations
@@ -17,7 +22,7 @@ import json
 import logging
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import db
@@ -101,6 +106,28 @@ def norm(title: str | None) -> str:
     return re.sub(r"[^0-9a-z]+", "", t)
 
 
+KEY_WORDS = 3
+SAME_LENGTH = 1.0  # seconds: YouTube rounds durations to whole seconds
+
+
+def words_on_screen(conn: sqlite3.Connection, short_id: int) -> list[str]:
+    """Words of the Short's first caption block (what is on screen first), else of its title."""
+    row = conn.execute("SELECT text FROM blocks WHERE short_id=? ORDER BY idx LIMIT 1", (short_id,)).fetchone()
+    text = row[0] if row and row[0] else (conn.execute("SELECT title FROM shorts WHERE id=?", (short_id,)).fetchone() or [""])[0]
+    return re.findall(r"[0-9A-Za-zÀ-ɏ']+", text or "")
+
+
+def key_words(conn: sqlite3.Connection, short_id: int) -> str:
+    """The first KEY_WORDS words on screen: what Roeland types as title (always exactly that many)."""
+    return " ".join((words_on_screen(conn, short_id) or [str(short_id)])[:KEY_WORDS])
+
+
+def clashes(key: str, others: list[str]) -> bool:
+    """Two waiting Shorts of one channel whose typed words could be confused."""
+    k = norm(key)
+    return any(k.startswith(norm(o)) or norm(o).startswith(k) for o in others if norm(o))
+
+
 def safe_name(text: str, limit: int = 80) -> str:
     t = re.sub(r'[\\/:*?"<>|\n\r\t]+', " ", text or "").strip()
     return re.sub(r"\s+", " ", t)[:limit].strip() or "short"
@@ -119,27 +146,17 @@ def local_time(settings: Settings, when: datetime | None) -> str:
     return f"{when:%a} {when.day} {when:%b %H:%M} ({zone})"
 
 
-def file_stem(settings: Settings, short_id: int, title: str, when: datetime | None) -> str:
-    """'11-08 1800 Why octopuses have three hearts (412)': sorts by publish time in the phone's
-    file list; the id keeps two Shorts with the same title apart."""
-    if when is not None:
-        try:
-            from zoneinfo import ZoneInfo
-            when = when.astimezone(ZoneInfo(settings.phone_timezone))
-        except Exception:  # noqa: BLE001
-            pass
-        head = f"{when:%m-%d %H%M} "
-    else:
-        head = ""
-    return f"{head}{safe_name(title)} ({short_id})"
-
-
-def note_text(settings: Settings, meta: dict, when: datetime | None) -> str:
-    tags = ", ".join(meta.get("tags") or [])
-    return (f"PUBLISH: {local_time(settings, when)}\n\n"
-            f"TITLE (paste exactly, the pipeline finds the upload by it):\n{meta['title'][:100]}\n\n"
-            f"DESCRIPTION:\n{meta.get('description') or ''}\n\n"
-            f"TAGS:\n{tags}\n")
+def file_stem(settings: Settings, key: str, when: datetime | None) -> str:
+    """'Octopuses have three - za 08-11 18.00': starts with the words to type as title, then the
+    publish time on the phone's clock."""
+    if when is None:
+        return safe_name(key)
+    try:
+        from zoneinfo import ZoneInfo
+        when = when.astimezone(ZoneInfo(settings.phone_timezone))
+    except Exception:  # noqa: BLE001
+        pass
+    return f"{safe_name(key)} - {when:%d-%m %H.%M}"
 
 
 # ---------- Drive calls ----------
@@ -185,6 +202,29 @@ def trash(drv, file_ids: list[str]) -> list[str]:
 
 # ---------- daily upload, phone channels ----------
 
+def on_phone(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    """The channel whose Shorts are on Drive now ({channel, n}), or None. Only one channel at a time:
+    the YouTube app can't see folders, so everything in the folder is for one channel."""
+    return conn.execute("""SELECT channel, COUNT(*) AS n FROM shorts WHERE status='on_drive'
+                           GROUP BY channel ORDER BY MIN(id) LIMIT 1""").fetchone()
+
+
+def send_next(conn: sqlite3.Connection, settings: Settings, drv=None, now: datetime | None = None) -> list[int]:
+    """The phone is empty: the phone channel with the oldest approved Short goes next."""
+    from .config import all_channels
+
+    if on_phone(conn):
+        return []
+    phone = {c.id: c for c in all_channels(settings.config_dir) if is_phone(c)}
+    if not phone:
+        return []
+    row = conn.execute(f"""SELECT channel FROM shorts WHERE status='approved' AND channel IN ({','.join('?' * len(phone))})
+                           ORDER BY id LIMIT 1""", list(phone)).fetchone()
+    if not row:
+        return []
+    return send_approved(conn, settings, phone[row[0]], drv=drv, now=now)
+
+
 def send_approved(conn: sqlite3.Connection, settings: Settings, channel: Channel, limit: int | None = None,
                   drv=None, now: datetime | None = None) -> list[int]:
     """Approved Shorts of a phone channel to Drive, each with its publish slot. Returns the Short ids
@@ -192,15 +232,32 @@ def send_approved(conn: sqlite3.Connection, settings: Settings, channel: Channel
     from .render import metadata
     from .upload import iso, slots_for
 
+    other = on_phone(conn)
+    if other and other["channel"] != channel.id:
+        log.info("'%s' waits: the phone still has %d Short(s) of '%s' to post", channel.id, other["n"], other["channel"])
+        return []
     rows = conn.execute("SELECT * FROM shorts WHERE channel=? AND status='approved' ORDER BY id",
                         (channel.id,)).fetchall()
+    # Never two waiting Shorts that start with the same words: the later one waits for the next run.
+    taken = [r[0] for r in conn.execute(
+        "SELECT phone_key FROM shorts WHERE channel=? AND status='on_drive' AND phone_key IS NOT NULL", (channel.id,))]
+    keys, ok = {}, []
+    for r in rows:
+        key = key_words(conn, r["id"])
+        if clashes(key, taken):
+            log.info("short %d starts like a Short still waiting on Drive ('%s'): it goes after that one is posted",
+                     r["id"], key)
+            continue
+        taken.append(key)
+        keys[r["id"]] = key
+        ok.append(r)
+    rows = ok
     if limit is not None:
         rows = rows[:limit]
     if not rows:
         return []
     drv = drv or service(settings)
-    top = folder(drv, settings.drive_folder)
-    sub = folder(drv, safe_name(channel.name, 60), top)
+    sub = folder(drv, settings.drive_folder)  # one flat folder: only one channel's Shorts at a time
     slots = slots_for(conn, settings, channel, [r["id"] for r in rows], now=now)
     sent = []
     for s, slot in zip(rows, slots):
@@ -208,12 +265,13 @@ def send_approved(conn: sqlite3.Connection, settings: Settings, channel: Channel
             log.warning("short %d: video file missing, not sent to Drive", s["id"])
             continue
         meta = metadata(conn, channel, s["id"], settings)
-        stem = file_stem(settings, s["id"], meta["title"], slot)
-        ids = [put_file(drv, sub, Path(s["video_path"]), stem + ".mp4", "video/mp4"),
-               put_file(drv, sub, None, stem + ".txt", "text/plain", note_text(settings, meta, slot))]
-        extra = {} if s["title"] else {"title": meta["title"]}  # matched against the upload's title later
-        db.set_short(conn, s["id"], status="on_drive", publish_at=iso(slot), drive_files=json.dumps(ids), **extra)
-        log.info("short %d sent to Drive for the phone: %s (publish %s)", s["id"], stem, local_time(settings, slot))
+        key = keys[s["id"]]
+        ids = [put_file(drv, sub, Path(s["video_path"]), file_stem(settings, key, slot) + ".mp4", "video/mp4")]
+        extra = {} if s["title"] else {"title": meta["title"]}
+        db.set_short(conn, s["id"], status="on_drive", publish_at=iso(slot), drive_files=json.dumps(ids),
+                     phone_key=key, drive_at=iso(now or datetime.now(timezone.utc)), **extra)
+        log.info("short %d sent to Drive for the phone: type '%s' as title (publish %s)", s["id"], key,
+                 local_time(settings, slot))
         sent.append(s["id"])
     return sent
 
@@ -224,10 +282,11 @@ def match(conn: sqlite3.Connection, channel: Channel, items: dict[str, dict], no
     """Videos on YouTube (videos.list items by id) that are a Short waiting on Drive: same title
     (loosely, see norm). Each match gets the YouTube id, its state and publish time, like an API
     upload. Returns {youtube id: short id}."""
-    from .ytstats import parse_time, state_of
+    from .ytstats import duration_s, parse_time, state_of
 
     now = now or datetime.now(timezone.utc)
-    waiting = conn.execute("SELECT id, title FROM shorts WHERE channel=? AND status='on_drive' ORDER BY id",
+    waiting = conn.execute("""SELECT id, title, phone_key, duration, drive_at FROM shorts
+                              WHERE channel=? AND status='on_drive' ORDER BY id""",
                            (channel.id,)).fetchall()
     if not waiting:
         return {}
@@ -237,22 +296,91 @@ def match(conn: sqlite3.Connection, channel: Channel, items: dict[str, dict], no
         if vid in known:
             continue
         title = norm(it.get("snippet", {}).get("title"))
-        if not title:
-            continue
-        short = next((w for w in waiting if w["id"] not in out.values() and norm(w["title"])
-                      and (norm(w["title"]) == title or title.startswith(norm(w["title"])))), None)
+
+        def hit(w) -> bool:
+            key, full = norm(w["phone_key"]), norm(w["title"])
+            return bool(key and title.startswith(key)) or bool(full and title.startswith(full))
+
+        free = [w for w in waiting if w["id"] not in out.values()]
+        hits = [w for w in free if hit(w)]
+        if not hits:
+            # typo in the words: the one waiting Short of the same length (to the second), posted after
+            # it went to Drive
+            secs = duration_s(it.get("contentDetails", {}).get("duration"))
+            posted = parse_time(it.get("snippet", {}).get("publishedAt"))
+            hits = [w for w in free if secs is not None and w["duration"] and abs(w["duration"] - secs) <= SAME_LENGTH
+                    and (not posted or not w["drive_at"] or posted >= parse_time(w["drive_at"]))]
+            if len(hits) != 1:
+                continue
+        short = max(hits, key=lambda w: len(norm(w["phone_key"])))
         if short is None:
             continue
         state = state_of(it, now)
         st = it.get("status", {})
         when = parse_time(st.get("publishAt")) or parse_time(it.get("snippet", {}).get("publishedAt"))
         status = {"scheduled": "scheduled", "live": "published"}.get(state, "uploaded")
-        db.set_short(conn, short["id"], status=status, youtube_id=vid,
-                     publish_at=when.strftime("%Y-%m-%dT%H:%M:%SZ") if when else None,
-                     uploaded_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"))
+        fields = {"status": status, "youtube_id": vid, "uploaded_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "filled": 0}
+        if state in ("scheduled", "live") and when:
+            fields["publish_at"] = when.strftime("%Y-%m-%dT%H:%M:%SZ")  # his own time wins; else keep the slot
+        db.set_short(conn, short["id"], **fields)
         log.info("%s: short %d was posted from the phone as https://youtu.be/%s (%s)", channel.id, short["id"], vid, state)
         out[vid] = short["id"]
     return out
+
+
+def fill(conn: sqlite3.Connection, settings: Settings, channel: Channel, yt, matched: dict[str, int],
+         items: dict[str, dict], now: datetime | None = None) -> int:
+    """After a match: the real title, description, tags and category, like an API upload. A video
+    he left private without a time gets the Short's slot as publish time (or goes public right away
+    when the slot is past); one he scheduled or published himself keeps that. Needs the "manage"
+    YouTube login; without it nothing changes here (Home asks to connect again). Returns how many
+    videos were updated."""
+    from .render import metadata
+    from .upload import body_for, can_manage, iso
+    from .ytstats import parse_time, state_of
+
+    if not matched or not can_manage(settings, channel):
+        return 0
+    now = now or datetime.now(timezone.utc)
+    done = 0
+    for vid, sid in matched.items():
+        it = items.get(vid) or {}
+        state = state_of(it, now)
+        row = conn.execute("SELECT publish_at FROM shorts WHERE id=?", (sid,)).fetchone()
+        slot = parse_time(row["publish_at"]) if row else None
+        body = body_for(metadata(conn, channel, sid, settings), None)
+        body["id"] = vid
+        parts = "snippet"
+        if state == "private":
+            parts = "snippet,status"
+            if slot and slot > now + timedelta(minutes=15):
+                body["status"]["publishAt"] = iso(slot)
+            else:
+                body["status"]["privacyStatus"] = "public"
+                slot = now
+        else:
+            body.pop("status")
+        try:
+            yt.videos().update(part=parts, body=body).execute()
+        except Exception as e:  # noqa: BLE001 - try again next check
+            log.warning("%s: could not set title etc. on %s: %s", channel.id, vid, e)
+            conn.execute("UPDATE shorts SET filled=0 WHERE id=?", (sid,))
+            conn.commit()
+            continue
+        fields = {"filled": 1}
+        if state == "private":
+            fields.update(status="scheduled" if slot > now else "published", publish_at=iso(slot))
+        db.set_short(conn, sid, **fields)
+        log.info("%s: short %d (%s): title, description and tags set%s", channel.id, sid, vid,
+                 f", publishes {local_time(settings, slot)}" if state == "private" else "")
+        done += 1
+    return done
+
+
+def unfilled(conn: sqlite3.Connection, channel: Channel) -> dict[str, int]:
+    """Posted from the phone, matched, but title etc. not set yet (no manage login then, or it failed)."""
+    return {r[0]: r[1] for r in conn.execute(
+        "SELECT youtube_id, id FROM shorts WHERE channel=? AND filled=0 AND youtube_id IS NOT NULL", (channel.id,))}
 
 
 def cleanup(conn: sqlite3.Connection, settings: Settings, drv=None) -> int:
@@ -290,19 +418,25 @@ def check_all(settings: Settings) -> str:
     try:
         matched = 0
         for ch in all_channels(settings.config_dir):
-            if not conn.execute("SELECT 1 FROM shorts WHERE channel=? AND status='on_drive' LIMIT 1", (ch.id,)).fetchone():
+            if not conn.execute("""SELECT 1 FROM shorts WHERE channel=? AND (status='on_drive' OR filled=0)
+                                    LIMIT 1""", (ch.id,)).fetchone():
                 continue
             if not upload.token_path(settings, ch.id).exists():
                 continue
             try:
                 yt = build("youtube", "v3", credentials=upload.credentials(settings, ch, interactive=False),
                            cache_discovery=False)
-                _, items, _ = channel_videos(yt, [], part="snippet,status")
-                matched += len(match(conn, ch, items))
+                todo = unfilled(conn, ch)
+                _, items, _ = channel_videos(yt, list(todo), part="snippet,status,contentDetails")
+                found = match(conn, ch, items)
+                matched += len(found)
+                fill(conn, settings, ch, yt, {**todo, **found}, items)
             except Exception as e:  # noqa: BLE001 - one channel must not stop the others
                 log.warning("%s: phone upload check failed: %s", ch.id, e)
         cleaned = cleanup(conn, settings)
-        return f"{matched} posted from the phone, Drive files removed for {cleaned}"
+        sent = send_next(conn, settings) if connected(settings) else []
+        return (f"{matched} posted from the phone, Drive files removed for {cleaned}"
+                + (f", {len(sent)} new on Drive" if sent else ""))
     finally:
         conn.close()
 

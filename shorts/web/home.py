@@ -180,11 +180,16 @@ def warnings(cards: list[dict], now: datetime | None = None) -> list[dict]:
             if not drive.connected(s):
                 out.append({"channel": ch, "text": "uploads via the phone, but Google Drive is not connected",
                             "link": f"/channels/{ch.id}"})
+            from ..upload import can_manage
+            if card["connected"] and not can_manage(s, ch):
+                out.append({"channel": ch, "text": "uploads via the phone: press Connect YouTube again (Connect again) so "
+                                                   "the server may set title, description, tags and publish time",
+                            "link": f"/channels/{ch.id}"})
             late = conn().execute("""SELECT COUNT(*) FROM shorts WHERE channel=? AND status='on_drive'
                                      AND publish_at < ?""", (ch.id, now.strftime("%Y-%m-%dT%H:%M:%SZ"))).fetchone()[0]
             if late:
                 out.append({"channel": ch, "text": f"{late} Short(s) on Drive are past their publish time and not "
-                                                   "found on YouTube yet (post them, with exactly the title in the .txt)",
+                                                   "found on YouTube yet (post them with the words the file name starts with as title)",
                             "link": f"/channels/{ch.id}"})
         if not card["connected"]:
             continue  # not uploading yet: an empty schedule is expected
@@ -206,7 +211,11 @@ def index():
     chs = channels()
     yt = youtube_schedule(chs)
     cards = [channel_card(ch, yt.get(ch.id)) for ch in chs]
+    from ..drive import on_phone
+    phone = on_phone(conn())
+    phone_name = next((c.name for c in chs if phone and c.id == phone["channel"]), phone["channel"] if phone else None)
     return render_template("home.html", cards=cards, running=running, warnings=warnings(cards),
+                           phone=phone, phone_name=phone_name,
                            per_channel=settings().channel_uploads_per_day, msg=request.args.get("msg"))
 
 

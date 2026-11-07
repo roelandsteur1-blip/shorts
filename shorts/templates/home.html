@@ -1,5 +1,7 @@
 {% extends "base.html" %}{% block title %}Home{% endblock %}{% block body %}
 {% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+{% if phone %}<div class="card"><h2 style="margin:0">On your phone now: {{ phone_name }}</h2>
+<p class="muted" style="margin-bottom:0">{{ phone.n }} Short(s) in Drive folder "Shorts for phone". Switch to this channel in the YouTube app and post them as Private, with the first 3 words on screen as title. The next channel's Shorts come once these are posted.</p></div>{% endif %}
 {% if warnings %}<div class="card"><h2 style="margin-top:0" class="warn">Needs attention</h2>
 {% for w in warnings %}<p style="margin:4px 0"><b>{{ w.channel.name }}</b>: <a href="{{ w.link }}">{{ w.text }}</a></p>{% endfor %}</div>{% endif %}
 <div class="card"><h2 style="margin-top:0">Daily</h2>
