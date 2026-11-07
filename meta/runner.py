@@ -57,6 +57,7 @@ ALLOWLIST = {
     "marks": ("meta.collector.marks", [], None),  # copies the /bench/footage review marks into the results
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "study": ("meta.study", [], None),  # competitor channel study (meta/study.toml), read-only
+    "jobsinfo": ("meta.jobsinfo", [], None),  # read-only: recent dashboard jobs + service restarts
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
