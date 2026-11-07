@@ -93,3 +93,23 @@ bash deploy/bench.sh status
 
 Progress and results also show on the dashboard at `/bench`, with a page to check Claude's labels.
 Results: `~/shorts-data/bench/report.md`.
+
+## Upload via phone (trending sounds in the YouTube app)
+
+For channels set to **Upload via phone** (channel Settings, "How Shorts get to YouTube"), Shorts are
+made without music and Daily upload puts them in Google Drive instead of posting them
+(`shorts/drive.py`, background in project files: research/app-music-workflow.md).
+
+One-time setup:
+1. Google Cloud console, project `shorts-pipeline`: APIs & Services, Library, **Google Drive API**, Enable.
+2. Laptop: `ssh -i KEY -L 8765:localhost:8765 SERVER`, then on the channel's Settings page press
+   **Connect Google Drive** and open the login link from the job page in the laptop's browser.
+   One login covers all channels; the app only sees files it made itself (scope drive.file).
+3. Phone: install **Autosync for Google Drive** (MetaCtrl), sync the Drive folder `Shorts for phone`
+   with a phone folder, sync method **two-way**.
+
+Every day: open the synced folder (or gallery), post each Short in the YouTube app (+, Short, pick it
+from the gallery, Add sound, paste the title from its .txt exactly, Schedule at the time in the
+.txt). Within 30 minutes the dashboard finds the upload by its title, links it for stats, and moves
+the Drive files to the trash, so Autosync removes them from the phone. "Check now" on the channel's
+Settings page does it right away.

@@ -23,7 +23,7 @@ from .config import ROOT, Settings
 
 log = logging.getLogger(__name__)
 
-LIGHT = {"connect", "sources", "stats"}  # commands that don't need the CPU
+LIGHT = {"connect", "sources", "stats", "connect-drive", "phone-check"}  # commands that don't need the CPU
 
 
 def submit(conn: sqlite3.Connection, channel: str | None, args: list[str], label: str | None = None) -> int:

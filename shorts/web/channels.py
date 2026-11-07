@@ -31,6 +31,8 @@ def form_to_data(form, base: dict) -> dict:
     if "niche_tags" in form:
         data["niche_tags"] = taglayers.pick(_lines(form["niche_tags"]))
     data["search_terms"] = _lines(form.get("search_terms"))
+    if "upload_via" in form:
+        data["upload_via"] = "phone" if form["upload_via"] == "phone" else "api"
     if "video_type" in form:
         data["video_type"] = form["video_type"] or "classic"
         data["meta_niche"] = form.get("meta_niche") or None
@@ -149,7 +151,13 @@ def page(cid: str):
     found = json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else None
     connect_job = conn().execute("""SELECT * FROM jobs WHERE channel=? AND command LIKE '["connect"%'
                                     ORDER BY id DESC LIMIT 1""", (cid,)).fetchone()
+    from .. import drive
+    drive_job = conn().execute("""SELECT * FROM jobs WHERE command LIKE '["connect-drive"%'
+                                  ORDER BY id DESC LIMIT 1""").fetchone()
+    on_drive = conn().execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='on_drive'", (cid,)).fetchone()[0]
     return render_template("channel_form.html", **_context(data), ch=ch, music=music, tracks=tracks,
+                           drive_connected=drive.connected(settings()), drive_job=drive_job, on_drive=on_drive,
+                           drive_folder=settings().drive_folder,
                            connected=token_path(settings(), cid).exists(),
                            found=found, connect_job=connect_job, created=request.args.get("created"),
                            saved=request.args.get("saved"))
@@ -176,6 +184,22 @@ def connect(cid: str):
         runner().stop(conn(), jid)
     args = ["connect"] + (["--fresh"] if request.form.get("fresh") else [])
     return start_job(cid, args, "Connect YouTube")
+
+
+@bp.post("/channels/<cid>/connect-drive")
+def connect_drive(cid: str):
+    channel_or_404(cid)
+    # Same login port as Connect YouTube: stop any login still waiting.
+    for (jid,) in conn().execute("""SELECT id FROM jobs WHERE (command LIKE '["connect"%' OR command LIKE '["connect-drive"%')
+                                     AND status IN ('queued', 'running')""").fetchall():
+        runner().stop(conn(), jid)
+    return start_job(None, ["connect-drive"], "Connect Google Drive")
+
+
+@bp.post("/channels/<cid>/phone-check")
+def phone_check(cid: str):
+    channel_or_404(cid)
+    return start_job(None, ["phone-check"], "Check for Shorts posted from the phone")
 
 
 @bp.post("/channels/<cid>/confirm")

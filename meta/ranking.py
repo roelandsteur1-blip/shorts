@@ -124,7 +124,7 @@ def make(niche: str, n: int, lib: dict | None = None) -> list[dict]:
             used.add(cands[it["clip"]]["id"])
         idx = sum(1 for m in made if m["niche"] == niche) + len(results) + 1
         out = out_dir / (f"ranking-{datetime.now():%Y%m%d-%H%M%S}-{idx}.mp4" if lib else f"{niche}-ranking-{idx:03d}.mp4")
-        track = pick_track(conn)
+        track = pick_track(conn, lib)
         secs = render_segments(segs, track, out)
         rec = {"niche": niche, "file": str(out), "title": data.get("title", ""), "heading": heading,
                "seconds": round(secs, 1),

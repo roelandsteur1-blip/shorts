@@ -23,6 +23,8 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
         from ..channels import add_video_types, seed_channels
         add_video_types(settings)  # older channel files: video_type = "classic"
         seed_channels(settings)    # new channels prepared in config/channel-seeds
+        from ..drive import start_checker
+        start_checker(settings)    # upload via phone: spot Shorts posted from the phone every 30 min
 
     from . import bench, channels, footage_review, home, jobs, library, music, review, schedule, sources, stats, voices
     for module in (home, review, jobs, library, sources, music, voices, channels, schedule, stats, bench, footage_review):

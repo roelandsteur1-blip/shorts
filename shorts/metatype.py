@@ -110,6 +110,7 @@ def _one(conn: sqlite3.Connection, settings: Settings, channel: Channel, niche: 
             "SELECT title FROM shorts WHERE channel=? AND title IS NOT NULL ORDER BY id DESC LIMIT 40", (channel.id,))],
         "subjects": past_subjects(conn, channel.id),
         "name": channel.name, "handle": "@" + channel.id,
+        "no_music": (channel.upload_via or "api") == "phone",
     }
     if settings.collector:
         # Topic first with the new footage collector; today's footage-first maker of the same

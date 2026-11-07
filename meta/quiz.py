@@ -134,7 +134,7 @@ def make(niche: str, n: int, lib: dict | None = None) -> list[dict]:
                          "overlay": overlay(question, lvl, None, r["answer"], r.get("fact"))})
         idx = sum(1 for m in made if m["niche"] == niche) + len(results) + 1
         out = out_dir / (f"quiz-{datetime.now():%Y%m%d-%H%M%S}-{idx}.mp4" if lib else f"{niche}-quiz-{idx:03d}.mp4")
-        track = pick_track(conn)
+        track = pick_track(conn, lib)
         secs = render_segments(segs, track, out)
         rec = {"niche": niche, "file": str(out), "title": data.get("title", ""), "seconds": round(secs, 1),
                "rounds": [{"answer": r["answer"], "fact": r.get("fact"), "footage": cands[r["clip"]]["title"]}

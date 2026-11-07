@@ -225,7 +225,9 @@ def black_bars(path: str, start: float) -> str | None:
     return f"crop={w}:{h}:{x}:{y}"
 
 
-def pick_track(conn):
+def pick_track(conn, lib=None):
+    if (lib or {}).get("no_music"):  # channel uploads via the phone: the sound is added in the app
+        return None
     rows = conn.execute("SELECT path, start FROM tracks WHERE status='ok'").fetchall()
     rows = [r for r in rows if r["path"] and Path(r["path"]).exists()]
     return random.choice(rows) if rows else None
@@ -329,7 +331,7 @@ def make(niche: str, n: int, seed_avoid: list[str], lib: dict | None = None) -> 
         out = out_dir / (f"textcard-{datetime.now():%Y%m%d-%H%M%S}-{idx}.mp4" if lib else f"{niche}-{idx:03d}.mp4")
         card = card_image(text, post.get("highlight", []), (lib or {}).get("name") or f"{topic} Facts",
                           (lib or {}).get("handle") or f"@{niche}facts", colour)
-        track = pick_track(conn)
+        track = pick_track(conn, lib)
         render(card, clip, track, secs, out)
         rec = {"niche": niche, "file": str(out), "title": post.get("title", ""), "text": text,
                "fixed": bool(c.get("fix")), "visual": clip["query"], "scene_id": clip["id"],

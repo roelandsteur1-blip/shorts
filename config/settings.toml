@@ -47,6 +47,10 @@ upload_quota = 100
 # unverified channels); going over it fails with uploadLimitExceeded. The rest stay approved and
 # go up on the next run. Publishing stays at the channel's uploads_per_day / publish_times_utc.
 channel_uploads_per_day = 5
+# Channels set to "Upload via phone" get their Shorts (no music) in this Google Drive folder,
+# one subfolder per channel; times in the notes are in phone_timezone.
+drive_folder = "Shorts for phone"
+phone_timezone = "Europe/Amsterdam"
 
 # Background music (Music page). 'make' downloads CC0 / public-domain music from Openverse (and
 # Freesound once its free key is saved) when a channel has fewer usable tracks than this. 0 = never;

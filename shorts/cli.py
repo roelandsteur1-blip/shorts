@@ -93,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     pcn = sub.add_parser("connect", help="log in to YouTube for this channel and show which channel it is")
     pcn.add_argument("--fresh", action="store_true", help="forget the saved login first (other account)")
 
+    sub.add_parser("connect-drive", help="upload via phone: log in to Google Drive (one login for all channels)")
+    sub.add_parser("phone-check", help="upload via phone: link Shorts posted from the phone, clean up Drive")
+
     pstat = sub.add_parser("stats", help="8. fetch analytics for uploaded Shorts")
     pstat.add_argument("--all", action="store_true", help="every channel with a YouTube login")
 
@@ -224,6 +227,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"logged in: YouTube channel '{found['title']}' ({found['id']})")
         if channel.youtube_channel_id and channel.youtube_channel_id != found["id"]:
             print(f"!! this is not the channel confirmed for '{channel.id}' ({channel.youtube_channel_id})")
+    elif args.cmd == "connect-drive":
+        from .drive import connect as connect_drive
+        print(f"logged in to Google Drive; Shorts for the phone go to the folder '{connect_drive(settings)}'")
+    elif args.cmd == "phone-check":
+        from .drive import check_all
+        print(check_all(settings))
     elif args.cmd == "stats":
         if args.all:
             from .upload import fetch_stats_all

@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS shorts (
     tags           TEXT,
     status         TEXT NOT NULL DEFAULT 'planned',
         -- planned, scripted, checked, rendered, approved, rejected, scheduled, uploaded (private,
-        -- no publish time), failed
+        -- no publish time), failed, on_drive (upload via phone: waiting in Google Drive)
     factcheck_ok   INTEGER,                    -- 1 all facts supported, 0 at least one flagged
     video_path     TEXT,
     duration       REAL,
@@ -326,7 +326,8 @@ ADDED_COLUMNS = [
     ("yt_sync", "subscribers", "INTEGER"),                 # channel subscriber count (Data API; None = hidden)
     ("yt_sync", "subscribers_at", "TEXT"),
     ("blocks", "clip_start", "REAL"),                      # where in the source video a b-roll block starts (inpoint.py)
-    ("scenes", "pe", "BLOB"),                              # 3 Perception Encoder vectors, float16 (embed.py); b'' = unreadable
+    ("scenes", "pe", "BLOB"),
+    ("shorts", "drive_files", "TEXT"),                     # JSON Drive file ids while a phone Short waits on Drive (drive.py)                              # 3 Perception Encoder vectors, float16 (embed.py); b'' = unreadable
 ]
 
 

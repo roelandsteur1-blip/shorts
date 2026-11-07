@@ -218,7 +218,7 @@ def ranking(niche: str, lib: dict) -> list[dict]:
         segs[-1]["seconds"] += rk.OUTRO
         _used(lib, [it["name"] for it in items])
         out = _out(lib, "ranking")
-        track = pick_track(conn)
+        track = pick_track(conn, lib)
         secs = render_segments(segs, track, out)
         return [{"niche": niche, "file": str(out), "title": data.get("title", ""), "heading": heading,
                  "seconds": round(secs, 1),
@@ -260,7 +260,7 @@ def quiz(niche: str, lib: dict) -> list[dict]:
             segs.append({"clip": r["clip"], "offset": t, "seconds": qz.REVEAL,
                          "overlay": qz.overlay(question, lvl, None, r["answer"], r.get("fact"))})
         out = _out(lib, "quiz")
-        track = pick_track(conn)
+        track = pick_track(conn, lib)
         secs = render_segments(segs, track, out)
         return [{"niche": niche, "file": str(out), "title": data.get("title", ""), "seconds": round(secs, 1),
                  "rounds": [{"answer": r["answer"], "fact": r.get("fact"), "footage": r["clip"]["title"]}
@@ -311,7 +311,7 @@ def textcard(niche: str, lib: dict) -> list[dict]:
             out = _out(lib, "textcard")
             card = tc.card_image(text, post.get("highlight", []), lib.get("name") or f"{topic} Facts",
                                  lib.get("handle") or f"@{niche}facts", colour)
-            track = pick_track(conn)
+            track = pick_track(conn, lib)
             tc.render(card, clip, track, secs, out)
             return [{"niche": niche, "file": str(out), "title": post.get("title", ""), "text": text,
                      "fixed": bool(fix), "visual": post["subject"], "scene_id": sid, "footage": clip["title"],

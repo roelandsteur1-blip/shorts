@@ -183,6 +183,10 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
     if channel.youtube_channel_id and yt_channel != channel.youtube_channel_id:
         raise RuntimeError(f"the YouTube login for '{channel.name}' is for another channel ({yt_channel}): "
                            "use Connect YouTube on its Settings page")
+    # Shorts posted from the phone (upload via phone, shorts/drive.py): link them by title.
+    from . import drive
+    for vid, sid in drive.match(conn, channel, items, now).items():
+        ours[vid] = conn.execute("SELECT id, youtube_id, publish_at, status FROM shorts WHERE id=?", (sid,)).fetchone()
 
     videos = []
     for vid, it in items.items():
@@ -296,4 +300,8 @@ def _sync(conn: sqlite3.Connection, settings: Settings, channel: Channel, intera
                             yt_channel_id=excluded.yt_channel_id, subscribers=excluded.subscribers,
                             subscribers_at=excluded.subscribers_at""",
                      (channel.id, through, yt_channel, subs))
+    try:
+        drive.cleanup(conn, settings)  # Drive files of Shorts that are on YouTube now
+    except Exception as e:  # noqa: BLE001 - Drive trouble must not fail the stats
+        log.warning("Drive cleanup: %s", e)
     return sum(1 for v in live if v["is_short"])

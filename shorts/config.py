@@ -59,6 +59,8 @@ class Settings:
     restock_per_term: int = 2         # videos per search term in one automatic restock
     upload_quota: int = 100           # uploads per day for the Google Cloud project (all channels)
     channel_uploads_per_day: int = 5  # uploads per channel per 24 hours (YouTube's own per-channel limit)
+    drive_folder: str = "Shorts for phone"     # upload via phone: Drive folder (one subfolder per channel)
+    phone_timezone: str = "Europe/Amsterdam"   # publish times in the Drive notes and file names
     broad_tags: list[str] = field(default_factory=lambda: list(BROAD_TAGS))  # tag layer 3, every Short
     music_min_tracks: int = 30        # 'make' fetches CC0 music when the shared library has fewer tracks (0 = never)
     config_root: Path | None = None   # config folder these settings came from; default CONFIG_DIR
@@ -126,6 +128,9 @@ class Channel:
     # (textcard, quiz, ranking, mix). meta_niche: the meta maker's topic set; empty = guessed from id/name.
     video_type: str = "classic"
     meta_niche: str | None = None
+    # "api": the pipeline uploads to YouTube. "phone": Shorts are made without music and go to Google
+    # Drive instead; Roeland posts them in the YouTube app with a trending sound (shorts/drive.py).
+    upload_via: str = "api"
     # Footage archives the collector searches for this channel, ticked on the channel's Source test
     # page (shorts/sourcetest.py); empty = Roeland's round-1 pick for its niche.
     collector_sources: list[str] = field(default_factory=list)

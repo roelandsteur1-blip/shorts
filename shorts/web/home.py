@@ -118,6 +118,17 @@ def warnings(cards: list[dict], now: datetime | None = None) -> list[dict]:
             out.append({"channel": ch, "text": f"footage running low: {card['footage_left']} Shorts left "
                                                f"(from {card['footage_videos']} videos); the next Make downloads more",
                         "link": f"/make?channel={ch.id}"})
+        if (ch.upload_via or "api") == "phone":
+            from .. import drive
+            if not drive.connected(s):
+                out.append({"channel": ch, "text": "uploads via the phone, but Google Drive is not connected",
+                            "link": f"/channels/{ch.id}"})
+            late = conn().execute("""SELECT COUNT(*) FROM shorts WHERE channel=? AND status='on_drive'
+                                     AND publish_at < ?""", (ch.id, now.strftime("%Y-%m-%dT%H:%M:%SZ"))).fetchone()[0]
+            if late:
+                out.append({"channel": ch, "text": f"{late} Short(s) on Drive are past their publish time and not "
+                                                   "found on YouTube yet (post them, with exactly the title in the .txt)",
+                            "link": f"/channels/{ch.id}"})
         if not card["connected"]:
             continue  # not uploading yet: an empty schedule is expected
         days = [(now + timedelta(days=i)).date() for i in range(1, 8)]

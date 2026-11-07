@@ -296,6 +296,10 @@ def upload_approved(conn: sqlite3.Connection, settings: Settings, channel: Chann
 
     from .render import metadata
 
+    from . import drive
+    if drive.is_phone(channel):
+        # Upload via phone: to Google Drive instead (no YouTube quota used); returns Short ids.
+        return [str(i) for i in drive.send_approved(conn, settings, channel, limit)]
     rows = conn.execute("SELECT * FROM shorts WHERE channel=? AND status='approved' ORDER BY id",
                         (channel.id,)).fetchall()
     if limit is not None:
@@ -386,12 +390,16 @@ def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
     """'Daily upload': every channel uploads its approved Shorts, up to channel_uploads_per_day,
     then fetches stats. Several channels upload at once; the shared API quota is divided over them
     first (in channel order), so together they never go over it."""
+    from . import drive
     from .config import list_channels, load_channel
 
     left = settings.upload_quota - uploads_today(conn)
-    share: dict[str, int] = {}
+    share: dict[str, int | None] = {}
     for cid in list_channels(settings.config_dir):
         ch = load_channel(cid, settings.config_dir)
+        if drive.is_phone(ch):
+            share[cid] = None  # goes to Drive: no YouTube quota, every approved Short
+            continue
         approved = conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status='approved'",
                                 (cid,)).fetchone()[0]
         n = max(0, min(approved, settings.channel_uploads_per_day - channel_uploads_last_day(conn, ch), left))
@@ -399,7 +407,8 @@ def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
         left -= n
 
     def upload(c: sqlite3.Connection, ch: Channel) -> str:
-        return f"uploaded {len(upload_approved(c, settings, ch, limit=share[ch.id], interactive=False))}"
+        done = upload_approved(c, settings, ch, limit=share[ch.id], interactive=False)
+        return f"{len(done)} to Google Drive for the phone" if drive.is_phone(ch) else f"uploaded {len(done)}"
 
     out = _per_channel(settings, list(share), upload, UPLOADS_AT_ONCE)
     for cid, result in fetch_stats_all(conn, settings).items():

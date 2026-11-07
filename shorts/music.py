@@ -567,7 +567,10 @@ def track_scores(conn: sqlite3.Connection) -> dict[str, dict]:
 def pick(conn: sqlite3.Connection, settings: Settings, short_id: int, channel: Channel | None) -> sqlite3.Row | None:
     """The least-used track (over all channels) in the Short's mood (any mood when none fits),
     never the track the channel's previous Short got. Tracks whose Shorts did well count as used
-    less (track_scores), so music from the best Shorts comes back more often."""
+    less (track_scores), so music from the best Shorts comes back more often. None for a channel
+    that uploads via the phone: the trending sound is added in the YouTube app instead."""
+    if channel is not None and (channel.upload_via or "api") == "phone":
+        return None
     sync(conn, settings)
     tracks = [t for t in usable(conn) if Path(t["path"]).exists()]
     if not tracks:
