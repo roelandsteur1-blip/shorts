@@ -269,3 +269,37 @@ def test_detector_crop_in_render(tmp_path, monkeypatch):
     render._subject_paths(tmp_path, blocks, True, None)  # detector crop off
     assert asked == []
     assert json.loads((tmp_path / "framing.json").read_text())
+
+
+def test_quiz_never_repeats_a_channels_animals(conn, settings, tmp_path, monkeypatch):
+    llm = LLM([{"title": "Name all 3", "rounds": [{"answer": n, "fact": "f", "show": "s"}
+                                                   for n in ["Lion", "The lions", "Okapi", "Axolotl", "Tapir", "Quokka"]]}])
+    lib = _lib(conn, settings, tmp_path, llm, ["Lion", "Okapi", "Axolotl", "Tapir"])
+    lib["subjects"] = ["lion", "Polar bear"]
+    monkeypatch.setattr(topic, "render_segments", lambda segs, track, out: 20.0)
+    recs = topic.quiz("planet", lib)
+    assert "Polar bear" in llm.prompts[0] and "focus" in llm.prompts[0]
+    assert [r["answer"] for r in recs[0]["rounds"]] == ["Okapi", "Axolotl", "Tapir"]
+    assert "Lion" not in lib["collector"].asked and "Okapi" in lib["subjects"]
+
+
+def _saved(conn, channel, fmt, texts, tags="[]"):
+    sid = conn.execute("INSERT INTO shorts (channel, format_id, title, tags, status) VALUES (?, ?, 't', ?, 'rendered')",
+                       (channel.id, fmt, tags)).lastrowid
+    for i, t in enumerate(texts):
+        conn.execute("INSERT INTO blocks (short_id, idx, text, seconds) VALUES (?, ?, ?, 6)", (sid, i, t))
+    conn.commit()
+
+
+def test_past_subjects_from_saved_meta_shorts(conn, channel):
+    _saved(conn, channel, "meta_quiz", ["Lion: Roars.", "Okapi", "Tapir: f"])
+    _saved(conn, channel, "meta_ranking", ["1. Blue whale (30 m)", "2. Fin whale (25 m)"])
+    _saved(conn, channel, "meta_textcard", ["Some post."], '["Axolotl", "salamander"]')
+    assert metatype.past_subjects(conn, channel.id) == ["Lion", "Okapi", "Tapir", "Blue whale", "Fin whale", "Axolotl"]
+
+
+def test_past_subjects_only_the_recent_shorts(conn, channel):
+    for i in range(12):
+        _saved(conn, channel, "meta_quiz", [f"Animal {i}: f"])
+    got = metatype.past_subjects(conn, channel.id)
+    assert len(got) == metatype.RECENT and "Animal 0" not in got and "Animal 11" in got

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from datetime import datetime
 from pathlib import Path
 
@@ -33,7 +34,9 @@ THEMES = {
     "ocean": ("sea animal", ["shark swimming", "whale", "octopus", "jellyfish", "sea turtle", "dolphins",
               "manta ray", "seal on ice"], "Can you name this sea animal?"),
     "planet": ("wild animal", ["elephant", "lion", "bear", "eagle flying", "giraffe", "zebra herd", "monkey",
-               "crocodile"], "Can you name this animal?"),
+               "crocodile", "kangaroo", "penguin", "tiger", "wolf", "hippopotamus", "rhinoceros", "owl",
+               "flamingo", "sloth", "koala", "camel", "gorilla", "moose", "parrot", "snake", "tortoise",
+               "cheetah", "bison", "fox", "lemur", "chameleon", "orangutan"], "Can you name this animal?"),
     "retrotech": ("old machine or device", ["old computer room", "vintage radio", "telephone switchboard",
                   "steam locomotive", "typewriter", "old television set", "early automobile", "printing press"],
                   "What is this machine?"),
@@ -98,7 +101,8 @@ def make(niche: str, n: int, lib: dict | None = None) -> list[dict]:
     results = []
     for k in range(n):
         need = ASK + COUNT + REVEAL + 0.5
-        cands = candidates(conn, settings, queries, used, need, per_query=4)
+        # a random 8 of the niche's searches, so a channel's quizzes don't all show the same animals
+        cands = candidates(conn, settings, random.sample(queries, min(8, len(queries))), used, need, per_query=4)
         if len(cands) < 3:
             log(f"[{niche}] not enough footage for a quiz")
             break

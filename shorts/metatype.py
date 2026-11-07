@@ -6,6 +6,7 @@ from edited text: reject it and make a new one instead."""
 from __future__ import annotations
 
 import json
+import re
 import logging
 import sqlite3
 
@@ -107,6 +108,7 @@ def _one(conn: sqlite3.Connection, settings: Settings, channel: Channel, niche: 
         "used": db.used_scene_ids(conn, channel.id),
         "avoid": [r[0] for r in conn.execute(
             "SELECT title FROM shorts WHERE channel=? AND title IS NOT NULL ORDER BY id DESC LIMIT 40", (channel.id,))],
+        "subjects": past_subjects(conn, channel.id),
         "name": channel.name, "handle": "@" + channel.id,
     }
     if settings.collector:
@@ -129,6 +131,34 @@ def _one(conn: sqlite3.Connection, settings: Settings, channel: Channel, niche: 
         from meta import ranking
         recs = ranking.make(niche, 1, lib=lib)
     return [dict(r, kind=kind) for r in recs]
+
+
+RECENT = 10  # Shorts: a subject may come back, just not within the channel's last 10 (Roeland, 7 Nov 2026)
+
+
+def past_subjects(conn: sqlite3.Connection, channel_id: str, limit: int = RECENT) -> list[str]:
+    """What this channel's last `limit` meta Shorts showed, oldest first: quiz answers and ranking
+    items (from their blocks) and text cards' tags. Topic-first makers skip these for now; older
+    subjects may be used again."""
+    rows = conn.execute(
+        """SELECT s.id, s.format_id, s.tags, b.text FROM shorts s LEFT JOIN blocks b ON b.short_id = s.id
+           WHERE s.channel=? AND s.format_id LIKE 'meta_%' AND s.id IN (
+               SELECT id FROM shorts WHERE channel=? AND format_id LIKE 'meta_%' ORDER BY id DESC LIMIT ?)
+           ORDER BY s.id, b.idx""", (channel_id, channel_id, limit)).fetchall()
+    out: list[str] = []
+    for _sid, fmt, tags, text in rows:
+        if fmt == "meta_quiz" and text:
+            out.append(text.split(":")[0].strip())
+        elif fmt == "meta_ranking" and text:
+            m = re.match(r"\s*\d+\.\s*(.+?)(?:\s*\(.*\))?\s*$", text)
+            if m:
+                out.append(m.group(1))
+        elif fmt == "meta_textcard":
+            try:
+                out.extend(str(t) for t in json.loads(tags or "[]")[:1])
+            except ValueError:
+                pass
+    return [x for x in dict.fromkeys(out) if x]
 
 
 def describe(rec: dict) -> tuple[str, list[tuple[str, float]]]:
