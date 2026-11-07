@@ -2,10 +2,13 @@
 so the CLI stays the single source of truth and everything still works without the dashboard.
 
 One heavy job at a time (CPU encoding and the Claude limit are shared); the rest queue.
-Light jobs (logging in to YouTube) start right away."""
+Light jobs (logging in to YouTube) start right away.
+
+Jobs outlive the dashboard: a restart (server update, crash) leaves them running and the next
+dashboard picks them up again (Runner.adopt). On the server this needs KillMode=process in the
+systemd unit (deploy/shorts-dashboard.service), else systemd ends them with the dashboard."""
 from __future__ import annotations
 
-import atexit
 import json
 import logging
 import os
@@ -34,12 +37,65 @@ def submit(conn: sqlite3.Connection, channel: str | None, args: list[str], label
 
 
 def recover(conn: sqlite3.Connection) -> int:
-    """At dashboard start: jobs still marked running belonged to a dashboard that is gone
-    (dashboard restarted): mark them interrupted."""
-    n = conn.execute("""UPDATE jobs SET status='interrupted', finished_at=datetime('now')
-                         WHERE status='running'""").rowcount
+    """Jobs still marked running whose process is gone: mark them interrupted (or done/failed when
+    the process left its exit code). Jobs whose process is still alive are left running: the
+    Runner adopts them (a dashboard restart, e.g. a server update, no longer kills a make)."""
+    n = 0
+    for job in conn.execute("SELECT * FROM jobs WHERE status='running'").fetchall():
+        if alive(job):
+            continue
+        code = exit_code(job)
+        status = "interrupted" if code is None else ("done" if code == 0 else "failed")
+        conn.execute("UPDATE jobs SET status=?, exit_code=?, finished_at=datetime('now') WHERE id=?",
+                     (status, code, job["id"]))
+        n += status == "interrupted"
     conn.commit()
     return n
+
+
+def exit_file(log_path: str | Path) -> Path:
+    return Path(str(log_path) + ".exit")
+
+
+def exit_code(job: sqlite3.Row) -> int | None:
+    try:
+        return int(exit_file(job["log_path"]).read_text().strip())
+    except (TypeError, OSError, ValueError):
+        return None
+
+
+def alive(job: sqlite3.Row) -> bool:
+    """Is this job's process (the wrapper shell started by _launch) still running? Checks the
+    command line on Linux so a reused pid is not mistaken for the job."""
+    pid, log_path = job["pid"], job["log_path"]
+    if not pid or not log_path:
+        return False
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except FileNotFoundError:
+        return False
+    except OSError:  # no /proc (not Linux): pid check only
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    return str(exit_file(log_path)).encode() in cmdline
+
+
+class Adopted:
+    """A job process started by an earlier dashboard: not our child, so it is followed by pid
+    and its exit code is read from the file the wrapper shell writes."""
+
+    def __init__(self, job: sqlite3.Row):
+        self.job = job
+        self.pid = job["pid"]
+
+    def poll(self) -> int | None:
+        if alive(self.job):
+            return None
+        code = exit_code(self.job)
+        return -1 if code is None else code  # gone without an exit code: killed
 
 
 def tail(path: str | None, lines: int = 40) -> str:
@@ -80,7 +136,7 @@ class Runner:
         self.settings = settings
         self.command = command
         self.interval = interval
-        self.procs: dict[int, tuple[subprocess.Popen, int]] = {}  # job id -> (process, log offset)
+        self.procs: dict[int, tuple[subprocess.Popen | Adopted, int]] = {}  # job id -> (process, log offset)
         self.stopping: set[int] = set()
         self.lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -90,27 +146,20 @@ class Runner:
         if self._thread is None:
             self._thread = threading.Thread(target=self._loop, name="jobs", daemon=True)
             self._thread.start()
-            atexit.register(self.shutdown)
 
-    def shutdown(self) -> None:
-        """Dashboard closing: end running jobs too, so none keeps going unseen (it shows as
-        'interrupted' with a Finish / Run again button next time)."""
+    def adopt(self, conn: sqlite3.Connection) -> int:
+        """At start: follow jobs an earlier dashboard started that are still running; the rest
+        of the 'running' ones are marked interrupted. Returns how many were adopted."""
+        recover(conn)
         with self.lock:
-            procs = list(self.procs.items())
-            self.procs.clear()
-        if not procs:
-            return
-        for _, (proc, _) in procs:
-            kill_tree(proc)
-        conn = db.connect(self.settings.db_path)
-        conn.executemany("UPDATE jobs SET status='interrupted', finished_at=datetime('now') WHERE id=?",
-                         [(job_id,) for job_id, _ in procs])
-        conn.commit()
-        conn.close()
+            for job in conn.execute("SELECT * FROM jobs WHERE status='running'").fetchall():
+                if job["id"] not in self.procs:
+                    self.procs[job["id"]] = (Adopted(job), 0)
+            return len(self.procs)
 
     def _loop(self) -> None:
         conn = db.connect(self.settings.db_path)
-        recover(conn)
+        self.adopt(conn)
         # Footage from one-subject sources (NASA) gets its category right away, so the home page
         # counts are right before the first 'make' with this version.
         from .categorize import sort_pending
@@ -146,7 +195,11 @@ class Runner:
         env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
         with open(log_path, "wb") as out:
             try:
-                proc = subprocess.Popen(self.command(self.settings, job), stdout=out, stderr=subprocess.STDOUT,
+                # The shell writes the exit code next to the log, so a dashboard started later
+                # still learns how the job ended (see Adopted).
+                cmd = ["/bin/sh", "-c", '"$@"; c=$?; echo $c > "$0"; exit $c', str(exit_file(log_path)),
+                       *self.command(self.settings, job)]
+                proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT,
                                         stdin=subprocess.DEVNULL, cwd=str(ROOT), env=env,
                                         start_new_session=True)  # own group: Stop also ends ffmpeg/claude
             except OSError as e:
@@ -195,7 +248,7 @@ class Runner:
                 conn.commit()
 
 
-def kill_tree(proc: subprocess.Popen) -> None:
+def kill_tree(proc: subprocess.Popen | Adopted) -> None:
     if proc.poll() is not None:
         return
     try:

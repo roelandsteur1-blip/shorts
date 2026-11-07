@@ -58,7 +58,8 @@ Install Tailscale on the laptop and phone with the same account; the dashboard i
 - Dashboard: the Tailscale address.
 - Logs: `journalctl -u shorts-dashboard -f`, job logs in `~/shorts-data/logs`.
 - Update the code: `cd ~/shorts && git fetch origin main && git reset --hard origin/main && sudo systemctl restart shorts-dashboard`
-  (running jobs stop and show as interrupted).
+  (running jobs keep going and the restarted dashboard picks them up again; needs KillMode=process
+  in the installed unit, see "Jobs through restarts" below).
 - Backups: every night to `~/shorts-data/backups` (7 kept). Copy one to the laptop now and then:
   `scp -i KEY SERVER:shorts-data/backups/<newest>.db D:\shorts-backups\`.
 - Connect a YouTube channel: run `ssh -i KEY -L 8765:localhost:8765 SERVER` on the laptop, click
@@ -113,3 +114,13 @@ from the gallery, Add sound, paste the title from its .txt exactly, Schedule at 
 .txt). Within 30 minutes the dashboard finds the upload by its title, links it for stats, and moves
 the Drive files to the trash, so Autosync removes them from the phone. "Check now" on the channel's
 Settings page does it right away.
+
+## Jobs through restarts
+
+Since 2026-11-07 a dashboard restart (an update, a crash) no longer kills a running make: the job
+keeps running and the new dashboard follows it again. The unit file needs `KillMode=process` for
+that. On a server set up before that date, run once:
+
+    sudo sed -i 's/^KillMode=control-group/KillMode=process/' /etc/systemd/system/shorts-dashboard.service && sudo systemctl daemon-reload
+
+(Jobs started before this version ran still end with a restart; jobs started after it survive.)

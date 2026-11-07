@@ -103,14 +103,39 @@ def test_dashboard_listens_on_localhost_only(settings, monkeypatch):
     assert seen["host"] == "127.0.0.1"
 
 
-def test_shutdown_interrupts_running_jobs(conn, settings):
-    runner = jobs.Runner(settings, command=fake_command("import time; time.sleep(30)"))
-    a = jobs.submit(conn, "space", ["make", "-n", "1"])
-    runner.tick(conn)
-    proc = runner.procs[a][0]
-    runner.shutdown()
-    assert proc.wait(timeout=10) is not None
-    assert conn.execute("SELECT status FROM jobs WHERE id=?", (a,)).fetchone()[0] == "interrupted"
+def test_jobs_survive_a_dashboard_restart(conn, settings):
+    """A new Runner (dashboard restarted) adopts a job that is still running, follows its
+    progress and reads its exit code; a job whose process is gone shows as interrupted."""
+    script = "import time; print('PROGRESS 1/2 render', flush=True); time.sleep(1.5); print('PROGRESS 2/2 render')"
+    first = jobs.Runner(settings, command=fake_command(script))
+    a = jobs.submit(conn, "space", ["make", "-n", "2"])
+    first.tick(conn)
+    proc = first.procs[a][0]
+    gone = jobs.submit(conn, "space", ["scenes"])
+    conn.execute("UPDATE jobs SET status='running', pid=999999999, log_path=? WHERE id=?",
+                 (str(settings.data_dir / "logs" / "nope.log"), gone))
+    conn.commit()
+    first.procs.clear()  # the old dashboard is gone; its job keeps running
+
+    second = jobs.Runner(settings, command=fake_command("raise SystemExit(9)"))
+    assert second.adopt(conn) == 1
+    status = dict(conn.execute("SELECT id, status FROM jobs").fetchall())
+    assert (status[a], status[gone]) == ("running", "interrupted")
+    run_until_idle(second, conn)
+    proc.wait(timeout=10)
+    j = conn.execute("SELECT * FROM jobs WHERE id=?", (a,)).fetchone()
+    assert (j["status"], j["exit_code"], j["progress_done"]) == ("done", 0, 2)
+
+    # Stop also works on an adopted job
+    first.command = fake_command("import time; time.sleep(30)")
+    b = jobs.submit(conn, "space", ["ingest"])
+    first.tick(conn)
+    first.procs.clear()
+    third = jobs.Runner(settings)
+    third.adopt(conn)
+    third.stop(conn, b)
+    run_until_idle(third, conn)
+    assert conn.execute("SELECT status FROM jobs WHERE id=?", (b,)).fetchone()[0] == "stopped"
 
 
 def test_sources_status_and_test_button(client, settings, monkeypatch):

@@ -12,8 +12,9 @@ Environment=PYTHONUNBUFFERED=1
 ExecStart=@REPO@/.venv/bin/python -m shorts dashboard
 Restart=always
 RestartSec=10
-# Stopping the service stops the jobs too (they show as 'interrupted' after a restart).
-KillMode=control-group
+# Only the dashboard itself is stopped: running jobs (a make) keep going through a restart or an
+# update and the new dashboard picks them up again. Stop a job with its Stop button.
+KillMode=process
 Nice=5
 
 [Install]
