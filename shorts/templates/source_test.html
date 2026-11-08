@@ -21,9 +21,9 @@
 </div>
 {% endif %}
 <div class="card"><h3 style="margin-top:0">{{ '3' if res else '2' }}. Tick the archives this channel uses</h3>
-<p class="muted">{% if saved_ticks %}Your saved choice is ticked.{% else %}Not chosen yet: ticked is the default from the research (round 1) for this niche.{% endif %}</p>
+<p class="muted">{% if saved_ticks %}Your saved choice is ticked.{% elif other %}Not chosen yet: ticked is the saved choice of {{ other.name }} (same topic). Save to keep it, or change it first.{% else %}Not chosen yet: ticked is the default from the research (round 1) for this niche.{% endif %} You don't need to run the test to tick archives.</p>
 <form method="post" action="/channels/{{ ch.id }}/source-test/save">
-{% for col in (res.columns if res else picked) %}<label style="display:block;margin:4px 0"><input type="checkbox" name="source" value="{{ col }}" {{ 'checked' if col in picked }}> {{ col }}{% if res %} <span class="muted">({{ res.usable.get(col, 0) }} of {{ res.subjects|length }} subjects found something)</span>{% endif %}</label>
+{% for col in choices %}<label style="display:block;margin:4px 0"><input type="checkbox" name="source" value="{{ col }}" {{ 'checked' if col in picked }}> {{ col }}{% if res and col in res.columns %} <span class="muted">({{ res.usable.get(col, 0) }} of {{ res.subjects|length }} subjects found something)</span>{% endif %}</label>
 {% endfor %}
 <p><button class="primary">Save</button></p>
 </form></div>

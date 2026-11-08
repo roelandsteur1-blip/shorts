@@ -43,10 +43,36 @@ def default_subjects(channel: Channel) -> list[str]:
     return (subs or list(channel.search_terms))[:SAMPLE]
 
 
-def picked(channel: Channel) -> list[str]:
-    """The archives the channel uses: its saved ticks, else Roeland's round-1 pick for its niche."""
+def choices(channel: Channel, res: dict | None = None) -> list[str]:
+    """The archives that can be ticked, with or without a source test: the library plus every
+    archive the collector can search, then anything still saved or shown by an older test."""
+    from .collector import COLUMNS
+    out = [LIBRARY] + list(COLUMNS)
+    for col in list((res or {}).get("columns") or []) + list(channel.collector_sources or []):
+        if col not in out:
+            out.append(col)
+    return out
+
+
+def borrowed(channel: Channel, config_dir: Path | None) -> Channel | None:
+    """Another channel of the same niche with saved ticks (a classic one first), whose pick a new
+    channel copies until it saves its own: warplanecards gets warplanedd's archives."""
+    if config_dir is None or not (n := niche(channel)):
+        return None
+    from .config import all_channels
+    same = [c for c in all_channels(config_dir)
+            if c.id != channel.id and c.collector_sources and niche(c) == n]
+    same.sort(key=lambda c: (c.video_type != "classic", c.id))
+    return same[0] if same else None
+
+
+def picked(channel: Channel, config_dir: Path | None = None) -> list[str]:
+    """The archives the channel uses: its saved ticks, else the saved pick of a channel with the
+    same niche, else Roeland's round-1 pick for its niche."""
     if channel.collector_sources:
         return list(channel.collector_sources)
+    if other := borrowed(channel, config_dir):
+        return list(other.collector_sources)
     return list(ROUND1_PICKS.get(niche(channel) or "", DEFAULT_PICK))
 
 

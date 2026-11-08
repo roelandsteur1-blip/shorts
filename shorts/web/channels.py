@@ -246,7 +246,10 @@ def source_test(cid: str):
     res = sourcetest.load(settings(), cid)
     job = conn().execute("""SELECT * FROM jobs WHERE channel=? AND command LIKE '["source-test"%'
                             ORDER BY id DESC LIMIT 1""", (cid,)).fetchone()
-    return render_template("source_test.html", ch=ch, res=res, job=job, picked=sourcetest.picked(ch),
+    other = None if ch.collector_sources else sourcetest.borrowed(ch, settings().config_dir)
+    return render_template("source_test.html", ch=ch, res=res, job=job,
+                           picked=sourcetest.picked(ch, settings().config_dir),
+                           choices=sourcetest.choices(ch, res), other=other,
                            saved_ticks=bool(ch.collector_sources),
                            subjects=(res or {}).get("subjects") or sourcetest.default_subjects(ch),
                            saved=request.args.get("saved"))
@@ -276,10 +279,8 @@ def source_test_sheet(cid: str):
 @bp.post("/channels/<cid>/source-test/save")
 def source_test_save(cid: str):
     from .. import sourcetest
-    channel_or_404(cid)
-    res = sourcetest.load(settings(), cid) or {}
-    allowed = set(res.get("columns") or []) | set(sourcetest.DEFAULT_PICK) | {
-        x for v in sourcetest.ROUND1_PICKS.values() for x in v}
+    ch = channel_or_404(cid)
+    allowed = set(sourcetest.choices(ch, sourcetest.load(settings(), cid)))
     ticks = [x for x in request.form.getlist("source") if x in allowed]
     if not ticks:
         abort(400, "tick at least one archive")

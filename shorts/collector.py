@@ -62,7 +62,7 @@ class Collector:
         from . import metatype, sourcetest
         self.conn, self.settings, self.channel = conn, settings, channel
         self.niche = metatype.niche_for(channel) or channel.id
-        columns = sourcetest.picked(channel)
+        columns = sourcetest.picked(channel, settings.config_dir)
         self.use_library = sourcetest.LIBRARY in columns
         self.archives = [COLUMNS[c] for c in columns if c in COLUMNS]
         self.used: set[int] = set(db.used_scene_ids(conn, channel.id))
