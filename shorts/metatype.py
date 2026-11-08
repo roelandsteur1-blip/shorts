@@ -20,7 +20,7 @@ TYPES = {
     "textcard": "Text card: one surprising fact as a post, archive clip below (6-15 s loop)",
     "quiz": "Quiz: 'Can you name this?' in 3 levels (~20 s)",
     "ranking": "Ranking: 4-5 things ranked by one number (~18 s)",
-    "mix": "Mix: text card, quiz and ranking in turn",
+    "mix": "Mix: classic, text card, quiz and ranking in turn",
 }
 META = ("textcard", "quiz", "ranking")
 # Topic sets of the meta maker; a channel's is guessed from its id and name unless set.
@@ -56,6 +56,17 @@ def available(niche: str | None) -> list[str]:
 
 def is_meta(channel: Channel) -> bool:
     return (channel.video_type or "classic") != "classic"
+
+
+def mix_classic_count(conn: sqlite3.Connection, channel: Channel, count: int) -> int:
+    """A mix channel takes turns: classic, text card, quiz, ranking (the ones its topic allows),
+    going on after its last Short. How many of the next `count` Shorts are classic ones."""
+    choices = ["classic"] + available(niche_for(channel))
+    last = conn.execute("SELECT format_id FROM shorts WHERE channel=? ORDER BY id DESC LIMIT 1",
+                        (channel.id,)).fetchone()
+    prev = (last[0][5:] if (last[0] or "").startswith("meta_") else "classic") if last else None
+    start = choices.index(prev) + 1 if prev in choices else 0
+    return sum(1 for i in range(count) if choices[(start + i) % len(choices)] == "classic")
 
 
 def _next_type(conn: sqlite3.Connection, channel: Channel, choices: list[str]) -> str:

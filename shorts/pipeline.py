@@ -68,8 +68,19 @@ def make_many(conn: sqlite3.Connection, settings: Settings, orders: list[tuple[C
     if not orders:
         return {}
     from . import metatype
-    meta = [(ch, count) for ch, count, _ in orders if metatype.is_meta(ch)]
-    orders = [o for o in orders if not metatype.is_meta(o[0])]
+    meta, classic = [], []
+    for ch, count, fmt in orders:
+        if not metatype.is_meta(ch):
+            classic.append((ch, count, fmt))
+            continue
+        n_classic = metatype.mix_classic_count(conn, ch, count) if ch.video_type == "mix" else 0
+        meta.append((ch, count - n_classic))
+        # A mix channel's classic turns (and classic Shorts an earlier run left unrendered) go the classic way.
+        if ch.video_type == "mix" and (n_classic or conn.execute(
+                "SELECT 1 FROM shorts WHERE channel=? AND status IN ('scripted','checked') AND "
+                "format_id NOT LIKE 'meta_%'", (ch.id,)).fetchone()):
+            classic.append((ch, n_classic, fmt))
+    orders = classic
     waiting = {}
     for ch, count in meta:  # text card / quiz / ranking channels: the meta maker, rendered right away
         if count > 0:

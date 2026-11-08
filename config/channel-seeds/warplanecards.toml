@@ -1,0 +1,33 @@
+# New channel (video type: textcard). Copied once into config/channels by the dashboard
+# (shorts/channels.py seed_channels); edit it there, on its Settings page.
+id = "warplanecards"
+name = "Warplane Cards"
+language = "en"
+niche = "surprising true facts about military aircraft and air battles, shown as text cards over archive film"
+video_type = "textcard"
+categories = []
+sources = ["nasa"]
+search_terms = []
+min_seconds = 6
+max_seconds = 30
+uploads_per_day = 1
+publish_times_utc = ["17:00"]
+niche_tags = ["warplanes", "military aviation", "aviation facts"]
+meta_niche = "warplane"
+
+[[formats]]
+id = "what_youre_seeing"
+title = "What you're actually seeing"
+brief = """
+Explain what is actually happening in the hero shot, the thing most viewers
+would not know. Open with a hook that makes the viewer look twice at the image.
+Build to one surprising fact near the end."""
+
+[style]
+font = "Montserrat ExtraBold"
+font_size = 88
+primary_color = "&H00FFFFFF"
+highlight_color = "&H0000D7FF"
+outline = 6
+margin_v = 760
+hook_font_size = 104

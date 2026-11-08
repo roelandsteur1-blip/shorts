@@ -113,7 +113,10 @@ def test_seed_channels_once(settings, tmp_path):
         (cfg / "channels" / seed.name).unlink(missing_ok=True)
     s = dataclasses.replace(settings, config_root=cfg)
     added = chans.seed_channels(s)
-    assert set(added) == {"historycards"}
+    assert set(added) == {"historycards", "warplanecards", "namethatwarplane", "warplanesranked", "warplanemix",
+                          "retrotechcards", "namethatgadget", "retrotechranked", "retrotechmix"}
+    times = [t for cid in added for t in load_channel(cid, cfg).publish_times_utc]
+    assert len(times) == len(set(times)) and all("17:00" <= t <= "22:00" for t in times)  # staggered slots
     for cid in added:
         ch = load_channel(cid, cfg)
         assert metatype.is_meta(ch) and chans.validate(chans.raw(s, cid), set()) == []
@@ -145,3 +148,38 @@ def test_retire_channels(settings, tmp_path):
 def test_meta_post_tags():
     assert metatype.post_tags({"kind": "quiz", "rounds": [{"answer": a} for a in "abcd"]}) == ["a", "b", "c"]
     assert metatype.post_tags({"kind": "textcard", "tags": ["x", "y"]}) == ["x", "y"]
+
+
+def test_nichestats_runs_read_only(conn, settings, monkeypatch, capsys):
+    import meta.nichestats as ns
+    conn.execute("INSERT INTO yt_videos (youtube_id, channel, state, views) VALUES ('a','space','live',100)")
+    conn.execute("INSERT INTO yt_videos (youtube_id, channel, state, views) VALUES ('b','space','live',300)")
+    conn.commit()
+    monkeypatch.setattr("shorts.config.load_settings", lambda *a, **k: settings)
+    monkeypatch.setattr("shorts.config.all_channels", lambda *a, **k: [])
+    ns.main()
+    out = capsys.readouterr().out
+    assert "space | space | - | 2 | 0 | 400 | 200" in out
+    assert "space | space | 2 | 400 | 200 | 0 | yes" in out
+
+
+def test_mix_takes_turns_with_classic(conn, settings, channel, monkeypatch):
+    mix = dataclasses.replace(channel, video_type="mix")
+    monkeypatch.setattr(metatype, "available", lambda niche: ["textcard", "quiz", "ranking"])
+    assert metatype.mix_classic_count(conn, mix, 4) == 1  # nothing yet: classic first
+    assert metatype.mix_classic_count(conn, mix, 8) == 2
+    conn.execute("INSERT INTO shorts (channel, format_id, status) VALUES ('space', 'what_youre_seeing', 'rendered')")
+    assert metatype.mix_classic_count(conn, mix, 3) == 0  # text card, quiz, ranking come first now
+    conn.execute("INSERT INTO shorts (channel, format_id, status) VALUES ('space', 'meta_ranking', 'rendered')")
+    assert metatype.mix_classic_count(conn, mix, 1) == 1
+    monkeypatch.setattr(metatype, "available", lambda niche: ["textcard"])  # topic without quiz/ranking
+    assert metatype.mix_classic_count(conn, mix, 4) == 2
+
+    monkeypatch.setattr(metatype, "available", lambda niche: ["textcard", "quiz", "ranking"])
+    made, lanes = [], []
+    monkeypatch.setattr(metatype, "make", lambda c, s, ch, n: made.append(n))
+    monkeypatch.setattr(pipeline, "run_steps", lambda c, s, ls, before_render=None: lanes.extend(ls))
+    monkeypatch.setattr(pipeline, "_music_check", lambda *a: a[2].set())
+    monkeypatch.setattr(pipeline, "_warm_up", lambda *a: None)
+    pipeline.make_many(conn, settings, [(mix, 5, None)], restock=False)
+    assert made == [3] and [(l.channel.id, l.count) for l in lanes] == [("space", 2)]
