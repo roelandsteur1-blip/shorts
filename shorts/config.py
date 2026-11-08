@@ -145,6 +145,9 @@ class Channel:
     # Footage archives the collector searches for this channel, ticked on the channel's Source test
     # page (shorts/sourcetest.py); empty = Roeland's round-1 pick for its niche.
     collector_sources: list[str] = field(default_factory=list)
+    # Paused (Pause button on Home / the channel page): 'Make for every channel' and 'Daily upload'
+    # skip it. Nothing is deleted; Resume turns it back on. Making for this one channel still works.
+    paused: bool = False
 
     def __post_init__(self):
         # Claimed Shorts over a minute can't earn at all, and evidence favours short ones.

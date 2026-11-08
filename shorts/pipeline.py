@@ -50,6 +50,9 @@ def top_up_orders(conn: sqlite3.Connection, channels: list[Channel], target: int
     orders, enough = [], []
     marks = ",".join("?" * len(WAITING))
     for ch in channels:
+        if ch.paused:
+            enough.append(f"{ch.name} (paused)")
+            continue
         have = conn.execute(f"SELECT COUNT(*) FROM shorts WHERE channel=? AND status IN ({marks})",
                             (ch.id, *WAITING)).fetchone()[0]
         unfinished = conn.execute("SELECT COUNT(*) FROM shorts WHERE channel=? AND status IN ('scripted','checked')",

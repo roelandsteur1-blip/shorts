@@ -125,6 +125,17 @@ def save(settings: Settings, data: dict, known_categories: set[str], new: bool =
     return []
 
 
+def set_paused(settings: Settings, channel_id: str, paused: bool) -> None:
+    """Pause button: 'Make for every channel' and 'Daily upload' skip a paused channel. Only this
+    one line of the file changes; nothing else is checked or rewritten."""
+    data = raw(settings, channel_id)
+    if paused:
+        data["paused"] = True
+    else:
+        data.pop("paused", None)
+    tomlw.write(path_for(settings, channel_id), data, HEADER)
+
+
 def add_video_types(settings: Settings) -> list[str]:
     """Channels from before video types get video_type = "classic" written into their file (what
     they always made). Returns the ids changed."""

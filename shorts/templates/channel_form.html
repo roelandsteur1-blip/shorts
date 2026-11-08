@@ -3,6 +3,10 @@
 {% if created %}<p class="ok">Channel saved. Finish the steps on the right, then press Try it.</p>{% endif %}
 {% if saved %}<p class="ok">Saved (previous version kept as {{ d.id }}.toml.bak).</p>{% endif %}
 {% for e in errors %}<p class="bad">{{ e }}</p>{% endfor %}
+{% if not new %}<form method="post" action="/channels/{{ d.id }}/pause"><input type="hidden" name="back" value="/channels/{{ d.id }}">
+<input type="hidden" name="paused" value="{{ '0' if d.paused else '1' }}">
+{% if d.paused %}<p class="warn">Paused: Make for every channel and Daily upload skip this channel. <button class="primary">Resume</button></p>
+{% else %}<p class="muted">Pause stops Make for every channel and Daily upload for this channel; nothing is deleted. <button>Pause channel</button></p>{% endif %}</form>{% endif %}
 <div class="grid side">
 <form method="post" action="{{ '/channels/new' if new else '/channels/' ~ d.id }}" id="chform">
 <div class="card"><h3 style="margin-top:0">Video type</h3>

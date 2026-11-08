@@ -35,12 +35,13 @@ def test_every_channel_gets_a_different_format_mix(channel):
     for cid in ["space", "history", "body", "ocean", "weather"]:
         ch = replace(channel, id=cid, formats=channel.formats[:1])
         fmts = formats.for_channel(ch)
-        assert len(fmts) == formats.FORMATS_PER_CHANNEL and fmts[0]["id"] == "what_youre_seeing"
-        assert len({f["id"] for f in fmts}) == 3
+        assert len(fmts) == formats.FORMATS_PER_CHANNEL + len(formats.ALWAYS) and fmts[0]["id"] == "what_youre_seeing"
+        assert len({f["id"] for f in fmts}) == len(fmts) and fmts[-1]["id"] == "can_we"
         mixes.add(tuple(f["id"] for f in fmts))
     assert len(mixes) > 1
     assert formats.for_channel(replace(channel, library_formats=False)) == channel.enabled_formats
     assert channel.format("myth_vs_fact")["title"] == "Myth vs fact"
+    assert channel.format("can_we")["title"] == "Can we...?"
 
 
 def test_prompt_offers_formats_and_saves_claudes_pick(library, settings, channel, monkeypatch):

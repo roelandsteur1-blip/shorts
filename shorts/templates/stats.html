@@ -7,12 +7,14 @@
 <span class="muted">Also runs after every Daily upload.</span></p>
 <h3>Channels compared at the same age</h3>
 <p class="muted">Every Short counted over its first {% for a in ages %}<a href="?days={{ a }}&csort={{ csort }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if a == days }}">{{ a }} day{{ 's' if a > 1 }}</a>{{ ' / ' if not loop.last }}{% endfor %},
-so a channel that started earlier doesn't look better. Small numbers: change from last week (Shorts that reached {{ days }} day{{ 's' if days > 1 }} in the last 7 days against the week before; YouTube's numbers lag about 3 days).</p>
+so a channel that started earlier doesn't look better. Bottom quarter: 3 in 4 Shorts get at least this many views; Over 1,000: share of Shorts that reach 1,000 views. A steady channel scores high on both; one that lives on a single hit doesn't. Small numbers: change from last week (Shorts that reached {{ days }} day{{ 's' if days > 1 }} in the last 7 days against the week before; YouTube's numbers lag about 3 days).</p>
 {% macro delta(r, k, fmt, scale=1) %}{% if k in r.change %}<br><small class="{{ 'ok' if r.change[k] > 0 else ('bad' if r.change[k] < 0 else 'muted') }}">{{ '+' if r.change[k] > 0 }}{{ fmt|format(r.change[k] * scale) }}</small>{% endif %}{% endmacro %}
 {% if compare %}<table><tr><th>Channel</th><th>Shorts</th>
 {% for k, label in compare_sorts.items() %}<th><a href="?days={{ days }}&csort={{ k }}{% if selected %}&channel={{ selected }}{% endif %}" class="{{ 'on' if k == csort }}">{{ label }}</a></th>{% endfor %}</tr>
 {% for r in compare %}<tr><td>{{ r.channel }}</td><td>{{ r.shorts }}</td>
 <td>{{ '{:,.0f}'.format(r.views) }}{{ delta(r, 'views', '%.0f') }}</td>
+<td>{{ '{:,.0f}'.format(r.floor) }}{{ delta(r, 'floor', '%.0f') }}</td>
+<td>{{ '%.0f'|format(100 * r.steady) }}%{{ delta(r, 'steady', '%.0f', 100) }}</td>
 <td>{{ '%.0f'|format(100 * r.engaged) }}%{{ delta(r, 'engaged', '%.0f', 100) }}</td>
 <td>{{ '%.0f'|format(r.viewed) }}%{{ delta(r, 'viewed', '%.0f') }}</td>
 <td>{{ '%.1f'|format(r.subs) }}{{ delta(r, 'subs', '%.1f') }}</td></tr>{% endfor %}</table>
@@ -22,6 +24,7 @@ so a channel that started earlier doesn't look better. Small numbers: change fro
 <div class="cards">{% for t in cards %}<div class="card"><h3 style="margin-top:0">{{ t.name }}</h3>
 <span class="stat"><b>{{ t.live or 0 }}</b>live</span><span class="stat"><b>{{ t.scheduled or 0 }}</b>scheduled</span>
 <span class="stat"><b>{{ '{:,}'.format(t.views or 0) }}</b>views</span>
+<span class="stat" title="Live Shorts, lifetime: half get more views than this"><b>{{ '{:,.0f}'.format(t.median) if t.median is not none else '–' }}</b>median views</span><span class="stat" title="Live Shorts, lifetime: 3 in 4 get at least this many views (bottom quarter). High = steady channel, low = it lives on a few hits"><b>{{ '{:,.0f}'.format(t.floor) if t.floor is not none else '–' }}</b>bottom quarter</span>
 <span class="stat" title="All live Shorts, lifetime: engaged views / views (YouTube Analytics). Studio shows both numbers, not this ratio."><b>{{ '%.0f%%'|format(t.engaged * 100) if t.engaged is not none else '–' }}</b>engaged</span><span class="stat" title="All live Shorts, lifetime, weighted by views like Studio's Average percentage viewed (over 100% = replays)"><b>{{ '%.0f%%'|format(t.pct) if t.pct is not none else '–' }}</b>avg viewed</span>
 <span class="stat" title="The channel's count on YouTube (rounded to 3 digits above 1,000)"><b>{{ '{:,}'.format(t.subscribers) if t.subscribers is not none else '–' }}</b>subscribers</span>
 <span class="stat" title="YouTube Analytics: subscribers gained on the Shorts' watch pages (1-3 days behind, unsubscribes not taken off)"><b>{{ t.subs if t.subs is not none else '–' }}</b>subs from Shorts</span>
@@ -34,6 +37,11 @@ so a channel that started earlier doesn't look better. Small numbers: change fro
 <table><tr><th>Channel</th><th>Reviewed</th><th>Rejected</th><th>Top reasons</th></tr>
 {% for r in reviews %}<tr><td>{{ r.channel }}</td><td>{{ r.reviewed }}</td><td class="{{ 'bad' if r.rate >= 0.3 }}">{{ '%.0f'|format(100 * r.rate) }}% ({{ r.rejected }})</td>
 <td class="muted">{% for reason, n in r.reasons %}{{ reason }} ({{ n }}){{ ', ' if not loop.last }}{% endfor %}</td></tr>{% endfor %}</table>{% endif %}
+<h3>Mini quests vs one thread <span class="muted" style="font-size:14px">test of the middle of classic Shorts</span></h3>
+<p class="muted">Half the classic Shorts get a small question answered right away in the middle (mini quests), half build one thread to the answer. Each Short is scored against its own channel's typical Short at the same age (engaged views), so the channel doesn't count. Wait for 20 or more Shorts on both sides before deciding.</p>
+{% if quests %}<table><tr><th></th><th>Shorts</th><th>vs own channel</th></tr>
+{% for q in quests %}<tr><td>{{ 'Mini quests' if q.quests else 'One thread' }}</td><td>{{ q.shorts }}</td><td>{{ q.score }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">No numbers yet: Shorts made from now on are in the test; they count once they are about 4-6 days old.</p>{% endif %}
 <h3>Voice-over vs text + music <span class="muted" style="font-size:14px">first {{ days }} day{{ 's' if days > 1 }}</span></h3>
 <p class="muted">Fair test: each Short is scored against its own channel's typical Short at the same age (1.0× = typical for that channel), so the topic of a channel doesn't count as voice.
 Only channels with both voiced and text-only Shorts count{% if voice.one_kind %} ({{ voice.one_kind }} channel{{ 's' if voice.one_kind > 1 }} with only one kind left out){% endif %}.

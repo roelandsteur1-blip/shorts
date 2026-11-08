@@ -20,7 +20,22 @@ VIDEOS = """SELECT v.*, s.voice, s.format_id FROM yt_videos v LEFT JOIN shorts s
 NOT_LIVE = {"scheduled": "Scheduled", "private": "Private", "processing": "Processing", "failed": "Failed", "gone": "Deleted"}
 
 
-COMPARE_SORTS = {"views": "Median views", "engaged": "Engaged", "viewed": "Avg viewed", "subs": "Subs per 1,000 views"}
+COMPARE_SORTS = {"views": "Median views", "floor": "Bottom quarter", "steady": "Over 1,000",
+                 "engaged": "Engaged", "viewed": "Avg viewed", "subs": "Subs per 1,000 views"}
+STEADY_VIEWS = 1000  # "Over 1,000": share of a channel's Shorts that reach this many views
+
+
+def floor(values: list) -> float:
+    """The bottom-quarter line (25th percentile): 3 in 4 Shorts do at least this. A channel that
+    lives on one lucky hit has a low floor; a steady one has a high floor (Danny Why: aim for
+    every video doing well, not for one going viral)."""
+    vals = sorted(v or 0 for v in values)
+    if not vals:
+        return 0.0
+    k = (len(vals) - 1) * 0.25
+    lo = int(k)
+    hi = min(lo + 1, len(vals) - 1)
+    return float(vals[lo] + (vals[hi] - vals[lo]) * (k - lo))
 
 
 def at_age(c: sqlite3.Connection, days: int) -> list[dict]:
@@ -38,6 +53,8 @@ def summarise(rows: list[dict]) -> dict | None:
         return None
     views = sum(r["views"] or 0 for r in rows)
     return {"shorts": len(rows), "views": median(r["views"] or 0 for r in rows),
+            "floor": floor([r["views"] for r in rows]),
+            "steady": sum((r["views"] or 0) >= STEADY_VIEWS for r in rows) / len(rows),
             "engaged": sum(r["engaged_views"] or 0 for r in rows) / views if views else 0.0,
             # weighted by views, like YouTube Studio
             "viewed": sum((r["avg_view_pct"] or 0) * (r["views"] or 0) for r in rows) / views if views else 0.0,
@@ -88,6 +105,16 @@ def voice_test(c: sqlite3.Connection, days: int) -> dict:
     return {"groups": groups, "channels": channels_both, "one_kind": one_kind}
 
 
+def quest_test(c: sqlite3.Connection, shown: list[str] | None = None) -> list[dict]:
+    """Mini quests vs one thread in the middle (A/B in shorts/script.py): each Short scored against
+    its own channel's usual at the same age (learn.py), so the channel mix doesn't count."""
+    from .. import learn
+    scores = [s for s in learn.short_scores(c) if shown is None or s["channel"] in shown]
+    groups = learn.group_scores(scores, lambda s: s["quests"])
+    return [{"quests": bool(k), "shorts": g["shorts"], "score": learn.percent(g["score"])}
+            for k, g in sorted(groups.items(), reverse=True)]
+
+
 def review_rates(c: sqlite3.Connection, days: int = 30) -> list[dict]:
     """Per channel, Shorts reviewed (made in the last `days` days): how many were rejected, and why."""
     reviewed = ("rejected", "approved", "scheduled", "uploaded")
@@ -134,6 +161,9 @@ def channel_cards(c: sqlite3.Connection, selected: str | None) -> list[dict]:
                   SUM(state = 'live' AND NOT hidden AND engaged_views IS NULL) AS waiting
              FROM yt_videos WHERE is_short GROUP BY channel""")}
     sync = {r["channel"]: dict(r) for r in c.execute("SELECT * FROM yt_sync")}
+    per: dict[str, list[int]] = {}
+    for r in c.execute("SELECT channel, views FROM yt_videos WHERE is_short AND state = 'live' AND NOT hidden"):
+        per.setdefault(r["channel"], []).append(r["views"] or 0)
     out = []
     ids = scope(selected)
     for ch in channels():
@@ -144,7 +174,9 @@ def channel_cards(c: sqlite3.Connection, selected: str | None) -> list[dict]:
         sy = sync.get(ch.id, {})
         out.append({"channel": ch.id, "name": ch.name, **t, "ok": ago(sy.get("ok_at")), "error": sy.get("error"),
                     "error_at": ago(sy.get("error_at")) if sy.get("error") else None,
-                    "through": sy.get("analytics_through"), "subscribers": sy.get("subscribers")})
+                    "through": sy.get("analytics_through"), "subscribers": sy.get("subscribers"),
+                    "median": median(per[ch.id]) if per.get(ch.id) else None,
+                    "floor": floor(per[ch.id]) if per.get(ch.id) else None})
     return out
 
 
@@ -181,7 +213,7 @@ def index():
     return render_template("stats.html", compare=keep(compare_channels(c, days, csort)), days=days, ages=AGES,
                            csort=csort, compare_sorts=COMPARE_SORTS, rows=rows, cards=channel_cards(c, selected),
                            not_live=not_live, not_live_names=NOT_LIVE, hidden=hidden, by_format=by_format,
-                           voice=voice, reviews=keep(review_rates(c)), sort=sort,
+                           voice=voice, reviews=keep(review_rates(c)), sort=sort, quests=quest_test(c, shown),
                            channels=picker_channels(selected), selected=selected, timings=summary(c),
                            claude=claude_usage(c))
 

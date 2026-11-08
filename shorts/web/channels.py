@@ -174,6 +174,20 @@ def save(cid: str):
     return redirect(url_for("channels.page", cid=cid, saved=1))
 
 
+@bp.post("/channels/<cid>/pause")
+def pause(cid: str):
+    """Pause / Resume button (Home card and channel page)."""
+    ch = channel_or_404(cid)
+    on = request.form.get("paused", "1") == "1"
+    chans.set_paused(settings(), cid, on)
+    msg = (f"{ch.name} paused: Make for every channel and Daily upload skip it" if on
+           else f"{ch.name} is running again")
+    back = request.form.get("back") or ""
+    if back.startswith("/channels/"):
+        return redirect(url_for("channels.page", cid=cid, saved=1))
+    return redirect(url_for("home.index", msg=msg))
+
+
 @bp.post("/channels/<cid>/connect")
 def connect(cid: str):
     channel_or_404(cid)

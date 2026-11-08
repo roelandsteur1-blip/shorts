@@ -347,6 +347,7 @@ ADDED_COLUMNS = [
     ("shorts", "drive_files", "TEXT"),
     ("shorts", "phone_key", "TEXT"),                       # upload via phone: the words he types as title (drive.key_words)
     ("shorts", "filled", "INTEGER"),
+    ("shorts", "quests", "INTEGER"),                       # A/B test of the middle: 1 = mini quests, 0 = one thread, NULL = before the test / meta
     ("shorts", "drive_at", "TEXT"),                        # upload via phone: when it went to Drive                       # upload via phone: 0 = posted, title etc. not set yet; 1 = set                     # JSON Drive file ids while a phone Short waits on Drive (drive.py)                              # 3 Perception Encoder vectors, float16 (embed.py); b'' = unreadable
 ]
 

@@ -68,6 +68,13 @@ BODY (the middle blocks): give no reason to swipe.
 - Every block is a step toward the answer: something the viewer needs to understand it, or a
   clue that builds toward it. Nothing else the archive video happens to show (other lessons,
   other scenes, other features) gets a block, however true. Cut any block the payoff doesn't need.
+- Each hero below has a "Middle:" line (a test of two ways to build the middle):
+  ONE THREAD: build the middle as above, every block a step toward the one answer.
+  MINI QUESTS: also give the viewer small rewards on the way, so nobody leaves halfway. One block
+  opens a small, concrete question about the subject ("So why no windows?") and the very next block
+  answers it at once; the answer is itself a surprising step toward the big answer. One such mini
+  question and answer (two when the Short has 7 or more blocks). The hook's big question stays open
+  and the last block still answers it; a mini answer never gives the payoff away.
 
 PAYOFF (the LAST block): the reward for watching.
 - It states the "answer" concretely, in words a viewer who knows nothing about the subject
@@ -277,6 +284,7 @@ def build_prompt(channel: Channel, fmt: dict | list[dict], heroes: list[dict], p
         f"  Keywords: {h.get('keywords') or ''}\n"
         f"  Description: {(h.get('description') or '').strip()[:2500]}\n"
         f"  The hero shot is {h['end'] - h['start']:.1f}s taken from {h['start']:.0f}s into this video."
+        f"\n  Middle: {'MINI QUESTS' if h.get('quests') else 'ONE THREAD'}"
         + sibling_note(h)
         + (f"\n  Clip menu (image {i + 1}): " + "; ".join(h["menu"]["lines"]) if h.get("menu", {}).get("lines") else "")
         for i, h in enumerate(heroes)
@@ -359,14 +367,14 @@ def save_script(conn: sqlite3.Connection, channel: Channel, fmt_id: str | list[s
     tags = taglayers.pick(data.get("tags") or [])
     cur = conn.execute(
         """INSERT INTO shorts (channel, format_id, hero_scene_id, topic, hook, title, description,
-                               tags, status, duration, mood, screen_title, say)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?, ?, ?, ?)""",
+                               tags, status, duration, mood, screen_title, say, quests)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scripted', ?, ?, ?, ?, ?)""",
         (channel.id, fmt_id, hero["scene_id"], data.get("topic"), blocks[0]["text"],
          (data.get("title") or "")[:100], data.get("description") or "", json.dumps(tags),
          sum(b["seconds"] for b in blocks),
          data.get("mood") if data.get("mood") in MOODS else None,
          clean_screen_title(data.get("screen_title")) if looks.title_bar(channel.style) != "off" else None,
-         clean_say(data.get("say"))),
+         clean_say(data.get("say")), None if hero.get("quests") is None else int(bool(hero["quests"]))),
     )
     short_id = cur.lastrowid
     conn.executemany(
@@ -452,6 +460,18 @@ def format_use(conn: sqlite3.Connection, channel: str) -> dict[str, int]:
               AND created_at >= datetime('now', '-14 days') GROUP BY format_id""", (channel,)).fetchall())
 
 
+def quest_split(n: int) -> list[bool]:
+    """A/B test of the middle (mini quests or one thread): half the Shorts of a batch each, in a
+    random order, so every channel tests both and stats compare them against the channel's usual
+    (Stats page, research/danny-why-lessons.md)."""
+    import random
+    out = [i % 2 == 0 for i in range(n)]
+    if random.random() < 0.5:
+        out = [not q for q in out]
+    random.shuffle(out)
+    return out
+
+
 def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel, fmt_id: str | None,
                   hero_scene_ids: list[int], batch_size: int = 5, on_batch=None) -> list[int]:
     """fmt_id: one format for all; None = Claude picks per Short from the channel's formats
@@ -463,6 +483,8 @@ def write_scripts(conn: sqlite3.Connection, settings: Settings, channel: Channel
     for i in range(0, len(hero_scene_ids), batch_size):
         progress.report(i, len(hero_scene_ids), "script")
         heroes = [hero_context(conn, sid) for sid in hero_scene_ids[i:i + batch_size]]
+        for h, q in zip(heroes, quest_split(len(heroes))):
+            h["quests"] = q
         taken: set[int] = set()  # one clip on one hero's menu only, so two Shorts never pick it both
         for h in heroes:
             h["menu"] = menu.build(conn, settings, channel, h["scene_id"], taken) if settings.script_sees_footage \

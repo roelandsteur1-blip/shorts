@@ -421,6 +421,8 @@ def upload_all(conn: sqlite3.Connection, settings: Settings) -> dict[str, str]:
     share: dict[str, int | None] = {}
     for cid in list_channels(settings.config_dir):
         ch = load_channel(cid, settings.config_dir)
+        if ch.paused:
+            continue  # paused on the dashboard: its approved Shorts wait until Resume
         if drive.is_phone(ch):
             share[cid] = None  # goes to Drive: no YouTube quota, every approved Short
             continue

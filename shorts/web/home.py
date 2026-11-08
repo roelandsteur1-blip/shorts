@@ -166,6 +166,8 @@ def warnings(cards: list[dict], now: datetime | None = None) -> list[dict]:
     s, out = settings(), []
     for card in cards:
         ch = card["ch"]
+        if ch.paused:
+            continue  # paused: nothing to fix until it runs again
         if login_expired_path(s, ch.id).exists():
             out.append({"channel": ch, "text": "YouTube login expired: connect YouTube again",
                         "link": f"/channels/{ch.id}"})
@@ -213,6 +215,7 @@ def index():
     chs = channels()
     yt = youtube_schedule(chs)
     cards = [channel_card(ch, yt.get(ch.id)) for ch in chs]
+    cards.sort(key=lambda c: c["ch"].paused)  # paused channels at the end
     shown = {ch.id for ch in shown_channels()}  # filter chips; Needs attention keeps every channel
     from ..drive import on_phone
     phone = on_phone(conn())

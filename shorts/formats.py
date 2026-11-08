@@ -33,18 +33,31 @@ LIBRARY = [
      "brief": "Show what makes the subject in the hero shot the first, biggest, fastest, oldest or last "
               "of its kind, and why that mattered. Only records you can source."},
 ]
-_BY_ID = {f["id"]: f for f in LIBRARY}
+# Offered to every channel that uses shared formats, on top of its mix (2026-11-08, Roeland's pick
+# from research/danny-why-lessons.md): kept out of LIBRARY so the existing mixes don't shift.
+ALWAYS = [
+    {"id": "can_we", "title": "Can we...?",
+     "brief": "Open with a 'can we' or 'what if' question a curious child would ask about the subject "
+              "in the hero shot (\"Could we throw our trash into a volcano?\", \"Can a plane fly "
+              "upside down?\"). Answer it step by step with real facts, each block one step, and end "
+              "with the clear answer and why. Only questions with a real, sourced answer, about what "
+              "the hero shot shows."},
+]
+_BY_ID = {f["id"]: f for f in LIBRARY + ALWAYS}
 
 
 def for_channel(channel) -> list[dict]:
     """The formats the script writer may choose from for this channel."""
     own = channel.enabled_formats
-    if not channel.library_formats or len(own) >= FORMATS_PER_CHANNEL:
+    if not channel.library_formats:
         return own
     have = {f["id"] for f in own}
+    always = [f for f in ALWAYS if f["id"] not in have]
+    if len(own) >= FORMATS_PER_CHANNEL:
+        return own + always
     start = zlib.crc32(channel.id.encode()) % len(LIBRARY)
     extra = [f for f in LIBRARY[start:] + LIBRARY[:start] if f["id"] not in have]
-    return own + extra[:FORMATS_PER_CHANNEL - len(own)]
+    return own + extra[:FORMATS_PER_CHANNEL - len(own)] + always
 
 
 def get(format_id: str) -> dict | None:

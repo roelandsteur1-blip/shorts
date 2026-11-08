@@ -15,8 +15,8 @@ Shorts <button class="primary">Make for every channel</button></form>
 {% endfor %}</div>{% endif %}
 {% include "_chips.html" %}
 <div class="cards">
-{% for c in cards %}<div class="card">
-<h2 style="margin:0">{{ c.ch.name }}</h2>
+{% for c in cards %}<div class="card"{% if c.ch.paused %} style="opacity:.6"{% endif %}>
+<h2 style="margin:0">{{ c.ch.name }}{% if c.ch.paused %} <span class="pill">Paused</span>{% endif %}</h2>
 <p class="muted" style="margin-top:2px">{{ c.ch.id }} · {{ c.ch.niche }} · <span class="pill">{{ (c.ch.video_type or 'classic')|capitalize }}</span> <span class="pill">{{ c.topic }}</span> ·
 {% if c.connected %}<span class="ok">YouTube connected</span>{% else %}<span class="warn">YouTube not connected</span>{% endif %}</p>
 <p><span class="stat"><b>{{ c.review }}</b>to review</span><span class="stat"><b>{{ c.approved }}</b>approved</span>
@@ -27,7 +27,9 @@ Shorts <button class="primary">Make for every channel</button></form>
 <p><a class="button primary" href="/make?channel={{ c.ch.id }}">Make Shorts</a>
 <a class="button" href="/review?channel={{ c.ch.id }}">Review</a>
 <a class="button" href="/schedule?channel={{ c.ch.id }}">Schedule</a>
-<a class="button" href="/channels/{{ c.ch.id }}">Settings</a></p>
+<a class="button" href="/channels/{{ c.ch.id }}">Settings</a>
+<form method="post" action="/channels/{{ c.ch.id }}/pause" class="inline"><input type="hidden" name="paused" value="{{ '0' if c.ch.paused else '1' }}">
+<button title="{{ 'Make for every channel and Daily upload include it again' if c.ch.paused else 'Make for every channel and Daily upload skip it; nothing is deleted' }}">{{ 'Resume' if c.ch.paused else 'Pause' }}</button></form></p>
 </div>{% endfor %}
 <div class="card"><h2 style="margin:0">Add channel</h2><p class="muted">New YouTube channel or one you already have.</p>
 <p><a class="button primary" href="/channels/new">Add channel</a></p></div>
