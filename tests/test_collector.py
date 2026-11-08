@@ -39,6 +39,32 @@ def test_choose_rules():
     assert col.choose([made("A")], set(), "ocean") is None  # Claude said no
 
 
+def verdict(shows=True, conf=5, era=True, vintage=3, interest=3.0):
+    return {"shows": shows, "confidence": conf, "why": "", "same_shot": True, "era_ok": era, "vintage": vintage,
+            "action": 3, "subject": 3, "wow": 3, "viral": 3, "looks": 3, "interest": interest}
+
+
+def test_old_film_is_a_preference_not_a_rule(settings, channel):
+    """Job 120 (8 Nov): a sure Vasa photo was dropped only for looking modern; every history
+    subject came back empty."""
+    c = col.Collector.__new__(col.Collector)
+    c.settings, c.niche, c._verify = settings, "history", None
+    c._judge = lambda clips, name, niche, show: {"A": verdict(era=False), "B": verdict(shows=False),
+                                                 "C": verdict(conf=3), "D": verdict(interest=1.5)}
+    clips = [dict(made(x), path="x.mp4") for x in "ABCD"]
+    assert c.check(clips, {"name": "The Vasa warship"}, 8.0) == {"A"}
+    modern, old = dict(made("M"), verdict=verdict(era=False, interest=4)), dict(made("O"), verdict=verdict(vintage=5))
+    assert col.choose([modern, old], {"M", "O"}, "history")["label"] == "O"  # old film still first
+    assert col.choose([modern], {"M"}, "history")["label"] == "M"
+
+
+def test_off_topic_pixabay_hits_dropped():
+    assert not col.on_topic({"source": "pixabay", "title": "pirate, ship, corsair, viking"}, "The Vasa warship")
+    assert not col.on_topic({"source": "pixabay", "title": "indian flag, independence day"}, "USS Constitution")
+    assert col.on_topic({"source": "pixabay", "title": "big ben, london, clouds"}, "Big Ben clock tower")
+    assert col.on_topic({"source": "commons_video", "title": "File:Anything.webm"}, "USS Constitution")
+
+
 def test_rights():
     assert col.rights({"source": "openverse", "licence": "by 2.0", "creator": "Jan", "provider": "flickr"}) == \
         ("CC BY 2.0", "Jan / flickr (CC BY 2.0)")

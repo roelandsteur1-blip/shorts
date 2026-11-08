@@ -12,7 +12,8 @@ research: final report", 5 November 2026).
    judges that also score how interesting a clip is: then the most interesting passing clip wins
    and clips under judge.MIN_INTEREST are not used. No BRISQUE or sharpness score: they didn't
    predict his marks.
-4. For old-footage niches (old cities, history, retro tech) an old-looking clip wins.
+4. For old-footage niches (old cities, history, retro tech) an old-looking clip wins, but a modern
+   clip is still used when nothing old shows the subject.
 
 A clip from an archive is added to the library (asset + one scene, with its licence and credit),
 so the rest of the program uses it like any other footage: render, credits, "used" checks.
@@ -103,7 +104,10 @@ class Collector:
                     else judge.judge(self.settings, clips, subject["name"], self.niche, show))
         for m in made:
             m["verdict"] = verdicts.get(m["label"])
-        return {lab for lab, v in verdicts.items() if judge.passes(v) and v["interest"] >= judge.MIN_INTEREST}
+        # Old film is a preference (choose()), not a rule: of museum ships, Big Ben or Pisa only
+        # modern footage exists, and the old-film rule left every history subject empty (job 120, 8 Nov).
+        return {lab for lab, v in verdicts.items()
+                if judge.passes(dict(v, era_ok=True)) and v["interest"] >= judge.MIN_INTEREST}
 
     # ---------- the collector ----------
 
@@ -177,7 +181,8 @@ class Collector:
         scorer, gates, keys = self.tools()
         if {"commons_photo", "commons_depicts"} & {s for s, _ in self.archives}:
             subject["qid"] = self._qid(subject)
-        cands = [c for c in pieces.candidates(subject, None, scorer, keys, sources=self.archives) if "error" not in c]
+        cands = [c for c in pieces.candidates(subject, None, scorer, keys, sources=self.archives)
+                 if "error" not in c and on_topic(c, subject["name"])]
         cands.sort(key=lambda c: (c["source"] not in VIDEO_FIRST, -(c.get("thumb_score") or 0)))
         if not cands:
             return None
@@ -247,6 +252,19 @@ def _research_tools() -> None:
             sys.path.append(str(site))
 
 
+STOP = {"the", "a", "an", "of", "and", "in", "on", "at", "to", "for", "ship", "clock", "old", "famous"}
+
+
+def on_topic(c: dict, name: str) -> bool:
+    """Pixabay is searched loosely: "The Vasa warship" gave a pirate ship, "USS Constitution" an
+    Indian flag (job 120, 8 Nov). Its hits only count when their tags name a word of the subject."""
+    if c.get("source") != "pixabay":
+        return True
+    words = {w for w in re.findall(r"[a-z0-9]+", name.lower()) if w not in STOP and len(w) > 2}
+    tags = set(re.findall(r"[a-z0-9]+", str(c.get("title") or "").lower()))
+    return bool(words & tags)
+
+
 def _note(rec: dict, pick: dict) -> None:
     v = pick.get("verdict")
     if v:
@@ -261,8 +279,10 @@ def choose(made: list[dict], ok: set[str], niche: str) -> dict | None:
     good = [m for m in made if m["label"] in ok and not (rejects & set(m["gates"].get("faults", [])))]
 
     def key(m):
-        old = niche in OLD_NICHES and (m["gates"].get("old_look") or 0) > AGE_CUT
-        return (m.get("kind") == "photo", not old, -((m.get("verdict") or {}).get("interest") or 0))
+        v = m.get("verdict") or {}
+        old = niche in OLD_NICHES and ((m["gates"].get("old_look") or 0) > AGE_CUT or
+                                       v.get("era_ok") is True and (v.get("vintage") or 0) >= 4)
+        return (m.get("kind") == "photo", not old, -(v.get("interest") or 0))
     good.sort(key=key)
     return good[0] if good else None
 
