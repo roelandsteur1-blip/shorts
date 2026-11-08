@@ -43,12 +43,25 @@ def default_subjects(channel: Channel) -> list[str]:
     return (subs or list(channel.search_terms))[:SAMPLE]
 
 
-def choices(channel: Channel, res: dict | None = None) -> list[str]:
-    """The archives that can be ticked, with or without a source test: the library plus every
-    archive the collector can search, then anything still saved or shown by an older test."""
+def test_columns(settings: Settings) -> list[str]:
+    """The columns a source test would show right now: the library, then every archive the test
+    searches (one that needs a key only when the key is saved). Same order as run()."""
+    from meta.collector import sweep
+    keys = sweep.load_keys(settings)
+    return [LIBRARY] + [n for n, _, k in sweep.sources_for(keys) if not k or keys.get(k)]
+
+
+def choices(channel: Channel, res: dict | None = None, settings: Settings | None = None) -> list[str]:
+    """The archives that can be ticked, with or without a source test: the same list a test shows
+    (its own columns after a test, else what a test would show now), then anything still saved."""
     from .collector import COLUMNS
-    out = [LIBRARY] + list(COLUMNS)
-    for col in list((res or {}).get("columns") or []) + list(channel.collector_sources or []):
+    if res and res.get("columns"):
+        out = list(res["columns"])
+    elif settings is not None:
+        out = test_columns(settings)
+    else:
+        out = [LIBRARY] + list(COLUMNS)
+    for col in list(channel.collector_sources or []):
         if col not in out:
             out.append(col)
     return out

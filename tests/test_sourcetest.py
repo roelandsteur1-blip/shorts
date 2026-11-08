@@ -83,18 +83,22 @@ def test_tick_without_a_test_and_copy_sibling_pick(client, settings, cfg):
     from shorts.collector import COLUMNS
     ch = load_channel("space", cfg)
     assert sourcetest.choices(ch) == [sourcetest.LIBRARY] + list(COLUMNS)
+    from meta.collector import sweep
+    every = [n for n, _, k in sweep.sources_for({})]
     page = client.get("/channels/space/source-test").data
     for col in COLUMNS:
-        assert col.encode() in page
-    r = client.post("/channels/space/source-test/save", data={"source": ["Commons video (name)", "Pixabay (B-roll)"]})
+        assert col == "Pixabay (B-roll)" or col.encode() in page  # Pixabay: no key in tests
+    for col in ("Internet Archive", "Prelinger", "NASA SVS"):  # same list as after a test
+        assert col in every and col.encode() in page
+    r = client.post("/channels/space/source-test/save", data={"source": ["Commons video (name)", "NASA video"]})
     assert r.status_code == 302
-    assert load_channel("space", cfg).collector_sources == ["Commons video (name)", "Pixabay (B-roll)"]
+    assert load_channel("space", cfg).collector_sources == ["Commons video (name)", "NASA video"]
     # a second space channel without ticks borrows the first one's pick
     text = (cfg / "channels" / "space.toml").read_text(encoding="utf-8")
     text = "\n".join(x for x in text.splitlines() if not x.startswith("collector_sources"))
     (cfg / "channels" / "spacetwo.toml").write_text(text.replace('id = "space"', 'id = "spacetwo"', 1), encoding="utf-8")
     two = load_channel("spacetwo", cfg)
     assert not two.collector_sources
-    assert sourcetest.picked(two, cfg) == ["Commons video (name)", "Pixabay (B-roll)"]
-    assert sourcetest.picked(two) != ["Commons video (name)", "Pixabay (B-roll)"]  # no config dir: research default
+    assert sourcetest.picked(two, cfg) == ["Commons video (name)", "NASA video"]
+    assert sourcetest.picked(two) != ["Commons video (name)", "NASA video"]  # no config dir: research default
     assert b"saved choice of" in client.get("/channels/spacetwo/source-test").data

@@ -249,7 +249,7 @@ def source_test(cid: str):
     other = None if ch.collector_sources else sourcetest.borrowed(ch, settings().config_dir)
     return render_template("source_test.html", ch=ch, res=res, job=job,
                            picked=sourcetest.picked(ch, settings().config_dir),
-                           choices=sourcetest.choices(ch, res), other=other,
+                           choices=sourcetest.choices(ch, res, settings()), other=other,
                            saved_ticks=bool(ch.collector_sources),
                            subjects=(res or {}).get("subjects") or sourcetest.default_subjects(ch),
                            saved=request.args.get("saved"))
@@ -280,7 +280,7 @@ def source_test_sheet(cid: str):
 def source_test_save(cid: str):
     from .. import sourcetest
     ch = channel_or_404(cid)
-    allowed = set(sourcetest.choices(ch, sourcetest.load(settings(), cid)))
+    allowed = set(sourcetest.choices(ch, sourcetest.load(settings(), cid), settings()))
     ticks = [x for x in request.form.getlist("source") if x in allowed]
     if not ticks:
         abort(400, "tick at least one archive")
