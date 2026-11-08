@@ -1,5 +1,6 @@
 {% set cb = chips() %}{% if cb.total > 1 %}<div class="chipbar">
 <span class="chiplabel">Type</span>{% for t in cb.types %}<a class="chip{{ ' on' if t.on }}" href="{{ chip_url(cb.f, 'type', t.key) }}">{{ t.label }} <span>{{ t.n }}</span></a>{% endfor %}
 <span class="chipbreak"></span><span class="chiplabel">Topic</span>{% for t in cb.topics %}<a class="chip{{ ' on' if t.on }}" href="{{ chip_url(cb.f, 'topic', t.key) }}">{{ t.label }} <span>{{ t.n }}</span></a>{% endfor %}
+{% if cb.states %}<span class="chipbreak"></span><span class="chiplabel">State</span>{% for t in cb.states %}<a class="chip{{ ' on' if t.on }}" href="{{ chip_url(cb.f, 'state', t.key) }}">{{ t.label }} <span>{{ t.n }}</span></a>{% endfor %}{% endif %}
 {% if cb.active %}<span class="chipbreak"></span><a class="chip clear" href="{{ chip_url(cb.f) }}">✕ All channels</a> <span class="muted">{{ cb.shown }} of {{ cb.total }} channels</span>{% endif %}
 </div>{% endif %}

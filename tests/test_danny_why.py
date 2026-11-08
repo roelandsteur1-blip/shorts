@@ -78,3 +78,16 @@ def test_pause_button_on_home_and_channel_page(client, settings, cfg):  # noqa: 
     r = client.post("/channels/space/pause", data={"paused": "0", "back": "/channels/space"})
     assert r.headers["Location"].endswith("/channels/space?saved=1")
     assert not load_channel("space", settings.config_dir).paused
+
+
+def test_running_and_paused_filter_chips(client, settings, cfg):  # noqa: F811
+    assert "chiplabel\">State" not in client.get("/").data.decode()  # nothing paused: no State chips
+    space = cfg / "channels" / "space.toml"
+    (cfg / "channels" / "body.toml").write_text(space.read_text().replace('id = "space"', 'id = "body"'))
+    chans.set_paused(settings, "body", True)
+    page = client.get("/").data.decode()
+    assert "chiplabel\">State" in page and "Paused <span>1</span>" in page and "Running <span>1</span>" in page
+    page = client.get("/?f=1&state=paused").data.decode()
+    assert 'action="/channels/body/pause"' in page and 'action="/channels/space/pause"' not in page
+    page = client.get("/").data.decode()  # remembered in the cookie
+    assert 'action="/channels/space/pause"' not in page
