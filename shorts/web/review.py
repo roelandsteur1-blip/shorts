@@ -7,7 +7,7 @@ from flask import Blueprint, abort, redirect, render_template, request, send_fil
 
 from .. import db, preview, script, tags as taglayers
 from ..config import load_channel
-from .common import channel_or_404, channels, conn, settings
+from .common import channel_or_404, conn, in_scope, picker_channels, scope, settings
 from .jobs import start_job
 
 bp = Blueprint("review", __name__)
@@ -17,11 +17,10 @@ REJECT_REASONS = ["weak hook", "wrong fact", "bad footage", "text too long", "bo
 
 
 def _next_id(status: str, after: int, channel: str | None) -> int | None:
-    sql = "SELECT id FROM shorts WHERE status=? AND id>?"
-    args: list = [status, after]
-    if channel:
-        sql += " AND channel=?"
-        args.append(channel)
+    """The next Short to review: the chosen channel's, else one of the channels the filter chips show."""
+    extra, args = in_scope("channel", scope(channel))
+    sql = "SELECT id FROM shorts WHERE status=? AND id>?" + extra
+    args = [status, after, *args]
     row = conn().execute(sql + " ORDER BY id LIMIT 1", args).fetchone()
     return row[0] if row else None
 
@@ -31,29 +30,22 @@ def index():
     c = conn()
     status = request.args.get("status", "rendered")
     channel = request.args.get("channel") or None
-    where, args = "s.status = ?", [status]
-    if channel:
-        where += " AND s.channel = ?"
-        args.append(channel)
-    shorts = c.execute(
-        f"""SELECT s.* FROM shorts s WHERE {where} ORDER BY s.id""", args).fetchall()
-    count_sql = "SELECT status, COUNT(*) FROM shorts" + (" WHERE channel=?" if channel else "") + " GROUP BY status"
-    counts = dict(c.execute(count_sql, [channel] if channel else []).fetchall())
+    extra, sargs = in_scope("channel", scope(channel))  # the chosen channel, else the filter chips
+    shorts = c.execute(f"SELECT s.* FROM shorts s WHERE s.status = ?{extra} ORDER BY s.id", [status, *sargs]).fetchall()
+    counts = dict(c.execute(f"SELECT status, COUNT(*) FROM shorts WHERE 1{extra} GROUP BY status", sargs).fetchall())
     if status == "rendered":
         _queue_previews(c, 0, channel)
     return render_template("review.html", shorts=shorts, status=status, counts=counts,
-                           channel=channel, channels=channels())
+                           channel=channel, channels=picker_channels(channel))
 
 
 def _set_all_waiting(status: str):
-    """Give every Short waiting for review a new status (only the chosen channel's when filtered)."""
+    """Give every Short waiting for review a new status (only the chosen channel's, or the filtered
+    channels' when filter chips are on: the same Shorts the list showed)."""
     channel = request.form.get("channel") or None
-    sql, args = "SELECT id FROM shorts WHERE status='rendered'", []
-    if channel:
-        sql += " AND channel=?"
-        args.append(channel)
+    extra, args = in_scope("channel", scope(channel))
     c = conn()
-    for (sid,) in c.execute(sql, args).fetchall():
+    for (sid,) in c.execute("SELECT id FROM shorts WHERE status='rendered'" + extra, args).fetchall():
         db.set_short(c, sid, status=status)
     return redirect(url_for("review.index", channel=channel))
 
@@ -111,11 +103,8 @@ def video(sid: int):
 
 def _queue_previews(c, after: int, channel: str | None, n: int = 30) -> None:
     """Light copies of the Shorts waiting for review, the next ones first."""
-    sql = "SELECT id, video_path FROM shorts WHERE status='rendered' AND video_path IS NOT NULL"
-    args: list = []
-    if channel:
-        sql += " AND channel=?"
-        args.append(channel)
+    extra, args = in_scope("channel", scope(channel))
+    sql = "SELECT id, video_path FROM shorts WHERE status='rendered' AND video_path IS NOT NULL" + extra
     rows = c.execute(sql + " ORDER BY id >= ? DESC, id LIMIT ?", [*args, after, n]).fetchall()
     preview.queue_for(settings(), rows)
 

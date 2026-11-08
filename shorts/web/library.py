@@ -5,7 +5,7 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 
 from .. import categorize, embed, fit
 from . import cache
-from .common import channels, conn, settings
+from .common import channels, conn, settings, shown_channels
 from .jobs import start_job
 
 bp = Blueprint("library", __name__)
@@ -25,7 +25,7 @@ def index():
     methods = dict(c.execute("SELECT method, COUNT(*) FROM scene_categories WHERE confidence > 0 GROUP BY method"))
     waiting = fit.pending(c, chans)
     per_channel = []
-    for ch in chans:
+    for ch in shown_channels():
         yes, no = (c.execute(f"""SELECT COUNT(*) FROM channel_fit f JOIN assets a ON a.id = f.asset_id
                                 WHERE f.channel=? AND f.fits=? AND f.niche IN (?, '{fit.ANY_NICHE}') AND {fit.USABLE}""",
                              (ch.id, v, ch.niche)).fetchone()[0] for v in (1, 0))

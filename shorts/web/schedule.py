@@ -8,7 +8,7 @@ from itertools import groupby
 from flask import Blueprint, render_template, request
 
 from ..upload import blocked_until, channel_uploads_last_day, iso, slots_for, uploads_today
-from .common import channels, conn, settings
+from .common import channels, conn, picker_channels, settings, shown_channels
 from .home import youtube_schedule
 
 bp = Blueprint("schedule", __name__)
@@ -20,7 +20,7 @@ def index():
     selected = request.args.get("channel") or None
     now = iso(datetime.now(timezone.utc))
     out = []
-    chs = [ch for ch in channels() if not selected or ch.id == selected]
+    chs = [ch for ch in (channels() if selected else shown_channels()) if not selected or ch.id == selected]
     yt = youtube_schedule(chs)  # the same answer Home counts from (cached a few minutes)
     for ch in chs:
         approved = c.execute("SELECT * FROM shorts WHERE channel=? AND status='approved' ORDER BY id",
@@ -40,7 +40,7 @@ def index():
     used = uploads_today(c)
     return render_template("schedule.html", rows=out, used=used, quota=settings().upload_quota,
                            per_channel=settings().channel_uploads_per_day,
-                           channels=channels(), selected=selected,
+                           channels=picker_channels(selected), selected=selected,
                            msg=request.args.get("msg"))
 
 

@@ -40,6 +40,16 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
         if c is not None:
             c.close()
 
+    from .common import FILTER_COOKIE, chip_filter, chip_url, chips, filter_cookie_value
+    app.jinja_env.globals.update(chips=chips, chip_url=chip_url)
+
+    @app.after_request
+    def keep_filter(resp):
+        """A new chip pick (f=1 in the URL) is remembered for every page."""
+        if "f" in request.args and request.method == "GET":
+            resp.set_cookie(FILTER_COOKIE, filter_cookie_value(chip_filter()), max_age=365 * 86400, samesite="Lax")
+        return resp
+
     @app.after_request
     def compress(resp):
         """Pages go out gzipped (often 5-10x smaller): quicker on the phone over Tailscale."""

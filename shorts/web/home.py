@@ -11,7 +11,7 @@ from flask import Blueprint, redirect, render_template, request, url_for
 
 from . import cache
 from ..upload import token_path
-from .common import channels, conn, settings
+from .common import channel_topic, channels, conn, settings, shown_channels
 
 bp = Blueprint("home", __name__)
 log = logging.getLogger(__name__)
@@ -136,8 +136,10 @@ def channel_card(ch, yt: list[dict] | None = None) -> dict:
     foot = cache.footage(ch)
     last_job = c.execute("SELECT * FROM jobs WHERE channel=? ORDER BY id DESC LIMIT 1", (ch.id,)).fetchone()
     subs = c.execute("SELECT subscribers FROM yt_sync WHERE channel=?", (ch.id,)).fetchone()
+    from ..metatype import NICHE_LABELS
     return {
         "ch": ch,
+        "topic": NICHE_LABELS.get(channel_topic(ch), "Other"),
         "connected": token_path(settings(), ch.id).exists(),
         "review": counts.get("rendered", 0),
         "approved": counts.get("approved", 0),
@@ -211,10 +213,11 @@ def index():
     chs = channels()
     yt = youtube_schedule(chs)
     cards = [channel_card(ch, yt.get(ch.id)) for ch in chs]
+    shown = {ch.id for ch in shown_channels()}  # filter chips; Needs attention keeps every channel
     from ..drive import on_phone
     phone = on_phone(conn())
     phone_name = next((c.name for c in chs if phone and c.id == phone["channel"]), phone["channel"] if phone else None)
-    return render_template("home.html", cards=cards, running=running, warnings=warnings(cards),
+    return render_template("home.html", cards=[c for c in cards if c["ch"].id in shown], running=running, warnings=warnings(cards),
                            phone=phone, phone_name=phone_name,
                            per_channel=settings().channel_uploads_per_day, msg=request.args.get("msg"))
 

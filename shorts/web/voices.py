@@ -4,7 +4,7 @@ from __future__ import annotations
 from flask import Blueprint, abort, redirect, render_template, request, send_file, url_for
 
 from .. import categorize, channels as chans, voice
-from .common import channel_or_404, channels, conn, settings
+from .common import channel_or_404, channels, conn, settings, shown_channels
 
 bp = Blueprint("voices", __name__)
 
@@ -25,7 +25,7 @@ def index():
                                   AND status != 'rejected' GROUP BY voice""").fetchall())
     chs = channels()
     return render_template("voices.html", voices=voice.VOICES, label=voice.label, speeds=voice.SPEEDS,
-                           channels=chs, uses=uses, sample_text=voice.SAMPLE_TEXT,
+                           channels=shown_channels(), total=len(chs), uses=uses, sample_text=voice.SAMPLE_TEXT,
                            voiced=sum(1 for c in chs if voice.channel_voice(c)),
                            engine_ok=voice.available(), saved=request.args.get("saved"))
 

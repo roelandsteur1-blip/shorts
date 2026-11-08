@@ -13,10 +13,11 @@ Shorts <button class="primary">Make for every channel</button></form>
 {% if running %}<div class="card">{% for j in running %}
 <p><a href="/jobs/{{ j.id }}">{{ j.label }}</a> <span class="muted">({{ j.channel or 'all' }}) · {{ j.status }}{% if j.progress %} · {{ j.progress }} {{ j.progress_done }}/{{ j.progress_total }}{% endif %}</span></p>
 {% endfor %}</div>{% endif %}
+{% include "_chips.html" %}
 <div class="cards">
 {% for c in cards %}<div class="card">
 <h2 style="margin:0">{{ c.ch.name }}</h2>
-<p class="muted" style="margin-top:2px">{{ c.ch.id }} · {{ c.ch.niche }} · <span class="pill">{{ (c.ch.video_type or 'classic')|capitalize }}</span> ·
+<p class="muted" style="margin-top:2px">{{ c.ch.id }} · {{ c.ch.niche }} · <span class="pill">{{ (c.ch.video_type or 'classic')|capitalize }}</span> <span class="pill">{{ c.topic }}</span> ·
 {% if c.connected %}<span class="ok">YouTube connected</span>{% else %}<span class="warn">YouTube not connected</span>{% endif %}</p>
 <p><span class="stat"><b>{{ c.review }}</b>to review</span><span class="stat"><b>{{ c.approved }}</b>approved</span>
 <span class="stat" title="{{ 'Scheduled on YouTube' if c.from_youtube else 'From our own data: YouTube not connected or not reachable' }} (UTC): {{ c.week_times or 'none' }}"><b>{{ c.scheduled_week }}</b>next 7 days{% if c.connected and not c.from_youtube %}*{% endif %}</span>{% if c.connected %}<span class="stat" title="From YouTube (it rounds to 3 digits above 1,000)"><b>{{ '{:,}'.format(c.subscribers) if c.subscribers is not none else '–' }}</b>subscribers</span>{% endif %}<span class="stat"><b>{{ c.footage_left }}</b>Shorts left (from {{ c.footage_videos }} videos)</span>

@@ -1,5 +1,6 @@
 {% extends "base.html" %}{% block title %}Stats{% endblock %}{% block body %}
 <h1>Stats</h1>
+{% include "_chips.html" %}
 <form method="get" style="max-width:300px"><input type="hidden" name="sort" value="{{ sort }}"><select name="channel" onchange="this.form.submit()"><option value="">All channels</option>
 {% for ch in channels %}<option value="{{ ch.id }}" {{ 'selected' if ch.id == selected }}>{{ ch.name }}</option>{% endfor %}</select></form>
 <p><form method="post" action="/stats/fetch-all" class="inline"><button class="primary">Fetch stats for all channels</button></form>

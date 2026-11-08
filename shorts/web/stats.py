@@ -8,7 +8,7 @@ from statistics import median
 from flask import Blueprint, redirect, render_template, request
 
 from ..ytstats import AGES, LAG_DAYS
-from .common import channels, conn
+from .common import channels, conn, in_scope, picker_channels, scope
 
 bp = Blueprint("stats", __name__)
 
@@ -16,7 +16,7 @@ bp = Blueprint("stats", __name__)
 SORTS = {"views": "views DESC", "retention": "avg_view_pct DESC", "engaged": "engaged_views * 1.0 / NULLIF(an_views, 0) DESC",
          "newest": "publish_at DESC"}
 VIDEOS = """SELECT v.*, s.voice, s.format_id FROM yt_videos v LEFT JOIN shorts s ON s.id = v.short_id
-             WHERE v.is_short AND (? IS NULL OR v.channel = ?)"""
+             WHERE v.is_short"""
 NOT_LIVE = {"scheduled": "Scheduled", "private": "Private", "processing": "Processing", "failed": "Failed", "gone": "Deleted"}
 
 
@@ -135,8 +135,9 @@ def channel_cards(c: sqlite3.Connection, selected: str | None) -> list[dict]:
              FROM yt_videos WHERE is_short GROUP BY channel""")}
     sync = {r["channel"]: dict(r) for r in c.execute("SELECT * FROM yt_sync")}
     out = []
+    ids = scope(selected)
     for ch in channels():
-        if selected and ch.id != selected or (ch.id not in totals and ch.id not in sync):
+        if ids is not None and ch.id not in ids or (ch.id not in totals and ch.id not in sync):
             continue
         t = totals.get(ch.id) or dict.fromkeys(("live", "scheduled", "next_at", "gone", "views", "engaged", "pct", "subs",
                                                  "waiting"))
@@ -158,23 +159,30 @@ def index():
     csort = request.args.get("csort", "views")
     sort = request.args.get("sort", "engaged")  # views count every replay since Mar 2025: judge by engaged
     selected = request.args.get("channel") or None
-    rows = c.execute(f"{VIDEOS} AND v.state = 'live' AND NOT v.hidden ORDER BY {SORTS.get(sort, SORTS['views'])} NULLS LAST",
-                     (selected, selected)).fetchall()
-    not_live = c.execute(f"""{VIDEOS} AND v.state != 'live' AND NOT v.hidden
+    ids = scope(selected)  # filter chips (or the chosen channel): only those channels' rows
+    only, oargs = in_scope("v.channel", ids)
+    rows = c.execute(f"{VIDEOS}{only} AND v.state = 'live' AND NOT v.hidden ORDER BY {SORTS.get(sort, SORTS['views'])} NULLS LAST", oargs).fetchall()
+    not_live = c.execute(f"""{VIDEOS}{only} AND v.state != 'live' AND NOT v.hidden
                              ORDER BY v.state != 'scheduled', CASE WHEN v.state = 'scheduled' THEN v.publish_at END,
-                                      v.publish_at DESC LIMIT 100""", (selected, selected)).fetchall()
-    hidden = c.execute(f"{VIDEOS} AND v.hidden ORDER BY v.publish_at DESC", (selected, selected)).fetchall()
-    by_format = c.execute("""SELECT v.channel, s.format_id, COUNT(*) AS shorts, AVG(v.views) AS views,
+                                      v.publish_at DESC LIMIT 100""", oargs).fetchall()
+    hidden = c.execute(f"{VIDEOS}{only} AND v.hidden ORDER BY v.publish_at DESC", oargs).fetchall()
+    by_format = c.execute(f"""SELECT v.channel, s.format_id, COUNT(*) AS shorts, AVG(v.views) AS views,
                                     SUM(v.avg_view_pct * v.an_views) / NULLIF(SUM(CASE WHEN v.avg_view_pct IS NOT NULL THEN v.an_views END), 0) AS pct
                                FROM yt_videos v JOIN shorts s ON s.id = v.short_id
-                              WHERE v.state = 'live' AND NOT v.hidden AND v.is_short AND (? IS NULL OR v.channel = ?)
-                              GROUP BY v.channel, s.format_id ORDER BY v.channel, views DESC""", (selected, selected)).fetchall()
+                              WHERE v.state = 'live' AND NOT v.hidden AND v.is_short{only}
+                              GROUP BY v.channel, s.format_id ORDER BY v.channel, views DESC""", oargs).fetchall()
     from ..timing import claude_usage, summary
-    return render_template("stats.html", compare=compare_channels(c, days, csort), days=days, ages=AGES,
+    shown = scope()  # the comparisons keep every channel the chips show, also with one channel picked
+
+    def keep(items):
+        return items if shown is None else [r for r in items if r["channel"] in shown]
+    voice = voice_test(c, days)
+    voice["channels"] = keep(voice["channels"])
+    return render_template("stats.html", compare=keep(compare_channels(c, days, csort)), days=days, ages=AGES,
                            csort=csort, compare_sorts=COMPARE_SORTS, rows=rows, cards=channel_cards(c, selected),
                            not_live=not_live, not_live_names=NOT_LIVE, hidden=hidden, by_format=by_format,
-                           voice=voice_test(c, days), reviews=review_rates(c), sort=sort,
-                           channels=channels(), selected=selected, timings=summary(c),
+                           voice=voice, reviews=keep(review_rates(c)), sort=sort,
+                           channels=picker_channels(selected), selected=selected, timings=summary(c),
                            claude=claude_usage(c))
 
 
