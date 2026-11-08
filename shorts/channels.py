@@ -170,6 +170,35 @@ def seed_channels(settings: Settings) -> list[str]:
     return added
 
 
+# Channels Roeland removed (2026-11-08): never connected to YouTube. Their file goes from
+# config/channels and their unfinished Shorts are rejected, on every dashboard start.
+RETIRED = ("namethatanimal", "oceanoddities", "spaceranked")
+_UNFINISHED = ("planned", "scripted", "checked", "rendered", "approved", "failed")
+
+
+def retire_channels(settings: Settings, retired: tuple[str, ...] = RETIRED) -> list[str]:
+    """Delete the channel files of removed channels and reject their Shorts that never went out.
+    Returns the ids whose file was deleted."""
+    from . import db
+    removed = []
+    for cid in retired:
+        path = path_for(settings, cid)
+        if path.exists():
+            path.unlink()
+            removed.append(cid)
+    if settings.db_path.exists():
+        c = db.connect(settings.db_path)
+        try:
+            marks = ",".join("?" * len(_UNFINISHED))
+            for cid in retired:
+                c.execute(f"UPDATE shorts SET status='rejected', updated_at=datetime('now') "
+                          f"WHERE channel=? AND status IN ({marks})", (cid, *_UNFINISHED))
+            c.commit()
+        finally:
+            c.close()
+    return removed
+
+
 def new_channel(channel_id: str, name: str, language: str, niche: str) -> dict:
     return {
         "id": channel_id, "name": name, "language": language, "niche": niche, "video_type": "classic",

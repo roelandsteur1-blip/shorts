@@ -111,14 +111,33 @@ def test_seed_channels_once(settings, tmp_path):
     shutil.copytree(Path(chans.__file__).parent.parent / "config", cfg)
     s = dataclasses.replace(settings, config_root=cfg)
     added = chans.seed_channels(s)
-    assert set(added) == {"historycards", "namethatanimal", "spaceranked", "oceanoddities"}
+    assert set(added) == {"historycards"}
     for cid in added:
         ch = load_channel(cid, cfg)
         assert metatype.is_meta(ch) and chans.validate(chans.raw(s, cid), set()) == []
-    assert load_channel("namethatanimal", cfg).video_type == "quiz"
-    (cfg / "channels" / "spaceranked.toml").unlink()  # deleted by hand: stays deleted
+    (cfg / "channels" / "historycards.toml").unlink()  # deleted by hand: stays deleted
     assert chans.seed_channels(s) == []
+    assert not (cfg / "channels" / "historycards.toml").exists()
+
+
+def test_retire_channels(settings, tmp_path):
+    from pathlib import Path
+    from shorts import db
+    cfg = tmp_path / "cfg"
+    shutil.copytree(Path(chans.__file__).parent.parent / "config", cfg)
+    s = dataclasses.replace(settings, config_root=cfg)
+    (cfg / "channels" / "spaceranked.toml").write_text((cfg / "channels" / "space.toml").read_text())
+    c = db.connect(s.db_path)
+    for ch, st in [("spaceranked", "rendered"), ("spaceranked", "scheduled"), ("space", "rendered")]:
+        c.execute("INSERT INTO shorts (channel, format_id, status) VALUES (?, 'f', ?)", (ch, st))
+    c.commit()
+    assert chans.retire_channels(s) == ["spaceranked"]
     assert not (cfg / "channels" / "spaceranked.toml").exists()
+    assert (cfg / "channels" / "space.toml").exists()
+    rows = c.execute("SELECT channel, status FROM shorts ORDER BY id").fetchall()
+    assert [tuple(r) for r in rows] == [("spaceranked", "rejected"), ("spaceranked", "scheduled"),
+                                         ("space", "rendered")]
+    assert chans.retire_channels(s) == []
 
 
 def test_meta_post_tags():

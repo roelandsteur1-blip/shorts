@@ -21,9 +21,10 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
     app.extensions["runner"] = runner or Runner(settings)
     if start_runner:
         app.extensions["runner"].start()
-        from ..channels import add_video_types, seed_channels
+        from ..channels import add_video_types, retire_channels, seed_channels
         add_video_types(settings)  # older channel files: video_type = "classic"
         seed_channels(settings)    # new channels prepared in config/channel-seeds
+        retire_channels(settings)  # channels removed by Roeland stay removed
         from ..drive import start_checker
         start_checker(settings)    # upload via phone: spot Shorts posted from the phone every 30 min
         from .home import warm_up
