@@ -46,7 +46,12 @@ def main() -> None:
     from shorts.config import load_settings
     from meta.collector import pieces
 
+    import os
+    from shorts.server import load_env
     settings = load_settings(config_dir())
+    load_env(settings)  # the Claude login, as `python -m shorts` on the server
+    local_bin = str(Path.home() / ".local" / "bin")  # cron's PATH has no `claude`
+    os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
     conn = sqlite3.connect(f"file:{settings.db_path}?mode=ro", uri=True, timeout=30)
     conn.row_factory = sqlite3.Row
     print(f"footage_judge={settings.footage_judge!r} -> mode {judge.mode(settings)!r}, "
