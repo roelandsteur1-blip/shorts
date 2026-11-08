@@ -109,6 +109,8 @@ def test_seed_channels_once(settings, tmp_path):
     from pathlib import Path
     cfg = tmp_path / "cfg"
     shutil.copytree(Path(chans.__file__).parent.parent / "config", cfg)
+    for seed in (cfg / "channel-seeds").glob("*.toml"):  # a copy left in the repo's config by a dashboard run
+        (cfg / "channels" / seed.name).unlink(missing_ok=True)
     s = dataclasses.replace(settings, config_root=cfg)
     added = chans.seed_channels(s)
     assert set(added) == {"historycards"}
