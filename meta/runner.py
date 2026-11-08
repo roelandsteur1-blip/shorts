@@ -59,11 +59,12 @@ ALLOWLIST = {
     "jobsinfo": ("meta.jobsinfo", [], None),  # read-only: recent dashboard jobs + service restarts
     "pagetime": ("meta.pagetime", [], None),
     "nichestats": ("meta.nichestats", [], None),  # read-only: views per channel and per niche from the Stats data  # how fast the dashboard pages are and where the time goes (read-only)
+    "collectprobe": ("meta.collectprobe", [], None),  # read-only: why the collector finds nothing (verdicts per clip)
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
 JSON_DIR = {"round3new": "round3"}  # jobs that write into another job's folder
-JSON_JOBS = ("pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

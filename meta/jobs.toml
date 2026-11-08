@@ -207,3 +207,7 @@ name = "pagetime"
 [[job]]
 id = "2026-11-08-nichestats-1"
 name = "nichestats"
+
+[[job]]
+id = "2026-11-08-collectprobe-1"
+name = "collectprobe"
