@@ -19,7 +19,7 @@ from pathlib import Path
 
 from . import config_dir
 
-# (channel, subject, show): job 120 (8 Nov) found nothing for all of these.
+# (niche, subject, show): job 120 (8 Nov) found nothing for all of these.
 SUBJECTS = [
     ("history", "The Vasa warship", None),
     ("history", "USS Constitution", None),
@@ -29,10 +29,21 @@ SUBJECTS = [
 OUT = Path.home() / "meta-out" / "collectprobe"
 
 
+def _channel(niche: str):
+    """A text card channel of this niche (the job 120 one), else any channel of it."""
+    from shorts import metatype
+    from shorts.config import all_channels
+    chans = [c for c in all_channels(config_dir()) if metatype.niche_for(c) == niche]
+    chans.sort(key=lambda c: (getattr(c, "video_type", "") != "textcard", c.id))
+    if not chans:
+        raise SystemExit(f"no channel with niche {niche}")
+    return chans[0]
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     from shorts import collector, judge
-    from shorts.config import load_channel, load_settings
+    from shorts.config import load_settings
     from meta.collector import pieces
 
     settings = load_settings(config_dir())
@@ -71,9 +82,9 @@ def main() -> None:
     report = []
     for cid, name, show in SUBJECTS:
         seen.clear()
-        channel = load_channel(cid, config_dir())
+        channel = _channel(cid)
         col = collector.Collector(conn, settings, channel)
-        print(f"\n=== {cid}: {name}  (niche {col.niche}; library {col.use_library}; archives {col.archives})",
+        print(f"\n=== {channel.id} ({cid}): {name}  (niche {col.niche}; library {col.use_library}; archives {col.archives})",
               flush=True)
         t0 = time.time()
         # find() closes over the module's add_to_library through its own globals: patched above
