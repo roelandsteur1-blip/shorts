@@ -60,7 +60,7 @@ def test_edit_page_queues_rerender(client, conn):
 
 
 def test_schedule_page(client, conn, settings):
-    a = add_short(conn, title="Waiting one")
+    add_short(conn, title="Waiting one")
     add_short(conn, status="scheduled", title="Next week one", youtube_id="yt1", publish_at="2099-01-02T15:00:00Z",
               uploaded_at=upload.iso(datetime.now(timezone.utc)))
     add_short(conn, status="scheduled", title="Old one", youtube_id="yt0", publish_at="2020-01-02T15:00:00Z")
@@ -179,7 +179,6 @@ def test_home_daily_buttons(client, conn, cfg):
     jobs = conn.execute("SELECT channel, command FROM jobs").fetchall()
     assert len(jobs) == 1 and jobs[0]["channel"] is None
     assert json.loads(jobs[0]["command"]) == ["make-all", "--to", "100"]
-    from shorts.config import load_channel
     from shorts.pipeline import top_up_orders
     chans = [load_channel(c, cfg) for c in list_channels(cfg)]
     orders, _ = top_up_orders(conn, chans, 100)

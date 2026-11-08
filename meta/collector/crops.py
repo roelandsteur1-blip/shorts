@@ -267,7 +267,7 @@ def _pil_sizes() -> bool:
 
 def side_by_side(panels: list[tuple[str, Path]], dst: Path) -> None:
     """All methods in one 9:16-friendly grid video (2 rows x 4), labelled A-H only."""
-    args, flt, n = [], [], len(panels)
+    args, flt = [], []
     for i, (lab, p) in enumerate(panels):
         tag = p.with_suffix(".tag.png")
         im = Image.new("RGBA", (46, 40), (0, 0, 0, 190))
@@ -280,7 +280,7 @@ def side_by_side(panels: list[tuple[str, Path]], dst: Path) -> None:
         k = len(flt)
         flt.append(f"color=c=0x101010:s={PANEL_W}x{PANEL_H}:d=8[p{k}]")
     flt.append("".join(f"[p{i}]" for i in range(8)) +
-               f"xstack=inputs=8:layout=0_0|w0_0|w0+w1_0|w0+w1+w2_0|0_h0|w0_h0|w0+w1_h0|w0+w1+w2_h0:fill=0x101010[out]")
+               "xstack=inputs=8:layout=0_0|w0_0|w0+w1_0|w0+w1+w2_0|0_h0|w0_h0|w0+w1_h0|w0+w1+w2_h0:fill=0x101010[out]")
     p = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *args, "-filter_complex", ";".join(flt),
                         "-map", "[out]", "-t", "8", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
                         "-pix_fmt", "yuv420p", str(dst)], capture_output=True, timeout=300)

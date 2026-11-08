@@ -1,9 +1,9 @@
 # Shorts-pipeline
 
-Maakt YouTube Shorts over ruimtevaart en sterrenkunde uit rechtenvrij NASA-beeld, met alleen tekst op beeld. Jij keurt elke Short goed; daarna plant de pipeline hem in op YouTube.
+Maakt YouTube Shorts voor meerdere kanalen (ruimtevaart, geschiedenis, oceaan, ...) uit rechtenvrij archiefbeeld (NASA, Commons, Internet Archive, ...), met tekst op beeld en per kanaal eventueel een voice-over. Jij keurt elke Short goed; daarna plant de pipeline hem in op YouTube.
 
 ```
-ingest ─► scenes ─► embed ─► make (hero shot ─► script ─► feitencheck ─► beeld per tekstblok ─► render) ─► review ─► upload ─► stats
+ingest ─► scenes ─► embed ─► make (hero shot ─► script ─► beeld per tekstblok ─► render) ─► review ─► upload ─► stats
 ```
 
 ## Installeren
@@ -100,7 +100,6 @@ Instellingen wijzigen kan op dezelfde pagina; de oude TOML blijft bewaard als `.
 | `shorts/embed.py` | CLIP-embeddings en zoeken |
 | `shorts/hero.py` | Hero shot kiezen (+ terugkoppeling uit statistieken) |
 | `shorts/script.py`, `shorts/llm.py` | Scripts via `claude -p` |
-| `shorts/factcheck.py` | Aparte feitencheck |
 | `shorts/shots.py` | Beeld per tekstblok |
 | `shorts/render.py` | ffmpeg-montage, ondertitels (ASS), metadata met bronvermelding |
 | `shorts/web/`, `shorts/templates/` | Dashboard (Flask): home, make, review, jobs, library, sources |

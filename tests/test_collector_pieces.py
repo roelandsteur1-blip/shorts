@@ -4,9 +4,7 @@ failing candidate or source never stops a subject (R7)."""
 import random
 import subprocess
 
-from PIL import Image
-
-from meta.collector import pieces, sweep
+from meta.collector import pieces
 
 
 def test_parts_split_30_subjects_3_per_niche():

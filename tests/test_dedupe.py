@@ -1,6 +1,5 @@
 import subprocess
 
-from conftest import make_video
 from shorts import dedupe, media
 from shorts.sources.nasa import upsert_metadata
 

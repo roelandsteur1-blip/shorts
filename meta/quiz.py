@@ -17,7 +17,7 @@ from pathlib import Path
 
 from PIL import ImageDraw
 
-from .common import H, W, BAND_Y, blank, clip_strip, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
+from .common import W, BAND_Y, blank, clip_strip, verify, candidate_lines, candidates, log, open_library, pick_track, render_segments
 from .textcard import font, wrap
 
 OUT = Path.home() / "meta-out" / "quiz"

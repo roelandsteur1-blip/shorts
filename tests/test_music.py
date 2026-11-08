@@ -2,8 +2,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from shorts import music
 from shorts.web import create_app
 

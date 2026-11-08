@@ -37,7 +37,6 @@ class Item:
     source_url: str = ""           # human page for the item
     date_created: str | None = None
     license_hint: str = ""         # raw license field (URL or name) as the archive gives it
-    rights_text: str = ""          # free-text rights statement, if any
     file_url: str | None = None    # when the search result already names the file
     extra: dict = field(default_factory=dict)
 

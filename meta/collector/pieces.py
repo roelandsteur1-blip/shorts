@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 import requests
-from PIL import Image, ImageFilter
+from PIL import Image
 
 from . import sweep
 

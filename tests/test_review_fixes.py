@@ -78,7 +78,6 @@ def test_short_scene_holds_last_frame(library, settings, channel, monkeypatch):
 
 
 def test_duplicate_scenes_chunked_matches_full():
-    import sqlite3
     from shorts import db
     conn = db.connect(":memory:")
     rng = np.random.default_rng(1)

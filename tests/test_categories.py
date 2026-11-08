@@ -183,10 +183,10 @@ def test_library_and_sources_pages(client, conn, settings, cfg, monkeypatch, tmp
     assert b"Prelinger" in page and b"Switch off" in page
     client.post("/sources/prelinger", data={"enabled": "0"})
     assert b"switched off" in client.get("/sources").data
-    r = client.post("/sources/commons/try", data={"query": "glider"})
+    client.post("/sources/commons/try", data={"query": "glider"})
     job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
     assert json.loads(job["command"]) == ["sources", "--try", "commons", "glider"] and job["heavy"] == 0
-    r = client.post("/library/sort", data={"all": "1"})
+    client.post("/library/sort", data={"all": "1"})
     assert json.loads(conn.execute("SELECT command FROM jobs ORDER BY id DESC").fetchone()[0]) == ["categorize", "--all"]
 
 
