@@ -19,12 +19,12 @@ from pathlib import Path
 
 from . import config_dir
 
-# (niche, subject, show): job 120 (8 Nov) found nothing for all of these.
+# (niche, subject, show): job 123 (8 Nov, after the old-film fix) found nothing for these.
 SUBJECTS = [
-    ("history", "The Vasa warship", None),
-    ("history", "USS Constitution", None),
-    ("history", "Big Ben clock tower", None),
-    ("history", "Leaning Tower of Pisa", None),
+    ("retrotech", "Handcar", None),
+    ("retrotech", "Polaroid Land Camera", None),
+    ("retrotech", "Movie Camera Newman Sinclair", None),
+    ("retrotech", "Leica I", None),
 ]
 OUT = Path.home() / "meta-out" / "collectprobe"
 
