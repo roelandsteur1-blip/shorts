@@ -99,6 +99,12 @@ def test_dashboard_listens_on_localhost_only(settings, monkeypatch):
     seen = {}
     monkeypatch.setattr(Flask, "run", lambda self, **kw: seen.update(kw))
     monkeypatch.setattr(jobs.Runner, "start", lambda self: None)
+    # start-up steps that write into config/ (the repo's own when tests run) or reach YouTube/Drive
+    from shorts import channels, drive
+    from shorts.web import home
+    for mod, name in ((channels, "add_video_types"), (channels, "seed_channels"),
+                      (drive, "start_checker"), (home, "warm_up")):
+        monkeypatch.setattr(mod, name, lambda *a, **k: None)
     web.serve(settings, 5001)
     assert seen["host"] == "127.0.0.1"
 
