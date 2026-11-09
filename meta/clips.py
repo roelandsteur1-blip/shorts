@@ -27,7 +27,7 @@ from urllib.parse import quote
 
 from PIL import Image, ImageDraw
 
-from .textcard import H, W, black_bars, font, log, pick_track, wrap
+from .textcard import H, W, black_bars, font, log, wrap
 
 OUT = Path.home() / "meta-out" / "clips"
 SEARCH = "https://archive.org/advancedsearch.php"
@@ -706,7 +706,7 @@ def try_item(key: str, spec: dict, doc: dict, settings, conn, llm) -> dict | Non
         if later:
             plan["end"] = later[0] - 0.1
     log(f"[{key}] review: {review.get('notes', '')}")
-    track = pick_track(conn)
+    track = None  # no music from us: Roeland adds music in the YouTube app (2026-11-09); voice + sound effects only
     lengths = {}
     for edited in (False, True):
         out = OUT / f"{key}-{'edited' if edited else 'plain'}.mp4"
