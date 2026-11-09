@@ -4,9 +4,9 @@ For each type it searches archive.org for a fitting item, lets Claude pick the b
 moment from frames (and, for TV with dialogue, a transcript), writes a hook, story captions and
 a true payoff, and renders a 9:16 Short: hook on top, the film in a band, captions below.
 
-Each type is rendered twice: "plain" (hook, captions, payoff) and "edited" (the same plus the
-switchable clip-channel tricks from research/clip-engagement.md: sped-up setup, freeze + zoom on
-the peak with a hit sound, slow-motion replay, a whoosh on the hook).
+Each type is rendered twice: "plain" (hook, captions, payoff) and "edited" (the same plus a whoosh
+on the hook and a hit sound on the peak). The visual tricks from research/clip-engagement.md
+(sped-up setup, freeze + zoom, slow-motion replay) are off: VISUAL_TRICKS = False (Roeland 2026-11-09).
 
 Samples only: MP4s go to ~/meta-out/clips/, with made.json listing each item, its link, the
 rights basis and the texts. Nothing is uploaded and the `shorts` database is only read (music).
@@ -378,12 +378,15 @@ def cuts(path: str, threshold: float = 0.3) -> list[float]:
 SPEED_UP = 1.4      # the setup only, never the peak or dialogue
 FREEZE = 0.7        # seconds the peak frame is held with a zoom punch-in
 REPLAY_HALF = 0.8   # the replay shows peak +- this, at half speed
+# Roeland 2026-11-09: no zoom, no speed changes, no replay (they mess with the sound).
+# The edited version is now the plain cut plus a whoosh on the hook and a hit on the peak.
+VISUAL_TRICKS = False
 
 
 def timeline(plan: dict, edited: bool, keep_audio: bool) -> list[dict]:
     """Pieces in stretch time: {kind: play|freeze|replay, t0, t1, speed}. Plain = one piece."""
     start, end = plan["start"], plan["end"]
-    if not edited:
+    if not edited or not VISUAL_TRICKS:
         return [{"kind": "play", "t0": start, "t1": end, "speed": 1.0}]
     peak = min(max(plan.get("peak", start + (end - start) * 0.6), start + 1.0), end - 0.5)
     setup = min(max(plan.get("setup_end", start), start), peak)
@@ -559,6 +562,10 @@ def render(src: str, plan: dict, audio: str, track, out: Path, edited: bool = Fa
             acc += piece_len(p)
         if edited:
             events.append(("whoosh", 0.0))
+            if not VISUAL_TRICKS:
+                start = plan["start"]
+                peak = min(max(plan.get("peak", start + (plan["end"] - start) * 0.6), start + 1.0), plan["end"] - 0.5)
+                events.append(("hit", out_time(pieces, peak)))
         fc += f";[{last}]format=yuv420p[out]"
         mix = []
         if keep_audio:

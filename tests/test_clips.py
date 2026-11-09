@@ -33,7 +33,13 @@ def test_gov_maker():
     assert clips.gov_maker({"creator": "Lookout Mountain Laboratory, 1352nd Photographic Group"})
 
 
-def test_timeline_and_times():
+def test_edited_has_no_visual_tricks():
+    plan = {"start": 2.0, "end": 22.0, "setup_end": 8.0, "peak": 14.0, "replay": True}
+    assert clips.timeline(plan, True, False) == [{"kind": "play", "t0": 2.0, "t1": 22.0, "speed": 1.0}]
+
+
+def test_timeline_and_times(monkeypatch):
+    monkeypatch.setattr(clips, "VISUAL_TRICKS", True)
     plan = {"start": 2.0, "end": 22.0, "setup_end": 8.0, "peak": 14.0, "replay": True}
     assert clips.timeline(plan, False, False) == [{"kind": "play", "t0": 2.0, "t1": 22.0, "speed": 1.0}]
     ed = clips.timeline(plan, True, False)
@@ -58,7 +64,7 @@ def test_render_music_and_original(tmp_path):
     for audio, edited in (("music", False), ("music", True), ("original", True)):
         out = tmp_path / f"{audio}-{edited}.mp4"
         total = clips.render(str(src), plan, audio, None, out, edited=edited)
-        assert total > (17.5 if edited and audio == "music" else 14.9)
+        assert 14.9 < total < 15.5  # no speed-up, freeze or replay any more
         p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
                             "-of", "csv=p=0", str(out)], capture_output=True, text=True)
         assert "video,1080,1920" in p.stdout and "audio" in p.stdout
