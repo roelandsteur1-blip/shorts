@@ -239,3 +239,7 @@ name = "clips"
 [[job]]
 id = "2026-11-09-clipsmilitary-1"
 name = "clipsmilitary"
+
+[[job]]
+id = "2026-11-09-clips-3"
+name = "clips"

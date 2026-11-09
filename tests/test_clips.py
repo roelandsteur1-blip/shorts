@@ -62,3 +62,13 @@ def test_render_music_and_original(tmp_path):
         p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
                             "-of", "csv=p=0", str(out)], capture_output=True, text=True)
         assert "video,1080,1920" in p.stdout and "audio" in p.stdout
+
+
+def test_has_sound(tmp_path):
+    loud, quiet = tmp_path / "loud.mp4", tmp_path / "quiet.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:r=24:d=3",
+                    "-f", "lavfi", "-i", "sine=d=3", "-pix_fmt", "yuv420p", "-shortest", str(loud)], check=True)
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:r=24:d=3",
+                    "-pix_fmt", "yuv420p", str(quiet)], check=True)
+    assert clips.has_sound(str(loud))
+    assert not clips.has_sound(str(quiet))

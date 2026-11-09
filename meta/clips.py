@@ -50,7 +50,7 @@ TYPES = {
         ],
         "max_year": 1930,
         "rights": "US public domain by age (published 1930 or earlier). Original score removed.",
-        "audio": "music",
+        "audio": "music",  # silent film: archive copies carry a later, often copyrighted score
     },
     "newsreel": {
         "label": "Strange news from the past (newsreels)",
@@ -63,7 +63,7 @@ TYPES = {
         ],
         "max_year": 1967,
         "rights": "Universal Newsreel: MCA gave the newsreels to the US National Archives without copyright restrictions (1974).",
-        "audio": "music",
+        "audio": "auto",
     },
     "ads": {
         "label": "Weird vintage TV commercials",
@@ -74,7 +74,7 @@ TYPES = {
         ],
         "max_year": 1977,
         "rights": "Prelinger Archives item marked public domain (pre-1978 ad).",
-        "audio": "music",
+        "audio": "auto",
     },
     "homemovies": {
         "label": "Life back then (old home movies)",
@@ -85,7 +85,7 @@ TYPES = {
         ],
         "max_year": 1977,
         "rights": "Prelinger Archives home movie marked public domain.",
-        "audio": "music",
+        "audio": "auto",
     },
     "classictv": {
         "label": "Classic TV moments (with original sound)",
@@ -112,7 +112,7 @@ TYPES = {
         ],
         "max_year": 1990,
         "rights": "US federal government work (Air Force/Navy/NASA film), public domain; item marked public domain.",
-        "audio": "music",
+        "audio": "auto",
         "gov_only": True,  # clips-1 picked a University of Kansas film: the maker must be a US federal agency
     },
 }
@@ -357,6 +357,14 @@ def transcript(path: str) -> str:
     return "\n".join(f"[{s.start:.0f}-{s.end:.0f}s] {s.text.strip()}" for s in segs)
 
 
+
+
+def has_sound(path: str) -> bool:
+    """True when the file has an audio track that isn't silence or hiss."""
+    p = subprocess.run(["ffmpeg", "-hide_banner", "-i", path, "-vn", "-af", "volumedetect", "-f", "null", "-"],
+                       capture_output=True, text=True, errors="replace", timeout=300)
+    m = re.search(r"mean_volume: (-?[0-9.]+) dB", p.stderr)
+    return bool(m) and float(m.group(1)) > -45.0
 
 
 def cuts(path: str, threshold: float = 0.3) -> list[float]:
@@ -651,11 +659,16 @@ def try_item(key: str, spec: dict, doc: dict, settings, conn, llm) -> dict | Non
                "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "160k", str(window)])
     step = 4.0
     fine = [(f"{t:.0f}s", frame(str(window), t)) for t in [i * step for i in range(int(span // step))]]
-    keep_audio = spec["audio"] == "original"
+    mode = spec["audio"]
+    if mode == "auto":  # use the film's own sound when it has any (Roeland 2026-11-09), else our music
+        mode = "original" if has_sound(str(window)) else "music"
+        log(f"[{key}] sound: {'original sound kept' if mode == 'original' else 'no sound in the film, our music'}")
+    keep_audio = mode == "original"
     words = transcript(str(window)) if keep_audio else ""
     tx = f"\n\nWhat is said in this stretch (times from its start):\n{words}" if words else ""
-    audio_rule = ("This clip keeps its ORIGINAL SOUND: start at the beginning of a line of dialogue and end "
-                  "right after a punchline or reaction, never mid-sentence." if keep_audio else "")
+    audio_rule = ("This clip keeps its ORIGINAL SOUND (dialogue or narration): start at the beginning of a "
+                  "sentence and end right after a punchline, reaction or the end of a sentence, never mid-sentence."
+                  if keep_audio else "")
     shot_cuts = cuts(str(window))
     plan = llm.ask_json(WRITE.format(label=spec["label"], brief=spec["brief"], title=title, year=year, maker=maker,
                                      desc=desc, span=span, step=step, transcript=tx, audio_rule=audio_rule,
@@ -697,13 +710,13 @@ def try_item(key: str, spec: dict, doc: dict, settings, conn, llm) -> dict | Non
     lengths = {}
     for edited in (False, True):
         out = OUT / f"{key}-{'edited' if edited else 'plain'}.mp4"
-        lengths[out.name] = round(render(str(window), plan, spec["audio"], track, out, edited=edited), 1)
+        lengths[out.name] = round(render(str(window), plan, mode, track, out, edited=edited), 1)
     window.unlink(missing_ok=True)
     log(f"[{key}] made {', '.join(lengths)}: from {mmss(w0 + plan['start'])} of '{title}'")
     return {"type": key, "label": spec["label"], "identifier": ident, "link": f"https://archive.org/details/{ident}",
             "title_archive": title, "year": year, "maker": maker, "decade_seen": decade,
             "at": mmss(w0 + plan["start"]), "lengths": lengths, "rights": spec["rights"],
-            "licenseurl": doc.get("licenseurl"), "audio": spec["audio"], "hook": plan["hook"],
+            "licenseurl": doc.get("licenseurl"), "audio": mode, "hook": plan["hook"],
             "captions": plan.get("captions"), "payoff": plan["payoff"], "peak": plan.get("peak"),
             "setup_end": plan.get("setup_end"), "replay": plan.get("replay") is True, "yt_title": plan.get("title"), "credit": plan.get("credit"),
             "why": plan.get("why"), "review": review.get("notes"), "transcribed": bool(words)}
