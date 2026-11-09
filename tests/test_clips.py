@@ -26,16 +26,36 @@ def test_runner_allows_clips():
     assert command({"id": "2026-11-09-clips-1", "name": "clips"})[-1] == "meta.clips"
 
 
+def test_gov_maker():
+    assert clips.gov_maker({"creator": "U.S. Air Force"})
+    assert not clips.gov_maker({"creator": "University of Kansas", "title": "Air Force ejection seat"})
+    assert not clips.gov_maker({"title": "Ejection seat research"})
+
+
+def test_timeline_and_times():
+    plan = {"start": 2.0, "end": 22.0, "setup_end": 8.0, "peak": 14.0}
+    assert clips.timeline(plan, False, False) == [{"kind": "play", "t0": 2.0, "t1": 22.0, "speed": 1.0}]
+    ed = clips.timeline(plan, True, False)
+    assert [p["kind"] for p in ed] == ["play", "play", "freeze", "play", "replay"]
+    assert ed[0]["speed"] == clips.SPEED_UP
+    assert abs(clips.out_time(ed, 8.0) - 6 / clips.SPEED_UP) < 1e-6
+    assert clips.out_time(ed, 15.0) > clips.out_time(ed, 14.0) + clips.FREEZE - 1e-6
+    # dialogue: no speed-up, no replay
+    assert [p["kind"] for p in clips.timeline(plan, True, True)] == ["play", "freeze", "play"]
+
+
 def test_render_music_and_original(tmp_path):
     src = tmp_path / "t.mp4"
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=640x480:r=24:d=30",
                     "-f", "lavfi", "-i", "sine=d=30", "-pix_fmt", "yuv420p", "-shortest", str(src)], check=True)
     plan = {"hook": "He fixed the roof and then THIS happened 😳",
-            "captions": [{"at": 0, "text": "Watch the ladder"}, {"at": 5, "text": "Then the wind"}],
-            "payoff": "A true fact as the payoff.", "credit": "Test film (1920)"}
-    for audio in ("music", "original"):
-        out = tmp_path / f"{audio}.mp4"
-        clips.render(str(src), 2, 15, plan, audio, None, out)
+            "captions": [{"at": 0, "text": "Watch the ladder", "highlight": ["ladder"]}, {"at": 5, "text": "Then the wind"}],
+            "payoff": "A true fact as the payoff.", "credit": "Test film (1920)",
+            "start": 2.0, "end": 17.0, "setup_end": 6.0, "peak": 11.0}
+    for audio, edited in (("music", False), ("music", True), ("original", True)):
+        out = tmp_path / f"{audio}-{edited}.mp4"
+        total = clips.render(str(src), plan, audio, None, out, edited=edited)
+        assert total > (17.5 if edited and audio == "music" else 14.9)
         p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
                             "-of", "csv=p=0", str(out)], capture_output=True, text=True)
         assert "video,1080,1920" in p.stdout and "audio" in p.stdout

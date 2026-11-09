@@ -227,3 +227,11 @@ name = "collectprobe"
 [[job]]
 id = "2026-11-09-clips-1"
 name = "clips"
+
+[[job]]
+id = "2026-11-09-research-tools-3"
+name = "research-tools"
+
+[[job]]
+id = "2026-11-09-clips-2"
+name = "clips"

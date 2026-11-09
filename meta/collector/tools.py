@@ -6,6 +6,7 @@ are not installed twice) and adds only:
     yt-dlp                 piece downloads from archives (Unlicense)
     rapidocr-onnxruntime   text / title-card detection on frames (Apache-2.0)
     piq                    image quality scores: BRISQUE, CLIP-IQA (Apache-2.0)
+    faster-whisper         speech to text for clip Shorts with dialogue (MIT)
 pyiqa was the plan's first pick, but its licence is non-commercial, so piq replaces it.
 
     python -m meta.collector.tools      # idempotent: re-running upgrades and re-checks
@@ -18,8 +19,8 @@ import sysconfig
 from pathlib import Path
 
 VENV = Path.home() / "research-venv"
-PACKAGES = ["yt-dlp", "rapidocr-onnxruntime", "piq"]
-CHECK = "import cv2, yt_dlp, rapidocr_onnxruntime, piq; from rapidocr_onnxruntime import RapidOCR; RapidOCR(); print('opencv', cv2.__version__); print('yt-dlp', yt_dlp.version.__version__); print('piq', piq.__version__); print('rapidocr ok')"
+PACKAGES = ["yt-dlp", "rapidocr-onnxruntime", "piq", "faster-whisper"]  # faster-whisper: clip Shorts transcripts (2026-11-09)
+CHECK = "import faster_whisper, cv2, yt_dlp, rapidocr_onnxruntime, piq; from rapidocr_onnxruntime import RapidOCR; RapidOCR(); print('opencv', cv2.__version__); print('yt-dlp', yt_dlp.version.__version__); print('piq', piq.__version__); print('rapidocr ok')"
 
 
 def run(cmd: list[str]) -> None:
