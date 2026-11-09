@@ -170,6 +170,9 @@ Shot changes (cuts) in this stretch happen at: {cuts} seconds.{transcript}
 2. "peak": the second (from the start of this stretch) of the single most surprising instant (the
    fall, the crash, the reveal). "setup_end": the second where the build-up ends and things start
    to happen (between start and peak).
+   "replay": true ONLY when the peak is a genuinely funny or jaw-dropping instant that viewers would
+   want to see again (a pratfall, a crash, a perfect gag). For calm footage (a street, an ad, people
+   talking) set it false. Most Shorts should NOT get a replay.
 3. Our own layer on top (this is what makes it OUR Short, not a re-upload):
    - "hook": on-screen title, max 9 words, curiosity first, like "He tried to fix the roof and then
      THIS happened". No emoji.
@@ -184,7 +187,7 @@ Shot changes (cuts) in this stretch happen at: {cuts} seconds.{transcript}
 If no stretch here is good enough, set "usable" false.
 
 Return JSON only:
-{{"usable": true, "start": 4, "end": 24, "setup_end": 9, "peak": 15, "hook": "...",
+{{"usable": true, "start": 4, "end": 24, "setup_end": 9, "peak": 15, "replay": false, "hook": "...",
 "captions": [{{"at": 0, "text": "...", "highlight": ["word"]}}], "payoff": "...", "title": "...",
 "credit": "...", "why": "one line"}}"""
 
@@ -384,7 +387,7 @@ def timeline(plan: dict, edited: bool, keep_audio: bool) -> list[dict]:
         pieces.append({"kind": "play", "t0": start, "t1": peak, "speed": 1.0})
     pieces.append({"kind": "freeze", "t0": peak, "t1": peak, "speed": 1.0})
     pieces.append({"kind": "play", "t0": peak, "t1": end, "speed": 1.0})
-    if not keep_audio:
+    if not keep_audio and plan.get("replay") is True:  # only a moment worth seeing again (Roeland 2026-11-09)
         pieces.append({"kind": "replay", "t0": max(start, peak - REPLAY_HALF), "t1": min(end, peak + REPLAY_HALF),
                        "speed": 0.5})
     return pieces
@@ -702,7 +705,7 @@ def try_item(key: str, spec: dict, doc: dict, settings, conn, llm) -> dict | Non
             "at": mmss(w0 + plan["start"]), "lengths": lengths, "rights": spec["rights"],
             "licenseurl": doc.get("licenseurl"), "audio": spec["audio"], "hook": plan["hook"],
             "captions": plan.get("captions"), "payoff": plan["payoff"], "peak": plan.get("peak"),
-            "setup_end": plan.get("setup_end"), "yt_title": plan.get("title"), "credit": plan.get("credit"),
+            "setup_end": plan.get("setup_end"), "replay": plan.get("replay") is True, "yt_title": plan.get("title"), "credit": plan.get("credit"),
             "why": plan.get("why"), "review": review.get("notes"), "transcribed": bool(words)}
 
 
