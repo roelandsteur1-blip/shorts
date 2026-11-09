@@ -106,6 +106,9 @@ TYPES = {
         "searches": [
             f'mediatype:movies AND {PD} AND (title:("ejection seat") OR title:("rocket sled") OR subject:(ejection))',
             f'mediatype:movies AND {PD} AND (title:("crash test") OR title:("test flight")) AND ("Air Force" OR Navy OR NASA)',
+            f'mediatype:movies AND {PD} AND (creator:("Air Force") OR creator:(Navy) OR creator:("Photographic Group") '
+            'OR creator:("Signal Corps")) AND (test OR experimental OR ejection OR landing OR crash OR rocket)',
+            f'mediatype:movies AND {PD} AND creator:(NASA) AND (test OR landing OR crash OR rocket OR "lifting body")',
         ],
         "max_year": 1990,
         "rights": "US federal government work (Air Force/Navy/NASA film), public domain; item marked public domain.",
@@ -116,7 +119,10 @@ TYPES = {
 
 
 GOV = ("air force", "navy", "army", "nasa", "department of defense", "u.s. government", "united states government",
-       "marine corps", "national archives", "u.s. department", "naval", "usaf", "dod")
+       "marine corps", "national archives", "u.s. department", "naval", "usaf", "dod",
+       # military film units (clips-2 skipped "Lookout Mountain Laboratory, 1352nd Photographic Group" = USAF)
+       "photographic group", "photographic squadron", "lookout mountain", "signal corps", "army pictorial",
+       "naval photographic", "air materiel command", "wright air development", "edwards air force")
 NOT_GOV = ("university", "college", "inc.", "inc ", "company", "corporation", "corp.", "ltd", "foundation")
 
 

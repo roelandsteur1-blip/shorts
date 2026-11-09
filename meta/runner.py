@@ -60,7 +60,8 @@ ALLOWLIST = {
     "pagetime": ("meta.pagetime", [], None),
     "nichestats": ("meta.nichestats", [], None),  # read-only: views per channel and per niche from the Stats data  # how fast the dashboard pages are and where the time goes (read-only)
     "collectprobe": ("meta.collectprobe", [], None),  # read-only: why the collector finds nothing (verdicts per clip)
-    "clips": ("meta.clips", [], None),  # clip-channel test Shorts, one per footage type (research/clip-channels.md)
+    "clips": ("meta.clips", [], None),
+    "clipsmilitary": ("meta.clips", ["--only", "military"], None),  # just the military type  # clip-channel test Shorts, one per footage type (research/clip-channels.md)
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results

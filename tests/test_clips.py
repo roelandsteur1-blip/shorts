@@ -30,6 +30,7 @@ def test_gov_maker():
     assert clips.gov_maker({"creator": "U.S. Air Force"})
     assert not clips.gov_maker({"creator": "University of Kansas", "title": "Air Force ejection seat"})
     assert not clips.gov_maker({"title": "Ejection seat research"})
+    assert clips.gov_maker({"creator": "Lookout Mountain Laboratory, 1352nd Photographic Group"})
 
 
 def test_timeline_and_times():
