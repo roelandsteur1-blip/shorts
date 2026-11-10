@@ -136,7 +136,7 @@ def nasa_captions(per_query: int = 10) -> dict:
 def ytdlp_subs() -> dict:
     """Can the server list YouTube subtitles with yt-dlp? (NASA's own channel, public domain.)"""
     research_venv()
-    url = "https://www.youtube.com/watch?v=21X5lGlDOfg"  # NASA: Apollo 11 launch (public domain)
+    url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # a short, always-available video: tests access only
     py = Path.home() / "research-venv" / "bin" / "python"
     cmd = [str(py if py.exists() else sys.executable), "-m", "yt_dlp", "--skip-download", "--list-subs", url]
     try:
@@ -194,6 +194,16 @@ def fetch_audio(url: str, out: Path, seconds: float) -> float:
     return float(p.stdout.strip() or 0)
 
 
+def load_wav(path: str):
+    """16 kHz mono PCM as float32. Decoded here, because the research venv's PyAV is too old for
+    faster-whisper's own decoder (transcribe-1 failed on that)."""
+    import wave
+    import numpy as np
+    with wave.open(path, "rb") as w:
+        data = w.readframes(w.getnframes())
+    return np.frombuffer(data, np.int16).astype(np.float32) / 32768.0
+
+
 def child(model: str, wav: str, words: bool) -> None:
     """Runs inside a child process: one model on one file, prints one JSON line."""
     import resource
@@ -203,7 +213,7 @@ def child(model: str, wav: str, words: bool) -> None:
     m = WhisperModel(model, device="cpu", compute_type="int8", cpu_threads=THREADS)
     load = time.time() - t0
     t1 = time.time()
-    segs, info = m.transcribe(wav, language="en", vad_filter=True, word_timestamps=words)
+    segs, info = m.transcribe(load_wav(wav), language="en", vad_filter=True, word_timestamps=words)
     segs = [{"start": round(s.start, 2), "end": round(s.end, 2), "text": s.text.strip(),
              **({"words": [[w.word, round(w.start, 2), round(w.end, 2), round(w.probability, 2)]
                            for w in (s.words or [])]} if words else {})} for s in segs]
@@ -273,6 +283,7 @@ def main(argv=None) -> None:
     ap.add_argument("--quick", action="store_true")
     ap.add_argument("--child", nargs=2)
     ap.add_argument("--words", action="store_true")
+    ap.add_argument("--no-captions", action="store_true", help="skip part 1 (already measured)")
     a = ap.parse_args(argv)
     if a.child:
         child(a.child[0], a.child[1], a.words)
@@ -285,12 +296,24 @@ def main(argv=None) -> None:
                "captions": {}, "sources": {}}
     save = lambda: (OUT / "results.json").write_text(json.dumps(results, indent=1), encoding="utf-8")  # noqa: E731
 
-    log("part 1: which free sources already have captions")
+    if a.no_captions:
+        results["captions"] = {"skipped": "measured in transcribe-1"}
+        results["captions"]["yt_dlp"] = ytdlp_subs()
+    else:
+        log("part 1: which free sources already have captions")
+        part1(results, a.quick)
+    save()
+    part2(results, a, full_models, sample_models, cap_seconds, save)
+
+
+def part1(results: dict, quick: bool) -> None:
+    a = argparse.Namespace(quick=quick)
     results["captions"]["archive_org"] = archive_captions(10 if a.quick else 40)
     results["captions"]["nasa_image_library"] = nasa_captions(3 if a.quick else 10)
     results["captions"]["yt_dlp"] = ytdlp_subs()
-    save()
 
+
+def part2(results: dict, a, full_models, sample_models, cap_seconds, save) -> None:
     log("part 2: speech to text on the server CPU")
     sources = {k: dict(v) for k, v in SOURCES.items()}
     with tempfile.TemporaryDirectory() as tmp:
