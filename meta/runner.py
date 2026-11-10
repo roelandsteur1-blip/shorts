@@ -62,11 +62,12 @@ ALLOWLIST = {
     "collectprobe": ("meta.collectprobe", [], None),  # read-only: why the collector finds nothing (verdicts per clip)
     "clips": ("meta.clips", [], None),
     "clipsmilitary": ("meta.clips", ["--only", "military"], None),  # just the military type  # clip-channel test Shorts, one per footage type (research/clip-channels.md)
+    "transcribe": ("meta.transcribe", [], None),  # read-only: captions on free sources + Whisper speed on the CPU (transcript-first paper)
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
 JSON_DIR = {"round3new": "round3"}  # jobs that write into another job's folder
-JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3
