@@ -6,14 +6,45 @@
 #
 # [[title]]
 # id = "archive identifier"   or "nasa:<nasa_id>"
+#   or, for a checked FILM whose best copy the server should pick (deny list still applies):
+# search = 'title:("Film title") AND mediatype:movies'
+# year = 1940
 # kind = "feature"            # newsreel | nasa | prelinger | feature | classictv
 # rights = "why it is free: renewal not filed (link to the record), federal work, ..."
 # checked = "2026-11-12, Roeland"
 # note = ""
+
+[[title]]
+title = "His Girl Friday"
+search = 'title:("His Girl Friday") AND mediatype:movies'
+year = 1940
+kind = "feature"
+rights = "Film copyright not renewed; underlying play The Front Page (1928) US public domain since 2024"
+checked = "2026-11-12, Roeland"
+note = "Columbia: use an old unrestored copy"
+
+[[title]]
+title = "Reefer Madness"
+search = 'title:("Reefer Madness") AND mediatype:movies'
+year = 1936
+kind = "feature"
+rights = "Copyright not renewed"
+checked = "2026-11-12, Roeland"
+note = "the 2004 colorized version is new work: skipped by the deny list"
+
+[[title]]
+title = "The Little Shop of Horrors"
+search = 'title:("Little Shop of Horrors") AND mediatype:movies'
+year = 1960
+kind = "feature"
+rights = "Copyright not renewed (renewal due 1987-88)"
+checked = "2026-11-12, Roeland"
+note = "the 1960 Corman film only, never the 1986 musical"
 
 # Makers and owners that defend public-domain copies (CBS claimed PD Andy Griffith and Beverly
 # Hillbillies episodes; Republic regained It's a Wonderful Life through story and music rights;
 # Keaton and Chaplin are claimed abroad). Any match in an item's title, maker or description skips it.
 [deny]
 words = ["cbs", "paramount", "republic pictures", "roy export", "cohen film", "andy griffith",
-         "beverly hillbillies", "it's a wonderful life", "chaplin", "restored", "restoration"]
+         "beverly hillbillies", "it's a wonderful life", "chaplin", "restored", "restoration",
+         "colorized", "colourised", "colorised"]
