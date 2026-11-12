@@ -319,3 +319,8 @@ n = 3
 id = "2026-11-12-tclips-8"
 name = "tclips"
 n = 4
+
+# Previews of all transcript-first samples in one results folder, for Roeland's blind test
+[[job]]
+id = "2026-11-12-tclipsshare-1"
+name = "tclipsshare"

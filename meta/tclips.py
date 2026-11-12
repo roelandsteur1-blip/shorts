@@ -777,14 +777,34 @@ def make(kind: str, per_source: int, bare_sources: int) -> None:
     log(f"[{kind}] done: {ok} Shorts from {len(srcs)} sources")
 
 
+def share() -> list[Path]:
+    """Fresh copies of every sample Short in share/, so the runner publishes previews of all of
+    them in one job (it only keeps previews of the last 5 jobs, and only of new files)."""
+    dest = OUT / "share"
+    dest.mkdir(parents=True, exist_ok=True)
+    for old in dest.glob("*.mp4"):
+        old.unlink()
+    out = []
+    for f in sorted(OUT.glob("*.mp4")):
+        (dest / f.name).write_bytes(f.read_bytes())
+        out.append(dest / f.name)
+    log(f"shared {len(out)} Shorts: {', '.join(f.name for f in out)}")
+    return out
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make"])
-    ap.add_argument("--part", type=int, choices=sorted(PARTS), required=True)
+    ap.add_argument("step", choices=["prep", "make", "share"])
+    ap.add_argument("--part", type=int, choices=sorted(PARTS))
     ap.add_argument("--sources", type=int, default=3)
     ap.add_argument("--per-source", type=int, default=2)
     ap.add_argument("--bare", type=int, default=2, help="sources whose first Short also gets a bare version")
     a = ap.parse_args(argv)
+    if a.step == "share":
+        share()
+        return
+    if a.part is None:
+        ap.error("--part is needed for prep and make")
     kind = PARTS[a.part]
     if a.step == "prep":
         prep(kind, a.sources)

@@ -66,6 +66,7 @@ ALLOWLIST = {
     "transcribe2": ("meta.transcribe", ["--no-captions"], None),  # rerun of the speed test only  # read-only: captions on free sources + Whisper speed on the CPU (transcript-first paper)
     "tclipsprep": ("meta.tclips", ["prep", "--part", "{n}"], (1, 4)),  # transcript-first: pick sources + transcribe (1 newsreel, 2 NASA, 3 Prelinger, 4 features)
     "tclips": ("meta.tclips", ["make", "--part", "{n}"], (1, 4)),  # transcript-first: moments -> sample Shorts from the cached transcripts
+    "tclipsshare": ("meta.tclips", ["share"], None),  # transcript-first: previews of every sample Short in one job
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
