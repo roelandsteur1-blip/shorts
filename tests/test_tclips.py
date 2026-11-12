@@ -218,3 +218,23 @@ def test_make_source_end_to_end_with_a_fake_claude(tmp_path, monkeypatch):
     assert (tmp_path / "out" / "newsreel-1b.mp4").exists()
     assert not list((tmp_path / "out" / "work").glob("*.mp4"))  # pieces cleaned up
     assert len(llm.prompts) == 2 + 2 * 2  # moments, rank, then layer + review per Short
+
+
+def test_checked_films_by_search_pick_one_clean_copy(monkeypatch):
+    """A film on the list by search: the server picks one copy of the right year that isn't
+    restored or colorized; it never falls back to the open searches for features."""
+    titles = [{"title": "Reefer Madness", "search": "q-reefer", "year": 1936, "kind": "feature",
+               "rights": "not renewed"}]
+    docs = {"q-reefer": [{"identifier": "reefer_color", "year": "1936"}, {"identifier": "reefer_2005", "year": "2005"},
+                         {"identifier": "reefer_ok", "year": "1936"}, {"identifier": "reefer_ok2", "year": "1936"}]}
+    metas = {"reefer_color": {"title": "Reefer Madness (colorized)"}, "reefer_ok": {"title": "Reefer Madness"},
+             "reefer_ok2": {"title": "Reefer Madness"}}
+    monkeypatch.setattr(tclips, "search", lambda q, rows=30: docs.get(q, []))
+    monkeypatch.setattr(tclips, "archive_item", lambda i: {"url": f"u/{i}", "length": 4000, "meta": metas[i],
+                                                           "captions_url": None})
+    got = tclips.find_archive("feature", 3, titles, ["colorized"])
+    assert [g["id"] for g in got] == ["reefer_ok"]
+    assert got[0]["rights"].startswith("film on the hand-checked list") and "not renewed" in got[0]["rights"]
+    # the shipped list has the three checked films
+    shipped = [t for t in tclips.load_titles()[0] if t["kind"] == "feature"]
+    assert {t["title"] for t in shipped} == {"His Girl Friday", "Reefer Madness", "The Little Shop of Horrors"}

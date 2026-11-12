@@ -187,7 +187,7 @@ def load_titles(path: Path = TITLES) -> tuple[list[dict], list[str]]:
     if not path.exists():
         return [], []
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    titles = [t for t in data.get("title", []) if t.get("id") and t.get("kind") in KINDS]
+    titles = [t for t in data.get("title", []) if (t.get("id") or t.get("search")) and t.get("kind") in KINDS]
     deny = [str(w).lower() for w in data.get("deny", {}).get("words", [])]
     return titles, deny
 
@@ -253,10 +253,25 @@ def archive_item(ident: str) -> dict | None:
 
 def find_archive(kind: str, n: int, titles: list[dict], deny: list[str]) -> list[dict]:
     spec = KINDS[kind]
-    pinned = [t for t in titles if t["kind"] == kind and not str(t["id"]).startswith("nasa:")]
-    allowed = {t["id"] for t in pinned}
-    out, seen = [], set()
-    queue = [("pinned", {"identifier": t["id"]}) for t in pinned]
+    pinned = [t for t in titles if t["kind"] == kind and not str(t.get("id", "")).startswith("nasa:")]
+    allowed = {t["id"] for t in pinned if t.get("id")}
+    out, seen, done = [], set(), set()
+    queue = [("pinned", {"identifier": t["id"]}) for t in pinned if t.get("id")]
+    for i, t in enumerate(pinned):
+        # a checked FILM given by search: the server picks its best copy (deny list still applies,
+        # so restored or colorized copies are skipped), at most one source per entry
+        if t.get("id") or not t.get("search"):
+            continue
+        try:
+            docs = search(t["search"], rows=15)
+        except Exception as e:  # noqa: BLE001
+            log(f"[{kind}] search for '{t.get('title', t['search'])}' failed: {e}")
+            continue
+        for d in docs:
+            y = year_of(d)
+            if t.get("year") and y and abs(y - int(t["year"])) > 1:
+                continue
+            queue.append((f"title{i}", d))
     for q in spec["searches"]:
         try:
             queue += [(q, d) for d in search(q, rows=30)]
@@ -266,9 +281,10 @@ def find_archive(kind: str, n: int, titles: list[dict], deny: list[str]) -> list
         ident = doc["identifier"]
         if len(out) >= n:
             break
-        if ident in seen:
+        if ident in seen or q in done:
             continue
         seen.add(ident)
+        checked_film = q.startswith("title")
         year = year_of(doc)
         if year and year > spec["max_year"] and ident not in allowed:
             continue
@@ -282,10 +298,19 @@ def find_archive(kind: str, n: int, titles: list[dict], deny: list[str]) -> list
         if not spec["min"] <= item["length"] <= spec["max"] and ident not in allowed:
             continue
         meta = item["meta"]
-        ok, why = rights_ok(kind, meta, deny, allowed, ident)
+        if checked_film:
+            word = denied(meta, deny)
+            ok, why = (False, f"deny list: {word}") if word else (True, "film on the hand-checked list")
+            entry = pinned[int(q[5:])]
+            if ok and entry.get("rights"):
+                why = f"{why}: {entry['rights']}"
+        else:
+            ok, why = rights_ok(kind, meta, deny, allowed, ident)
         if not ok:
             log(f"[{kind}] {ident}: skipped, {why}")
             continue
+        if checked_film:
+            done.add(q)
         out.append({"id": ident, "kind": kind, "url": item["url"], "length": round(item["length"]),
                     "title": str(meta.get("title") or ident), "year": year_of(meta) or year,
                     "maker": str(meta.get("creator") or meta.get("publisher") or "unknown")[:120],

@@ -287,3 +287,14 @@ n = 2
 id = "2026-11-12-tclips-3"
 name = "tclips"
 n = 3
+
+# Transcript-first, part 4: the three feature films Roeland checked (config/clip-titles.toml)
+[[job]]
+id = "2026-11-12-tclipsprep-4"
+name = "tclipsprep"
+n = 4
+
+[[job]]
+id = "2026-11-12-tclips-4"
+name = "tclips"
+n = 4
