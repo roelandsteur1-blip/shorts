@@ -251,3 +251,14 @@ def test_signals_and_made_json_hold_plain_types(tmp_path):
     assert type(sig["blank_start"]) is bool and type(tclips.blank(None)) is bool
     tclips.save_json(tmp_path / "m.json", [{"x": np.bool_(True), "y": np.float32(1.5)}])
     assert json.loads((tmp_path / "m.json").read_text()) == [{"x": True, "y": 1.5}]
+
+
+def test_share_copies_every_sample(tmp_path, monkeypatch):
+    monkeypatch.setattr(tclips, "OUT", tmp_path)
+    for n in ("newsreel-1a.mp4", "feature-2a-bare.mp4"):
+        (tmp_path / n).write_bytes(b"x")
+    (tmp_path / "work").mkdir()
+    (tmp_path / "work" / "piece.mp4").write_bytes(b"x")
+    got = tclips.share()
+    assert sorted(f.name for f in got) == ["feature-2a-bare.mp4", "newsreel-1a.mp4"]
+    assert runner.command({"id": "2026-11-12-tclipsshare-1", "name": "tclipsshare"})[-2:] == ["meta.tclips", "share"]
