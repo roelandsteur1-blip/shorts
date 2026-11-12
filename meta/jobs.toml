@@ -255,3 +255,35 @@ name = "transcribe"
 [[job]]
 id = "2026-11-10-transcribe2-1"
 name = "transcribe2"
+
+# Transcript-first maker (plan/transcript-first-build-plan.md): transcribe 3 sources per kind,
+# then make 2 sample Shorts per source. Parts: 1 newsreel, 2 NASA, 3 Prelinger.
+[[job]]
+id = "2026-11-12-tclipsprep-1"
+name = "tclipsprep"
+n = 1
+
+[[job]]
+id = "2026-11-12-tclipsprep-2"
+name = "tclipsprep"
+n = 2
+
+[[job]]
+id = "2026-11-12-tclipsprep-3"
+name = "tclipsprep"
+n = 3
+
+[[job]]
+id = "2026-11-12-tclips-1"
+name = "tclips"
+n = 1
+
+[[job]]
+id = "2026-11-12-tclips-2"
+name = "tclips"
+n = 2
+
+[[job]]
+id = "2026-11-12-tclips-3"
+name = "tclips"
+n = 3

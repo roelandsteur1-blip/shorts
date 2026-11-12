@@ -1,0 +1,19 @@
+# Long free sources for the transcript-first maker (meta/tclips.py), checked by hand.
+#
+# Newsreels (Universal Newsreel), NASA videos and Prelinger films marked public domain are found by
+# search and pass by the rules in meta/tclips.py (paper section 4.1). Feature films and classic TV
+# are only used when they are listed here, after a renewal check per title (paper 4.2).
+#
+# [[title]]
+# id = "archive identifier"   or "nasa:<nasa_id>"
+# kind = "feature"            # newsreel | nasa | prelinger | feature | classictv
+# rights = "why it is free: renewal not filed (link to the record), federal work, ..."
+# checked = "2026-11-12, Roeland"
+# note = ""
+
+# Makers and owners that defend public-domain copies (CBS claimed PD Andy Griffith and Beverly
+# Hillbillies episodes; Republic regained It's a Wonderful Life through story and music rights;
+# Keaton and Chaplin are claimed abroad). Any match in an item's title, maker or description skips it.
+[deny]
+words = ["cbs", "paramount", "republic pictures", "roy export", "cohen film", "andy griffith",
+         "beverly hillbillies", "it's a wonderful life", "chaplin", "restored", "restoration"]

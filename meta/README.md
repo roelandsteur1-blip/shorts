@@ -36,3 +36,14 @@ one-time rule (it allows that single command and nothing else), run from the lap
     ssh -t -i $HOME\.ssh\contabo shorts@5.189.155.248 "echo 'shorts ALL=(root) NOPASSWD: /usr/bin/systemctl restart shorts-dashboard' | sudo tee /etc/sudoers.d/shorts-update >/dev/null && sudo chmod 440 /etc/sudoers.d/shorts-update && sudo visudo -cf /etc/sudoers.d/shorts-update"
 
 Undo: `sudo rm /etc/sudoers.d/shorts-update`. A restart stops a dashboard job that is running.
+
+## Transcript-first clip Shorts (samples only)
+
+Plan: project file `plan/transcript-first-build-plan.md`. Two steps per kind of source
+(part 1 newsreel, 2 NASA, 3 Prelinger, 4 feature films from `config/clip-titles.toml` only):
+
+    .venv/bin/python -m meta.tclips prep --part 1   # pick 3 sources, transcribe (cached in ~/meta-out/transcripts)
+    .venv/bin/python -m meta.tclips make --part 1   # moments -> 2 Shorts per source in ~/meta-out/tclips
+
+Runner jobs `tclipsprep` and `tclips` (n = part). Transcripts use NASA's own captions or a human
+subtitle file when there is one, else faster-whisper distil-large-v3 from the research venv.
