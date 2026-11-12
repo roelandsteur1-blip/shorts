@@ -298,3 +298,24 @@ n = 4
 id = "2026-11-12-tclips-4"
 name = "tclips"
 n = 4
+
+# Reruns of the sample step: tclips-1..4 crashed writing made.json after the first source (numpy bool)
+[[job]]
+id = "2026-11-12-tclips-5"
+name = "tclips"
+n = 1
+
+[[job]]
+id = "2026-11-12-tclips-6"
+name = "tclips"
+n = 2
+
+[[job]]
+id = "2026-11-12-tclips-7"
+name = "tclips"
+n = 3
+
+[[job]]
+id = "2026-11-12-tclips-8"
+name = "tclips"
+n = 4

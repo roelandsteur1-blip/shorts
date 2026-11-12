@@ -464,7 +464,7 @@ def blank(im: Image.Image | None) -> bool:
     if im is None:
         return True
     g = np.asarray(im.convert("L"), dtype=np.float32)
-    return g.mean() < 22 or g.std() < 10
+    return bool(g.mean() < 22 or g.std() < 10)
 
 
 def signal_score(c: dict) -> float | None:
@@ -487,7 +487,7 @@ def signals(piece: str, offset: float, length: float) -> dict:
     import numpy as np
     out: dict = {}
     first = frame(piece, offset + 0.4, 480)
-    out["blank_start"] = blank(first)
+    out["blank_start"] = bool(blank(first))  # numpy bool otherwise: made.json can't hold it
     try:
         from shorts.framing import _faces
         out["face_start"] = bool(first is not None and _faces(np.asarray(first)[:, :, ::-1].copy()))
@@ -721,7 +721,9 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool) -> dict 
 # ---------- the two steps ----------
 
 def save_json(path: Path, data) -> None:
-    path.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+    def plain(o):  # numpy numbers and bools from the signal pass
+        return o.item() if hasattr(o, "item") else str(o)
+    path.write_text(json.dumps(data, indent=1, ensure_ascii=False, default=plain), encoding="utf-8")
 
 
 def prep(kind: str, n: int) -> None:

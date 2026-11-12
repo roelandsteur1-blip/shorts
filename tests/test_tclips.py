@@ -238,3 +238,16 @@ def test_checked_films_by_search_pick_one_clean_copy(monkeypatch):
     # the shipped list has the three checked films
     shipped = [t for t in tclips.load_titles()[0] if t["kind"] == "feature"]
     assert {t["title"] for t in shipped} == {"His Girl Friday", "Reefer Madness", "The Little Shop of Horrors"}
+
+
+def test_signals_and_made_json_hold_plain_types(tmp_path):
+    """tclips-1..3 (2026-11-12) crashed writing made.json: blank() gave a numpy bool."""
+    import json
+    src = tmp_path / "s.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:r=24:d=6",
+                    "-f", "lavfi", "-i", "sine=d=6", "-pix_fmt", "yuv420p", "-shortest", str(src)], check=True)
+    sig = tclips.signals(str(src), 1.0, 4.0)
+    json.dumps(sig)
+    assert type(sig["blank_start"]) is bool and type(tclips.blank(None)) is bool
+    tclips.save_json(tmp_path / "m.json", [{"x": np.bool_(True), "y": np.float32(1.5)}])
+    assert json.loads((tmp_path / "m.json").read_text()) == [{"x": True, "y": 1.5}]
