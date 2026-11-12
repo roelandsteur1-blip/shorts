@@ -64,11 +64,13 @@ ALLOWLIST = {
     "clipsmilitary": ("meta.clips", ["--only", "military"], None),  # just the military type  # clip-channel test Shorts, one per footage type (research/clip-channels.md)
     "transcribe": ("meta.transcribe", [], None),
     "transcribe2": ("meta.transcribe", ["--no-captions"], None),  # rerun of the speed test only  # read-only: captions on free sources + Whisper speed on the CPU (transcript-first paper)
+    "tclipsprep": ("meta.tclips", ["prep", "--part", "{n}"], (1, 4)),  # transcript-first: pick sources + transcribe (1 newsreel, 2 NASA, 3 Prelinger, 4 features)
+    "tclips": ("meta.tclips", ["make", "--part", "{n}"], (1, 4)),  # transcript-first: moments -> sample Shorts from the cached transcripts
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_DIR = {"round3new": "round3", "transcribe2": "transcribe"}  # jobs that write into another job's folder
-JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_DIR = {"round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips"}  # jobs that write into another job's folder
+JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3
