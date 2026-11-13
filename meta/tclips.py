@@ -1219,6 +1219,23 @@ UPLOAD_DIR = OUT / "upload"
 PLAN = OUT / "upload-plan.json"
 FORMAT_ID = "tclips"                        # shorts.format_id of the transcript-first Shorts in the live database
 CATEGORY = "27"                             # Education
+# Checked by hand before the upload (2026-11-13): out of the plan, and the spares that take their place.
+DROP = {"feature-3c": "payoff error: Myrtle Vail was writer Charles Griffith's grandmother, not his mother"}
+SPARES = ("feature-2b",)
+
+
+def checked_plan(plan: list[dict]) -> list[dict]:
+    """The plan without DROP, plus SPARES (from made.json, their MP4 still in OUT) at the end."""
+    out = [m for m in plan if m["short"] not in DROP]
+    have = {m["short"] for m in out}
+    made_path = OUT / "made.json"
+    made = {m["short"]: m for m in (json.loads(made_path.read_text(encoding="utf-8")) if made_path.exists() else [])
+            if m.get("short")}
+    for name in SPARES:
+        m, path = made.get(name), OUT / f"{name}.mp4"
+        if name not in have and m and path.exists():
+            out.append({**m, "path": str(path), "secs": m["lengths"].get(path.name)})
+    return out
 
 
 def spread(rows: list[dict]) -> list[dict]:
@@ -1306,7 +1323,7 @@ def upload(channel_id: str = UPLOAD_CHANNEL) -> list[str]:
     counts = dict(conn.execute("SELECT status, COUNT(*) FROM shorts WHERE channel=? GROUP BY status", (ch.id,)).fetchall())
     log(f"[upload] '{ch.id}' ({ch.name}) in the database now: {counts}; publish times {ch.publish_times_utc}, "
         f"{ch.uploads_per_day} per day for its own Shorts, paused={ch.paused}, via={ch.upload_via}")
-    plan = json.loads(PLAN.read_text(encoding="utf-8")) if PLAN.exists() else []
+    plan = checked_plan(json.loads(PLAN.read_text(encoding="utf-8")) if PLAN.exists() else [])
     done = {r[0] for r in conn.execute(
         "SELECT video_path FROM shorts WHERE channel=? AND format_id=? AND status IN ('scheduled', 'uploaded')",
         (ch.id, FORMAT_ID))}
