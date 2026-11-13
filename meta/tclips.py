@@ -1159,6 +1159,10 @@ def looks(names: list[str] | None = None) -> list[Path]:
     return out
 
 
+# Roeland 2026-11-13: compare only 5 Shorts, as different as possible (one per kind, two newsreels).
+COMPARE = ("newsreel-1a", "newsreel-2a", "prelinger-1a", "nasa-2a", "feature-2a")
+
+
 def compare(names: list[str] | None = None) -> list[Path]:
     """Every made Short twice, from the same cut and texts: <short>-plain.mp4 without the engagement
     elements and <short>-fx.mp4 with them, into compare/ (Roeland's side-by-side, 2026-11-13)."""
@@ -1172,6 +1176,7 @@ def compare(names: list[str] | None = None) -> list[Path]:
     work.mkdir(parents=True, exist_ok=True)
     for old in dest.glob("*.mp4"):
         old.unlink()
+    names = list(names or COMPARE)
     out, rows = [], []
     for m in made:
         name = m["short"]
