@@ -33,14 +33,15 @@ from pathlib import Path
 from statistics import mean
 from urllib.parse import quote
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from . import transcript as tx
 from .clips import PD, UA, build_band, cuts, frame, grid, pick_file, probe_length, search, text_block, year_of
-from .textcard import H, W, black_bars, log
+from .textcard import H, W, black_bars, font, log, wrap
 
 OUT = Path.home() / "meta-out" / "tclips"
 TITLES = Path(__file__).resolve().parents[1] / "config" / "clip-titles.toml"
+LOOK_TEST = Path(__file__).resolve().parents[1] / "config" / "look-test.toml"
 SUB_EXT = (".srt", ".vtt")
 
 MIN_LEN, MAX_LEN, CAP = 15.0, 45.0, 58.0   # paper 7.2/8: 15-45 s, never over 60 s (Content ID)
@@ -49,6 +50,17 @@ KEEP_SIGNAL = 5                             # candidates that go on to the frame
 LAYER = ("context", "verdict", "payoff_fact", "story_frame", "comparison", "commentary")
 BLOCK = ("killed", "kill", "dead", "death", "deaths", "died", "dying", "corpse", "corpses", "murder",
          "murdered", "suicide", "massacre", "executed", "execution", "lynched", "slaughter")
+
+# How the dialogue subtitles look (Roeland's look test, 2026-11-13). "hot" colours the word being
+# said; "upper" shouts in capitals; "box" puts the line on a dark plate.
+LOOKS = {
+    "classic": {"size": 46, "colour": (255, 255, 255), "stroke": 3},
+    "yellow": {"size": 54, "colour": (255, 221, 0), "stroke": 4},
+    "box": {"size": 46, "colour": (255, 255, 255), "stroke": 0, "box": (0, 0, 0, 205)},
+    "karaoke": {"size": 50, "colour": (255, 255, 255), "stroke": 4, "hot": (255, 221, 0)},
+    "pop": {"size": 64, "colour": (255, 255, 255), "stroke": 6, "hot": (80, 220, 120), "upper": True, "max_words": 3},
+}
+LOOK = "classic"                            # default until a look wins the test
 
 KINDS = {
     "newsreel": {
@@ -145,6 +157,11 @@ The moment ({secs:.0f} s, the film's original sound is kept), what is said:
 Draft angle: {angle}
 The image shows frames from the moment, labelled with seconds.
 
+Tone: RAGEBAIT (Roeland's pick, 2026-11-13). A provocative, opinionated take that makes people
+want to comment, argue or share: then-vs-now, "we stopped doing this", "this used to be normal",
+or an open question at the end of the payoff. Every claim stays TRUE. No insults to groups of
+people, no party politics, nothing about tragedies or violence: it must stay advertiser-friendly.
+
 YouTube does NOT count captions of the dialogue, or text that only describes what is on screen, as
 original. Our layer has to ADD something the viewer can't get from the clip. Write:
 - "hook": on screen above the film the whole time. Max 9 words, curiosity first, no emoji.
@@ -176,6 +193,8 @@ The image shows frames from the start (S) and the end (E) of the clip.
 2. Is the payoff TRUE and about this film, event or subject, not generic era trivia? If not,
    rewrite it from the description or the transcript (max 22 words). If you can't make it true, set "ok" false.
 3. Does the hook promise something the clip delivers? If not, rewrite it (max 9 words).
+Keep the texts' provocative ragebait tone when you rewrite, but never at the cost of the truth,
+and never insulting a group of people.
 
 Return JSON only: {{"ok": true, "hook": "...", "context": "...", "payoff": "...", "notes": "one line"}}"""
 
@@ -525,7 +544,8 @@ def layer_ok(plan: dict) -> list[str]:
 
 # ---------- render ----------
 
-def subtitle_blocks(words: list[list], start: float, end: float, max_words: int = 6) -> list[tuple[float, float, str]]:
+def subtitle_blocks(words: list[list], start: float, end: float, max_words: int = 6,
+                    with_words: bool = False) -> list[tuple]:
     """Dialogue subtitles in output time (0 = start): short blocks of at most `max_words`, broken
     at sentence ends and pauses; each stays until the next one starts (or a moment after its last word)."""
     ws = [w for w in words if w[1] >= start - 0.05 and w[2] <= end + 0.05]
@@ -547,11 +567,72 @@ def subtitle_blocks(words: list[list], start: float, end: float, max_words: int 
         nxt = blocks[i + 1][0][1] - start if i + 1 < len(blocks) else None
         t1 = min(nxt, b[-1][2] - start + 0.6) if nxt is not None else min(end - start, b[-1][2] - start + 0.6)
         if t1 - t0 >= 0.2:
-            out.append((round(t0, 2), round(t1, 2), " ".join(str(w[0]) for w in b)))
+            out.append((round(t0, 2), round(t1, 2), " ".join(str(w[0]) for w in b)) + ((b,) if with_words else ()))
     return out
 
 
-def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = False) -> float:
+def subtitle_image(words: list[str], look: dict, hot: int | None = None) -> Image.Image:
+    """One subtitle on a full-width transparent canvas of fixed height (two lines), text at the
+    bottom. hot = index of the word being said, drawn in the look's "hot" colour."""
+    size = look["size"]
+    f = font("bold", size)
+    words = [w.upper() for w in words] if look.get("upper") else list(words)
+    lines = wrap(" ".join(words), f, W - 160)[:2]
+    lh = int(size * 1.28)
+    im = Image.new("RGBA", (W, 2 * lh + 30), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    k = 0
+    for i, ln in enumerate(lines):
+        y = im.height - (len(lines) - i) * lh - 10
+        tw = f.getlength(ln)
+        if look.get("box"):
+            d.rounded_rectangle(((W - tw) / 2 - 18, y - 6, (W + tw) / 2 + 18, y + lh - 2), 14, fill=look["box"])
+        x = (W - tw) / 2
+        for word in ln.split():
+            colour = look["hot"] if hot == k and look.get("hot") else look["colour"]
+            d.text((x, y), word, font=f, fill=colour, stroke_width=look.get("stroke", 0), stroke_fill="black")
+            x += f.getlength(word + " ")
+            k += 1
+    return im
+
+
+def subtitle_track(words: list[list], start: float, end: float, look: dict, tmp: Path) -> tuple[Path, int]:
+    """The dialogue subtitles as one image sequence (an ffmpeg concat list), so a look that colours
+    every spoken word is one overlay, not hundreds. Returns (concat list, image height)."""
+    total = end - start
+    blank = subtitle_image([], look)
+    blank.save(tmp / "sub-blank.png")
+    shots: list[tuple[float, float, Image.Image]] = []
+    for t0, t1, _text, ws in subtitle_blocks(words, start, end, look.get("max_words", 6), with_words=True):
+        texts = [str(w[0]) for w in ws]
+        if not look.get("hot"):
+            shots.append((t0, t1, subtitle_image(texts, look)))
+            continue
+        for j, w in enumerate(ws):
+            a = t0 if j == 0 else max(t0, w[1] - start)
+            b = t1 if j == len(ws) - 1 else min(t1, ws[j + 1][1] - start)
+            if b - a > 0.02:
+                shots.append((a, b, subtitle_image(texts, look, hot=j)))
+    lines, now = [], 0.0
+    for n, (a, b, im) in enumerate(shots):
+        a, b = max(a, now), min(b, total)
+        if b - a < 0.02:
+            continue
+        if a - now > 0.01:
+            lines += [f"file '{tmp / 'sub-blank.png'}'", f"duration {a - now:.3f}"]
+        png = tmp / f"sub-{n}.png"
+        im.save(png)
+        lines += [f"file '{png}'", f"duration {b - a:.3f}"]
+        now = b
+    if total - now > 0.01 or not lines:
+        lines += [f"file '{tmp / 'sub-blank.png'}'", f"duration {max(total - now, 0.05):.3f}"]
+    lines.append(f"file '{tmp / 'sub-blank.png'}'")  # concat needs the last file twice
+    lst = tmp / "subs.txt"
+    lst.write_text("\n".join(lines) + "\n")
+    return lst, blank.height
+
+
+def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = False, look: str = LOOK) -> float:
     """One Short from a local piece of the source (times in piece time). bare = the same cut with
     subtitles only, for the side-by-side test of what our layer adds."""
     from shorts import media
@@ -577,14 +658,12 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
         base.save(tmp / "base.png")
         inputs = ["-f", "lavfi", "-t", f"{total:.2f}", "-i", f"color=black:s={W}x{H}:r=30",
                   "-i", str(band), "-loop", "1", "-t", f"{total:.2f}", "-i", str(tmp / "base.png")]
-        fc = f"[0:v][1:v]overlay=0:{band_y}[a0];[a0][2:v]overlay=0:0[b0]"
-        last, idx = "b0", 3
-        overlays = []  # (png, x, y, t0, t1)
-        for i, (t0, t1, text) in enumerate(subtitle_blocks(words, start, end)):
-            im = text_block(text, 46, "white", width=W - 160)
-            png = tmp / f"s{i}.png"
-            im.save(png)
-            overlays.append((png, band_y + band_h - im.height - 6, t0, t1))
+        subs, sub_h = subtitle_track(words, start, end, LOOKS[look], tmp)
+        inputs += ["-f", "concat", "-safe", "0", "-i", str(subs)]
+        fc = (f"[0:v][1:v]overlay=0:{band_y}[a0];[a0][2:v]overlay=0:0[b0];[3:v]format=rgba,fps=30[subs];"
+              f"[b0][subs]overlay=0:{band_y + band_h - sub_h - 16}:eof_action=repeat[c0]")
+        last, idx = "c0", 4
+        overlays = []  # (png, y, t0, t1)
         if not bare:
             ctx_end = min(5.0, total * 0.3)
             pay_at = max(total - 5.0, total * 0.65)
@@ -792,9 +871,53 @@ def share() -> list[Path]:
     return out
 
 
+def looks(names: list[str] | None = None) -> list[Path]:
+    """Roeland's look test: the Shorts in config/look-test.toml, re-cut from their sources with the
+    texts listed there, once in every subtitle look. Into looks/<short>-<look>.mp4."""
+    from shorts import media
+    test = tomllib.loads(LOOK_TEST.read_text(encoding="utf-8"))["short"]
+    made = {m["short"]: m for m in json.loads((OUT / "made.json").read_text(encoding="utf-8")) if m.get("short")}
+    srcs = {s["id"]: s for f in OUT.glob("sources-*.json") for s in json.loads(f.read_text(encoding="utf-8"))}
+    dest, work = OUT / "looks", OUT / "work"
+    dest.mkdir(parents=True, exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
+    for old in dest.glob("*.mp4"):
+        old.unlink()
+    out = []
+    for row in test:
+        name = row["name"]
+        if names and name not in names:
+            continue
+        m = made.get(name)
+        src = srcs.get(m["source"]) if m else None
+        if not src:
+            log(f"[looks] {name}: not in made.json or its source is gone, skipped")
+            continue
+        sents = tx.get(src)["sentences"]
+        c = snap(sents, *m["sentences"])
+        if not c:
+            log(f"[looks] {name}: sentences {m['sentences']} no longer make a Short, skipped")
+            continue
+        p0 = max(0.0, c["start"] - 1.0)
+        piece = work / f"looks-{name}.mp4"
+        media.run(["-ss", f"{p0:.2f}", "-t", f"{c['end'] - p0 + 1.0:.2f}", "-i", src["url"],
+                   "-vf", "scale=-2:min(720\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                   "-c:a", "aac", "-b:a", "160k", str(piece)])
+        words = [[w[0], w[1] - p0, w[2] - p0] for s in sents[c["from"]:c["to"] + 1] for w in s["words"]]
+        plan = {"hook": row["hook"], "context": row["context"], "payoff": row["payoff"],
+                "credit": m.get("credit", ""), "start": c["start"] - p0, "end": c["end"] - p0}
+        for look in LOOKS:
+            f = dest / f"{name}-{look}.mp4"
+            render(str(piece), plan, words, f, look=look)
+            out.append(f)
+        piece.unlink(missing_ok=True)
+        log(f"[looks] {name}: {len(LOOKS)} looks made")
+    return out
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks"])
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
     ap.add_argument("--sources", type=int, default=3)
     ap.add_argument("--per-source", type=int, default=2)
@@ -802,6 +925,9 @@ def main(argv=None) -> None:
     a = ap.parse_args(argv)
     if a.step == "share":
         share()
+        return
+    if a.step == "looks":
+        looks()
         return
     if a.part is None:
         ap.error("--part is needed for prep and make")

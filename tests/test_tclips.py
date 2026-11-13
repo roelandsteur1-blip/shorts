@@ -262,3 +262,54 @@ def test_share_copies_every_sample(tmp_path, monkeypatch):
     got = tclips.share()
     assert sorted(f.name for f in got) == ["feature-2a-bare.mp4", "newsreel-1a.mp4"]
     assert runner.command({"id": "2026-11-12-tclipsshare-1", "name": "tclipsshare"})[-2:] == ["meta.tclips", "share"]
+
+
+def test_drifting_audio_is_stretched_onto_the_film():
+    """Reefer Madness (2026-11-12): 3541 s of WAV for 3600 s of film, so the subtitles ran ahead."""
+    segs = [{"start": 100.0, "end": 102.0, "text": "a b", "words": [["a", 100.0, 101.0], ["b", 101.0, 102.0]]}]
+    k = 3600 / 3541
+    got = tx.stretch(segs, k)
+    assert got[0]["start"] == round(100 * k, 3) and got[0]["words"][1][2] == round(102 * k, 3)
+    src = {"id": "x", "length": 4098}
+    assert tx.stale({"origin": "whisper", "audio_s": 3541}, src)
+    assert not tx.stale({"origin": "whisper", "audio_s": 3600}, src)
+    assert not tx.stale({"origin": "whisper", "audio_s": 3541, "timing": {"stretch": 1.0}}, src)
+    assert not tx.stale({"origin": "nasa_captions"}, src)
+
+
+def test_every_look_renders_one_subtitle_track(tmp_path):
+    words = [[w, 1.0 + i * 0.4, 1.35 + i * 0.4] for i, w in enumerate("the car of tomorrow flies. Ladies and gentlemen".split())]
+    for name, look in tclips.LOOKS.items():
+        d = tmp_path / name
+        d.mkdir()
+        lst, h = tclips.subtitle_track(words, 0.5, 6.0, look, d)
+        lines = lst.read_text().splitlines()
+        total = sum(float(x.split()[1]) for x in lines if x.startswith("duration"))
+        assert abs(total - 5.5) < 0.01 and lines[-1].startswith("file") and h > 0
+        shots = [x for x in lines if x.startswith("file") and "blank" not in x]
+        assert len(shots) == (8 if look.get("hot") else len(tclips.subtitle_blocks(words, 0.5, 6.0, look.get("max_words", 6))))
+    assert tclips.LOOK in tclips.LOOKS
+
+
+def test_look_test_list_and_job():
+    import tomllib
+    rows = tomllib.loads(tclips.LOOK_TEST.read_text())["short"]
+    assert len(rows) == 5 and all(r["hook"] and r["context"] and r["payoff"] for r in rows)
+    assert len({r["name"].split("-")[0] for r in rows}) >= 4  # different kinds of source
+    assert runner.command({"id": "2026-11-13-tclipslooks-1", "name": "tclipslooks"})[-2:] == ["meta.tclips", "looks"]
+    assert "RAGEBAIT" in tclips.LAYER_PROMPT
+
+
+def test_looks_step_recuts_a_listed_short_in_every_look(tmp_path, monkeypatch):
+    import json
+    src = tmp_path / "long.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:r=24:d=30",
+                    "-f", "lavfi", "-i", "sine=d=30", "-pix_fmt", "yuv420p", "-shortest", str(src)], check=True)
+    monkeypatch.setattr(tclips, "OUT", tmp_path / "out")
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "made.json").write_text(json.dumps([{"short": "nasa-3b", "source": "s1", "sentences": [1, 4]}]))
+    (tmp_path / "out" / "sources-nasa.json").write_text(json.dumps([{"id": "s1", "url": str(src)}]))
+    monkeypatch.setattr(tx, "get", lambda s: {"sentences": sents(7)})
+    got = tclips.looks(["nasa-3b"])
+    assert sorted(f.name for f in got) == sorted(f"nasa-3b-{k}.mp4" for k in tclips.LOOKS)
+    assert not list((tmp_path / "out" / "work").glob("*.mp4"))

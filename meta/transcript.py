@@ -183,11 +183,38 @@ def fetch_text(url: str) -> str:
 
 def fetch_audio(url: str, out: Path, seconds: float = MAX_SECONDS) -> float:
     """16 kHz mono WAV of the first `seconds` of a video URL; returns its length."""
+    # aresample=async fills gaps in the audio timestamps with silence, so a second of WAV is a second
+    # of the film: without it Reefer Madness (2026-11-12) came out 1.6% short and the subtitles ran ahead
     subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-t", str(int(seconds)), "-i", url, "-vn",
-                    "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out)], check=True, timeout=3600)
+                    "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+                    str(out)], check=True, timeout=3600)
     p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
                        capture_output=True, text=True, timeout=60)
     return float(p.stdout.strip() or 0)
+
+
+def timeline(url: str, seconds: float = MAX_SECONDS) -> float | None:
+    """Length of the film's own timeline that fetch_audio covers (None if it can't be read)."""
+    p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", url],
+                       capture_output=True, text=True, timeout=120)
+    try:
+        return min(float(seconds), float(p.stdout.strip()))
+    except ValueError:
+        return None
+
+
+def stretch(segs: list[dict], k: float) -> list[dict]:
+    """Every time times k: maps WAV time onto film time when the audio track drifts from the picture."""
+    r = lambda t: round(t * k, 3)  # noqa: E731
+    return [{**s, "start": r(s["start"]), "end": r(s["end"]),
+             **({"words": [[w[0], r(w[1]), r(w[2])] for w in s["words"]]} if s.get("words") else {})} for s in segs]
+
+
+def stale(cached: dict, source: dict) -> bool:
+    """A Whisper transcript made before the drift fix whose audio came out short of the film."""
+    want = min(MAX_SECONDS, source.get("length") or 0)
+    return (cached.get("origin") == "whisper" and "timing" not in cached and want > 0
+            and cached.get("audio_s", want) < 0.99 * want)
 
 
 def load_wav(path: str):
@@ -250,7 +277,10 @@ def get(source: dict, refresh: bool = False) -> dict:
     """Transcript of a source {id, url, captions_url?}. Cached; see the module doc for the order."""
     path = cache_path(source["id"])
     if path.exists() and not refresh:
-        return json.loads(path.read_text(encoding="utf-8"))
+        cached = json.loads(path.read_text(encoding="utf-8"))
+        if not stale(cached, source):
+            return cached
+        log(f"{source['id']}: cached transcript drifts from the film ({cached.get('audio_s')} s of audio), redoing it")
     CACHE.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     res: dict = {"id": source["id"], "flags": {}}
@@ -272,8 +302,14 @@ def get(source: dict, refresh: bool = False) -> dict:
             log(f"{source['id']}: Whisper {MODEL} on {secs / 60:.1f} min of audio")
             out = whisper(wav)
             segs, flags = clean(out["segments"], loudness_of(load_wav(str(wav))))
+            film = timeline(source["url"])
+            k = film / secs if film and secs else 1.0
+            if abs(k - 1) > 0.003:
+                log(f"{source['id']}: audio is {secs:.0f} s for {film:.0f} s of film, stretching times by {k:.4f}")
+                segs = stretch(segs, k)
             res.update(origin="whisper", model=MODEL, audio_s=round(secs), run_s=out["run_s"],
-                       x_realtime=round(secs / max(out["run_s"], 0.1), 2), flags=flags)
+                       x_realtime=round(secs / max(out["run_s"], 0.1), 2), flags=flags,
+                       timing={"film_s": round(film or 0), "stretch": round(k, 5)})
     res["sentences"] = sentences(segs)
     res["words"] = sum(len(s["words"]) for s in res["sentences"])
     res["took_s"] = round(time.time() - t0, 1)
