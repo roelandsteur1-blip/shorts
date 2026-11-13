@@ -387,3 +387,10 @@ name = "tclipsupload"
 [[job]]
 id = "2026-11-13-tclipsuploadall-1"
 name = "tclipsuploadall"
+
+# Roeland's 10 example Shorts with the lessons of British Pathé, Cult Cinema Classics and Nineteenth
+# century videos (weirdest moment first, curiosity titles with the year, short film beats with a
+# 1-3 word title). Fresh newsreel and Prelinger sources, new moments from the 3 checked films. No upload.
+[[job]]
+id = "2026-11-13-tclipsexamples-1"
+name = "tclipsexamples"

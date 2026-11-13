@@ -159,14 +159,14 @@ Source: "{title}" ({year}). Maker: {maker}. Description: {desc}
 Transcript, one sentence per line: [sentence number] minutes:seconds text
 {transcript}
 
-Find {n} candidate moments that would each work as a 15-45 second Short that keeps the ORIGINAL
-SOUND. Read whole stretches, don't score single lines: a moment is usually 3-12 sentences. Speech
+Find {n} candidate moments that would each work as a {lo}-{hi} second Short that keeps the ORIGINAL
+SOUND.{extra} Read whole stretches, don't score single lines: a moment is usually 3-12 sentences. Speech
 should run almost without pause: the time stamps show long gaps between lines, and a moment with a
 long silence or a stretch of only music is dull (silences get cut out, which can leave it too short). Score
 each moment 1-5 on:
 1. self_contained: understandable on its own, or with one line of context from us.
 2. clear_start: starts at the start of a sentence, on a person speaking or on the action.
-3. setup_payoff: a line, then a reaction, reveal or punchline inside 15-45 s; it ends hard after it.
+3. setup_payoff: a line, then a reaction, reveal or punchline inside {lo}-{hi} s; it ends hard after it.
 4. surprising: surprising to a viewer TODAY: odd claims, outdated advice, a stunt, a confident
    prediction that turned out wrong, a "they really did this" moment.
 5. not_famous: not a famous scene many channels already upload.
@@ -324,11 +324,12 @@ def archive_item(ident: str) -> dict | None:
             "captions_url": f"https://archive.org/download/{quote(ident)}/{quote(subs[0])}" if subs else None}
 
 
-def find_archive(kind: str, n: int, titles: list[dict], deny: list[str]) -> list[dict]:
+def find_archive(kind: str, n: int, titles: list[dict], deny: list[str], skip: set[str] = frozenset()) -> list[dict]:
+    """n sources of a kind; skip = identifiers already used (fresh sources for a new test)."""
     spec = KINDS[kind]
     pinned = [t for t in titles if t["kind"] == kind and not str(t.get("id", "")).startswith("nasa:")]
     allowed = {t["id"] for t in pinned if t.get("id")}
-    out, seen, done = [], set(), set()
+    out, seen, done = [], set(skip), set()
     queue = [("pinned", {"identifier": t["id"]}) for t in pinned if t.get("id")]
     for i, t in enumerate(pinned):
         # a checked FILM given by search: the server picks its best copy (deny list still applies,
@@ -492,17 +493,21 @@ def claude_score(m: dict) -> float:
     return round(mean(vals), 2) if vals else 0.0
 
 
-def candidates(moments: list[dict], sents: list[dict]) -> list[dict]:
-    """Claude's moments -> snapped, filtered candidates with their text."""
+def candidates(moments: list[dict], sents: list[dict], min_len: float = MIN_LEN, max_len: float = MAX_LEN,
+               avoid: list[tuple[int, int]] = ()) -> list[dict]:
+    """Claude's moments -> snapped, filtered candidates with their text. avoid = sentence ranges
+    already used by earlier Shorts of the same source."""
     out, taken = [], []
     for m in moments:
         try:
             a, b = int(m["from"]), int(m["to"])
         except (KeyError, TypeError, ValueError):
             continue
-        t = snap(sents, a, b)
+        t = snap(sents, a, b, min_len=min_len, max_len=max_len)
         if not t:
             continue
+        if any(not (t["to"] < x or t["from"] > y) for x, y in avoid):
+            continue  # an earlier Short already used these lines
         if any(not (t["end"] <= s or t["start"] >= e) for s, e in taken):
             continue  # overlaps one we already have
         text = " ".join(s["text"] for s in sents[t["from"]:t["to"] + 1])
@@ -929,8 +934,12 @@ def ask(llm, settings, prompt: str, images: list[bytes] | None = None) -> dict:
     return llm.ask_json(prompt, settings.claude_cmd, retries=1, images=images or None) or {}
 
 
-def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, bare_first: bool) -> list[dict]:
+def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, bare_first: bool,
+                ex: dict | None = None) -> list[dict]:
+    """ex = the example lens (examples()): its own lengths, prompt extras, used lines to avoid, output dir."""
     spec = KINDS[kind]
+    ex = ex or {}
+    lo, hi = ex.get("lo", MIN_LEN), ex.get("hi", MAX_LEN)
     t = tx.get(src)
     sents = t["sentences"]
     if len(sents) < 10:
@@ -939,9 +948,10 @@ def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, b
     info = dict(label=spec["label"], title=src["title"], year=src.get("year") or "year unknown",
                 maker=src.get("maker", "unknown"), desc=src.get("desc", ""))
     text = tx.numbered(sents)[:90_000]  # ~25k tokens: a 60-minute briefing still fits
-    found = ask(llm, settings, MOMENTS.format(**info, transcript=text, n="8 to 12")).get("moments") or []
-    cands = candidates(found, sents)
-    log(f"[{kind}] {src['id']}: Claude found {len(found)} moments, {len(cands)} fit 15-45 s and are ad-safe")
+    found = ask(llm, settings, MOMENTS.format(**info, transcript=text, n="8 to 12", lo=f"{lo:.0f}", hi=f"{hi:.0f}",
+                                              extra=ex.get("moments", ""))).get("moments") or []
+    cands = candidates(found, sents, lo, hi, ex.get("avoid", ()))
+    log(f"[{kind}] {src['id']}: Claude found {len(found)} moments, {len(cands)} fit {lo:.0f}-{hi:.0f} s and are ad-safe")
     if not cands:
         return []
     from shorts import media
@@ -983,7 +993,7 @@ def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, b
             log(f"[{kind}] {src['id']} {lab}: dropped in the frame pass ({chk.get('why')})")
             continue
         try:
-            m = make_short(src, kind, si, len(made), c, info, settings, llm, t, bare=bare_first and not made)
+            m = make_short(src, kind, si, len(made), c, info, settings, llm, t, bare=bare_first and not made, ex=ex)
         except Exception as e:  # noqa: BLE001 - one bad Short must not end the source
             log(f"[{kind}] {src['id']} {lab}: failed ({e})")
             m = None
@@ -994,11 +1004,13 @@ def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, b
     return made
 
 
-def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool) -> dict | None:
+def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool, ex: dict | None = None) -> dict | None:
+    ex = ex or {}
     piece_len = c["end"] - c["p0"]
     sh = sheet(c["piece"], piece_len)
     plan = ask(llm, settings, LAYER_PROMPT.format(**info, secs=c["end"] - c["start"], lines=c["text"][:1500],
-                                                  angle=json.dumps(c["angle"], ensure_ascii=False)), [sh])
+                                                  angle=json.dumps(c["angle"], ensure_ascii=False))
+               + ex.get("layer", ""), [sh])
     if not plan.get("usable", True):
         log(f"[{kind}] {src['id']}: Claude can't add enough of our own to this moment")
         return None
@@ -1020,12 +1032,12 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool) -> dict 
     words = [[w[0], w[1] - c["p0"], w[2] - c["p0"]] for s in t["sentences"][c["from"]:c["to"] + 1] for w in s["words"]]
     rplan = {**plan, "start": s0, "end": s1}
     tight = sum(y - x for x, y in tighten(words, s0, s1)[0])
-    if tight < MIN_TIGHT:
+    if tight < ex.get("min_tight", MIN_TIGHT):
         log(f"[{kind}] {src['id']}: only {tight:.0f} s left once the silences are cut: no Short")
         return None
-    name = f"{kind}-{si + 1}{chr(97 + k)}"
+    name = f"{ex.get('prefix', '')}{kind}-{si + 1}{chr(97 + k)}"
     lengths = {}
-    out = OUT / f"{name}.mp4"
+    out = ex.get("out", OUT) / f"{name}.mp4"
     focus = ask_focus(llm, settings, c["piece"], rplan, words, c["text"]) if FX else None
     lengths[out.name] = round(render(c["piece"], rplan, words, out, focus=focus), 1)
     if bare:
@@ -1039,7 +1051,7 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool) -> dict 
             "signals": c["signals"], "score": c["score"], "frame_check": c.get("check"), "layer": have,
             "hook": plan.get("hook"), "context": plan.get("context"), "payoff": plan.get("payoff"),
             "yt_title": plan.get("title"), "credit": plan.get("credit"), "review": review.get("notes"),
-            "focus": focus}
+            "focus": focus, "weird": (c.get("scores") or {}).get("weird")}
 
 
 # ---------- the two steps ----------
@@ -1210,6 +1222,125 @@ def compare(names: list[str] | None = None) -> list[Path]:
             log(f"[compare] {name} failed: {e}")
         save_json(OUT / "compare.json", rows)
     return out
+
+
+# Example Shorts with the lessons of three channels that grow on the same kind of footage
+# (Roeland 2026-11-13): British Pathé (odd and funny beats serious news; plain curiosity titles with
+# the year), Cult Cinema Classics (film Shorts of 8-30 s with a 1-3 word emotional title) and
+# Nineteenth century videos. Back to life (the year up front). Pick the weirdest moment, not the most
+# important. Defaults stay (ragebait texts, Tabloid, silences cut, no effects). Nothing is uploaded.
+EXAMPLES = {"newsreel": 4, "prelinger": 3, "feature": 3}   # Shorts per kind in the final 10
+EXAMPLE_NEW = {"newsreel": 4, "prelinger": 3}              # fresh sources (features: the 3 checked films, new moments)
+EXAMPLE_PER_SOURCE = 2
+EX_DIR = OUT / "examples"
+WEIRD = """
+
+THIS ROUND: pick the WEIRDEST moments, not the most important ones. Odd, funny, absurd, awkward or
+"they really did this" moments win (a prank, a strange invention, a bizarre contest, an over-the-top
+class or demonstration); serious news, politics, ceremonies and speeches lose. Add a 7th score,
+"weird" (1-5): how strange or funny it looks and sounds to a viewer today. Only return moments with weird >= 3."""
+WEIRD_FILM = WEIRD + """
+For this film the Shorts that win are SHORT ({lo}-{hi} s) with one strong emotional beat: a stare, an
+outburst, a snappy comeback, an absurd overreaction. Not a scene that needs the plot explained."""
+TITLE_ARCHIVE = """
+
+TITLE for this round, the British Pathé way: "title" is a plain curiosity title of 2-7 words that
+names the odd thing, with the year in it when the source year is known (e.g. "Vintage Prank",
+"Most Intense P.E. Class from 1962", "Robot Butler of 1957"). No emoji, no question, no all caps,
+no clickbait words like "SHOCKING". The on-screen hook keeps the ragebait tone."""
+TITLE_FILM = """
+
+TITLE for this round, the Cult Cinema Classics way: "title" is 1-3 words naming the emotion or the
+key word of the moment, in CAPITALS, at most one "!" (e.g. "STARE", "JEALOUS", "NOT TONIGHT!"). No
+year, no emoji, no film name. The on-screen hook keeps the ragebait tone."""
+
+
+def used_lines() -> dict[str, list[tuple[int, int]]]:
+    """Sentence ranges per source that earlier Shorts used (made.json and the upload plan)."""
+    rows = []
+    for f in (OUT / "made.json", PLAN):
+        if f.exists():
+            rows += json.loads(f.read_text(encoding="utf-8"))
+    out: dict[str, list[tuple[int, int]]] = {}
+    for m in rows:
+        if m.get("source") and m.get("sentences"):
+            out.setdefault(m["source"], []).append(tuple(m["sentences"]))
+    return out
+
+
+def pick_examples(made: list[dict], want: dict[str, int] = EXAMPLES) -> list[dict]:
+    """The final set: per kind the weirdest (then best scored), at most one per source while others
+    are left; a kind that falls short is filled from the rest."""
+    def key(m):
+        return (-(float(m.get("weird") or 0)), -(m.get("score") or 0))
+    out, left = [], sorted(made, key=key)
+    for kind, n in want.items():
+        mine = [m for m in left if m["kind"] == kind]
+        firsts = list({m["source"]: m for m in reversed(mine)}.values())  # best per source
+        got = sorted(firsts, key=key)[:n]
+        got += [m for m in mine if m not in got][:n - len(got)]
+        out += got
+    total = sum(want.values())
+    out += [m for m in left if m not in out][:total - len(out)]
+    return out[:total]
+
+
+def examples() -> list[dict]:
+    """Roeland's 10 example Shorts (2026-11-13): fresh newsreel and Prelinger sources plus new moments
+    from the checked films, the weirdest moment of each, titles in the style of the channels that
+    win. Into examples/ and examples.json; never uploaded."""
+    from .common import open_library
+    settings, _conn, llm = open_library()
+    EX_DIR.mkdir(parents=True, exist_ok=True)
+    for old in EX_DIR.glob("*.mp4"):
+        old.unlink()
+    titles, deny = load_titles()
+    srcs: list[dict] = []
+    for kind, n in EXAMPLE_NEW.items():
+        old = OUT / f"sources-{kind}.json"
+        skip = {s["id"] for s in json.loads(old.read_text(encoding="utf-8"))} if old.exists() else set()
+        for s in find_archive(kind, n, titles, deny, skip=skip):
+            try:
+                tx.get(s)
+            except Exception as e:  # noqa: BLE001 - one source failing must not end the job
+                log(f"[examples] {s['id']}: transcript failed: {e}")
+                continue
+            srcs.append(s)
+    films = OUT / "sources-feature.json"
+    if films.exists():
+        srcs += [s for s in json.loads(films.read_text(encoding="utf-8")) if not s.get("error")]
+    save_json(OUT / "sources-examples.json", srcs)
+    log(f"[examples] {len(srcs)} sources: {', '.join(s['id'] for s in srcs)}")
+    avoid = used_lines()
+    made: list[dict] = []
+    count: dict[str, int] = {}
+    for s in srcs:
+        kind = s["kind"]
+        si = count.get(kind, 0)
+        count[kind] = si + 1
+        film = kind == "feature"
+        ex = {"lo": 8.0 if film else MIN_LEN, "hi": 30.0 if film else MAX_LEN, "min_tight": 8.0 if film else MIN_TIGHT,
+              "moments": (WEIRD_FILM.format(lo=8, hi=30) if film else WEIRD),
+              "layer": TITLE_FILM if film else TITLE_ARCHIVE, "avoid": avoid.get(s["id"], []),
+              "out": EX_DIR, "prefix": "ex-"}
+        log(f"=== [examples] {kind} {s['id']}: {s['title']}")
+        try:
+            made += make_source(s, kind, si, settings, llm, EXAMPLE_PER_SOURCE, False, ex=ex)
+        except Exception as e:  # noqa: BLE001
+            log(f"[examples] {s['id']} failed: {e}")
+        save_json(OUT / "examples.json", made)
+    keep = pick_examples(made)
+    names = {m["short"] for m in keep}
+    for f in EX_DIR.glob("*.mp4"):
+        if f.stem not in names:
+            f.unlink()
+    save_json(OUT / "examples.json", keep)
+    save_json(OUT / "examples-all.json", made)
+    for m in keep:
+        log(f"[examples] {m['short']} ({m['lengths'].get(m['short'] + '.mp4')} s, weird {m.get('weird')}): "
+            f"{m.get('yt_title')} | hook: {m.get('hook')}")
+    log(f"[examples] {len(made)} made, {len(keep)} kept in {EX_DIR}")
+    return keep
 
 
 BATCH = 20                                  # Shorts per upload batch (Roeland 2026-11-13: 20 on historybuffed)
@@ -1455,7 +1586,7 @@ def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "batch", "upload", "clear", "clearnow", "uploadall"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "examples", "batch", "upload", "clear", "clearnow", "uploadall"])
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
     ap.add_argument("--sources", type=int, default=3)
     ap.add_argument("--per-source", type=int, default=2)
@@ -1469,6 +1600,9 @@ def main(argv=None) -> None:
         return
     if a.step == "compare":
         compare()
+        return
+    if a.step == "examples":
+        examples()
         return
     if a.step in ("clear", "clearnow"):
         clear(delete=a.step == "clearnow")
