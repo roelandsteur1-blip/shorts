@@ -205,3 +205,15 @@ def test_clear_lists_then_deletes_only_unpublished_old_shorts(plan, conn, settin
     st = dict(conn.execute("SELECT youtube_id, status FROM shorts WHERE youtube_id IS NOT NULL").fetchall())
     assert st == {"v2": "rejected", "v4": "scheduled"}
     assert conn.execute("SELECT status FROM shorts WHERE id=?", (keep,)).fetchone()[0] == "rejected"
+
+
+def test_checked_plan_drops_and_adds_spares(tmp_path, monkeypatch):
+    monkeypatch.setattr(tclips, "OUT", tmp_path)
+    monkeypatch.setattr(tclips, "DROP", {"b": "wrong fact"})
+    monkeypatch.setattr(tclips, "SPARES", ("s", "gone"))
+    (tmp_path / "s.mp4").write_bytes(b"x")
+    (tmp_path / "made.json").write_text(json.dumps([_made("s", "f", 1), _made("gone", "f", 1)]))
+    plan = [{"short": "a", "path": "a.mp4"}, {"short": "b", "path": "b.mp4"}]
+    out = tclips.checked_plan(plan)
+    assert [m["short"] for m in out] == ["a", "s"] and out[1]["path"] == str(tmp_path / "s.mp4")
+    assert out[1]["secs"] == 20.0

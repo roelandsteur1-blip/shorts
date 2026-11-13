@@ -376,3 +376,9 @@ name = "tclipsbatch"
 [[job]]
 id = "2026-11-13-tclipsclearnow-1"
 name = "tclipsclearnow"
+
+# Upload the checked 20 (feature-3c out, feature-2b in) to historybuffed: private, 1 per day from 14 Nov.
+# Up to 5 per 24 hours (channel_uploads_per_day); later runs upload the rest.
+[[job]]
+id = "2026-11-13-tclipsupload-1"
+name = "tclipsupload"
