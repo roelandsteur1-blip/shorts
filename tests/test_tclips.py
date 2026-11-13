@@ -376,3 +376,7 @@ def test_engagement_elements_render(tmp_path):
     frz = tclips.freeze_point(out, plain)
     assert any(abs(w[2] - frz) < 1e-6 for w in out) and abs(frz - max(plain - 5, plain * 0.65)) < 0.6
     assert runner.command({"id": "2026-11-13-tclipscompare-1", "name": "tclipscompare"})[-2:] == ["meta.tclips", "compare"]
+
+
+def test_compare_takes_five_different_shorts():
+    assert len(tclips.COMPARE) == 5 and len({n.split("-")[0] for n in tclips.COMPARE}) == 4
