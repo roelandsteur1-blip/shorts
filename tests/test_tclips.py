@@ -174,7 +174,7 @@ def test_render_with_subtitles_and_bare(tmp_path):
     for bare in (False, True):
         out = tmp_path / f"o-{bare}.mp4"
         total = tclips.render(str(src), plan, words, out, bare=bare)
-        assert abs(total - 18.0) < 0.01
+        assert abs(total - (18.0 if bare else 18.0 + tclips.FX_FREEZE)) < 0.01  # FX on: the payoff freeze
         p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
                             "-of", "csv=p=0", str(out)], capture_output=True, text=True)
         assert "video,1080,1920" in p.stdout and "audio" in p.stdout
@@ -217,7 +217,7 @@ def test_make_source_end_to_end_with_a_fake_claude(tmp_path, monkeypatch):
     assert all(tclips.MIN_LEN <= v <= tclips.MAX_LEN + 1 for m in made for v in m["lengths"].values())
     assert (tmp_path / "out" / "newsreel-1b.mp4").exists()
     assert not list((tmp_path / "out" / "work").glob("*.mp4"))  # pieces cleaned up
-    assert len(llm.prompts) == 2 + 2 * 2  # moments, rank, then layer + review per Short
+    assert len(llm.prompts) == 2 + 3 * 2  # moments, rank, then layer + review + focus per Short
 
 
 def test_checked_films_by_search_pick_one_clean_copy(monkeypatch):
@@ -344,7 +344,7 @@ def test_render_cuts_the_silence(tmp_path):
     words = [[f"w{i}", 1.0 + i * 0.5, 1.4 + i * 0.5] for i in range(12)] + \
             [[f"v{i}", 20.0 + i * 0.5, 20.4 + i * 0.5] for i in range(12)]
     plan = {"hook": "h", "context": "c", "payoff": "p", "credit": "x", "start": 0.7, "end": 26.2}
-    total = tclips.render(str(src), plan, words, tmp_path / "o.mp4")
+    total = tclips.render(str(src), plan, words, tmp_path / "o.mp4", fx=False)
     assert total < 15 and abs(total - (26.2 - 0.7 - (20.0 - 6.9 - tclips.KEEP_GAP))) < 0.01
     p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
                         str(tmp_path / "o.mp4")], capture_output=True, text=True)
@@ -355,3 +355,24 @@ def test_tabloid_is_the_default_style():
     """Roeland's pick in the style test (2026-11-13): new Shorts use the tabloid theme."""
     import inspect
     assert tclips.THEME == "tabloid" and inspect.signature(tclips.render).parameters["theme"].default == "tabloid"
+
+
+def test_engagement_elements_render(tmp_path):
+    """FX: hook zoom, freeze on the payoff (+FX_FREEZE), circle, loop fade, sound effects; plain stays as it was."""
+    src = tmp_path / "t.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:r=24:d=22",
+                    "-f", "lavfi", "-i", "sine=d=22", "-pix_fmt", "yuv420p", "-shortest", str(src)], check=True)
+    words = [[f"w{i}{'.' if i % 5 == 4 else ''}", 1.0 + i * 0.5, 1.4 + i * 0.5] for i in range(36)]
+    plan = {"hook": "h", "context": "c", "payoff": "p", "credit": "x", "start": 0.7, "end": 19.2}
+    plain = tclips.render(str(src), plan, words, tmp_path / "plain.mp4", fx=False)
+    fx = tclips.render(str(src), plan, words, tmp_path / "fx.mp4", fx=True, focus={"t": 12.0, "x": 0.5, "y": 0.5})
+    assert abs(fx - plain - tclips.FX_FREEZE) < 0.01
+    for f, want in (("plain.mp4", plain), ("fx.mp4", fx)):
+        p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                            str(tmp_path / f)], capture_output=True, text=True)
+        assert abs(float(p.stdout) - want) < 0.25, f
+    # the freeze lands on a word end, near the payoff point
+    segs, out = tclips.tighten(words, 0.7, 19.2)
+    frz = tclips.freeze_point(out, plain)
+    assert any(abs(w[2] - frz) < 1e-6 for w in out) and abs(frz - max(plain - 5, plain * 0.65)) < 0.6
+    assert runner.command({"id": "2026-11-13-tclipscompare-1", "name": "tclipscompare"})[-2:] == ["meta.tclips", "compare"]
