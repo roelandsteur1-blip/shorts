@@ -69,6 +69,7 @@ ALLOWLIST = {
     "tclipsshare": ("meta.tclips", ["share"], None),  # transcript-first: previews of every sample Short in one job
     "tclipslooks": ("meta.tclips", ["looks"], None),
     "tclipscompare": ("meta.tclips", ["compare"], None),  # transcript-first: every Short without and with the engagement elements  # transcript-first: Shorts of config/look-test.toml in every subtitle look
+    "tclipsexamples": ("meta.tclips", ["examples"], None),  # Roeland's 10 example Shorts with the competitor lessons (no upload)
     "tclipsbatch": ("meta.tclips", ["batch"], None),  # transcript-first: fresh Shorts from every source, best 20 into upload-plan.json
     # transcript-first: upload-plan.json to historybuffed, private with a publish time, 1 per day.
     # Writes its rows into the live shorts database and uploads to YouTube: Roeland asked 2026-11-13.
@@ -79,8 +80,8 @@ ALLOWLIST = {
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_DIR = {"round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
-JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_DIR = {"round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsexamples": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
+JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsexamples", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

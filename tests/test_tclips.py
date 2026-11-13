@@ -385,3 +385,56 @@ def test_compare_takes_five_different_shorts():
 def test_effects_are_off_by_default():
     """Roeland 2026-11-13: he didn't like the engagement effects; they stay available behind fx=True."""
     assert tclips.FX is False
+
+
+def test_example_lens_lengths_avoid_and_titles(tmp_path, monkeypatch):
+    """The example round (Roeland 2026-11-13): weird-first prompt, film lengths 8-30 s, lines an
+    earlier Short used are skipped, the title rule reaches the layer prompt, output in its own folder."""
+    src = tmp_path / "long.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=640x480:r=24:d=70",
+                    "-f", "lavfi", "-i", "sine=d=70", "-pix_fmt", "yuv420p", "-shortest", str(src)], check=True)
+    monkeypatch.setattr(tclips, "OUT", tmp_path / "out")
+    monkeypatch.setattr(tx, "get", lambda s: {"origin": "whisper", "sentences": sents(17)})
+
+    class FakeLLM:
+        prompts = []
+
+        def ask_json(self, prompt, cmd, retries=1, images=None):
+            self.prompts.append(prompt)
+            if "candidate moments" in prompt:
+                return {"moments": [{"from": 1, "to": 3, "scores": {"weird": 5, "ad_safe": 5}},
+                                    {"from": 8, "to": 10, "scores": {"weird": 4}}]}
+            if "rank the best" in prompt:
+                return {"ranked": ["M1"], "checks": [{"id": "M1", "ok": True}]}
+            if "OUR layer" in prompt:
+                return {"usable": True, "hook": "h", "context": "c", "payoff": "p.", "title": "STARE",
+                        "credit": "c", "layer": ["context", "payoff_fact"]}
+            return {"ok": True}
+
+    class Settings:
+        claude_cmd = "claude"
+    llm = FakeLLM()
+    out = tmp_path / "ex"
+    out.mkdir()
+    ex = {"lo": 8.0, "hi": 30.0, "min_tight": 8.0, "moments": tclips.WEIRD_FILM.format(lo=8, hi=30),
+          "layer": tclips.TITLE_FILM, "avoid": [(0, 2)], "out": out, "prefix": "ex-"}
+    made = tclips.make_source({"id": "f", "url": str(src), "title": "Film", "year": 1940}, "feature", 0,
+                              Settings(), llm, per_source=2, bare_first=False, ex=ex)
+    assert [m["short"] for m in made] == ["ex-feature-1a"]           # 1-3 overlaps the used lines 0-2
+    assert made[0]["sentences"] == [8, 10] and made[0]["weird"] == 4
+    assert 8 <= made[0]["lengths"]["ex-feature-1a.mp4"] <= 31
+    assert (out / "ex-feature-1a.mp4").exists()
+    assert "WEIRDEST" in llm.prompts[0] and "8-30 second" in llm.prompts[0]
+    assert any("Cult Cinema Classics" in p for p in llm.prompts if "OUR layer" in p)
+
+
+def test_pick_examples_weirdest_per_kind_one_per_source_first():
+    def m(name, kind, src, weird, score=3.0):
+        return {"short": name, "kind": kind, "source": src, "weird": weird, "score": score}
+    made = [m("a", "newsreel", "n1", 5), m("b", "newsreel", "n1", 4), m("c", "newsreel", "n2", 3),
+            m("d", "feature", "f1", 2), m("e", "feature", "f2", 5), m("f", "prelinger", "p1", 4)]
+    got = [x["short"] for x in tclips.pick_examples(made, {"newsreel": 2, "feature": 1, "prelinger": 2})]
+    assert got[:2] == ["a", "c"]          # one per source before a second from n1
+    assert got[2] == "e" and got[3] == "f"
+    assert len(got) == 5 and "b" in got   # prelinger short of one: filled from the rest
+    assert runner.command({"id": "2026-11-13-tclipsexamples-1", "name": "tclipsexamples"})[-1] == "examples"
