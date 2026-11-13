@@ -18,17 +18,19 @@ ranks the best from frames) -> our layer (hook, context, payoff; at least 2 laye
 Short) -> review against the frames -> render: hook above the film, dialogue subtitles from the
 word times, context at the start and payoff at the end below the film, original sound, <= 58 s.
 
-Samples only: MP4s and made.json in ~/meta-out/tclips/. Nothing is uploaded; the `shorts`
-database is not touched.
+MP4s and made.json in ~/meta-out/tclips/. Only the `upload` step (Roeland, 2026-11-13) uploads to
+YouTube and writes to the `shorts` database: the Shorts that `batch` put in upload-plan.json.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import tomllib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
 from urllib.parse import quote
@@ -1210,9 +1212,231 @@ def compare(names: list[str] | None = None) -> list[Path]:
     return out
 
 
+BATCH = 20                                  # Shorts per upload batch (Roeland 2026-11-13: 20 on historybuffed)
+BATCH_PER_SOURCE = 3
+UPLOAD_CHANNEL = "historybuffed"
+UPLOAD_DIR = OUT / "upload"
+PLAN = OUT / "upload-plan.json"
+FORMAT_ID = "tclips"                        # shorts.format_id of the transcript-first Shorts in the live database
+CATEGORY = "27"                             # Education
+
+
+def spread(rows: list[dict]) -> list[dict]:
+    """Best first, but never two Shorts from the same film on consecutive days when it can be helped."""
+    left, out = list(rows), []
+    while left:
+        pick = next((r for r in left if not out or r["source"] != out[-1]["source"]), left[0])
+        left.remove(pick)
+        out.append(pick)
+    return out
+
+
+def batch(n: int = BATCH) -> list[dict]:
+    """Fresh Shorts from every prepared source with today's defaults (ragebait texts, Tabloid, silences
+    cut, no effects), then the best n move to upload/<date>/ and go into upload-plan.json in posting order."""
+    for kind in KINDS:
+        if (OUT / f"sources-{kind}.json").exists():
+            make(kind, BATCH_PER_SOURCE, 0)
+    made = [m for m in json.loads((OUT / "made.json").read_text(encoding="utf-8"))
+            if m.get("short") and not m.get("failed") and (OUT / f"{m['short']}.mp4").exists()]
+    best = spread(sorted(made, key=lambda m: -(m.get("score") or 0))[:n])
+    dest = UPLOAD_DIR / datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    dest.mkdir(parents=True, exist_ok=True)
+    plan = []
+    for m in best:
+        path = dest / f"{m['short']}.mp4"
+        shutil.move(str(OUT / f"{m['short']}.mp4"), path)
+        plan.append({**m, "path": str(path), "secs": m["lengths"].get(f"{m['short']}.mp4")})
+    save_json(PLAN, plan)
+    log(f"[batch] {len(made)} Shorts made, the best {len(plan)} in {dest}")
+    return plan
+
+
+def upload_meta(m: dict, channel, settings) -> dict:
+    """Title, description and tags for one transcript-first Short."""
+    from shorts.render import all_tags, clean_text, taglayers
+    year = m.get("year")
+    post = [KINDS[m["kind"]]["label"], str(year) if year else "history", "archive footage"]
+    nine = all_tags(post, channel, settings)
+    src = m.get("credit") or m.get("title_source") or ""
+    lines = [m.get("context") or "", "",
+             f"Footage: {src}" + (f" ({year})" if year and str(year) not in src else ""),
+             m.get("link") or ""]
+    if m["kind"] == "nasa":
+        lines += ["", "NASA does not endorse this channel."]
+    lines += ["", " ".join(dict.fromkeys(taglayers.hashtag(t) for t in nine))]
+    title = clean_text(m.get("yt_title") or m.get("hook") or "").strip()
+    return {"title": title[:100], "description": clean_text("\n".join(lines).strip())[:4900],
+            "tags": [clean_text(t) for t in nine if clean_text(t).strip()], "categoryId": CATEGORY,
+            "containsSyntheticMedia": False}
+
+
+def next_day(conn, channel, now: datetime | None = None) -> datetime:
+    """One transcript-first Short per day: the day after the last one planned (tomorrow at the
+    earliest), at the channel's first publish time, an hour later while another Short has that time."""
+    from shorts.upload import iso
+    now = now or datetime.now(timezone.utc)
+    last = conn.execute("SELECT MAX(publish_at) FROM shorts WHERE channel=? AND format_id=? AND publish_at IS NOT NULL",
+                        (channel.id, FORMAT_ID)).fetchone()[0]
+    day = (now + timedelta(days=1)).date()
+    if last:
+        day = max(day, datetime.fromisoformat(last.replace("Z", "+00:00")).date() + timedelta(days=1))
+    taken = {r[0] for r in conn.execute("SELECT publish_at FROM shorts WHERE channel=? AND publish_at IS NOT NULL",
+                                        (channel.id,))}
+    first = sorted(channel.publish_times_utc or ["15:00"])[0]
+    slot = datetime.combine(day, datetime.strptime(first, "%H:%M").time(), tzinfo=timezone.utc)
+    while iso(slot) in taken:
+        slot += timedelta(hours=1)
+    return slot
+
+
+def upload(channel_id: str = UPLOAD_CHANNEL) -> list[str]:
+    """Upload upload-plan.json to the channel as private Shorts with a publish time, one per day.
+    Writes a row per Short into the live database (format_id 'tclips') so the dashboard schedule and
+    stats see them and the normal daily upload never picks them. Stays within the channel's uploads
+    per 24 hours and the shared daily quota; run it again later for the rest (done ones are skipped)."""
+    from googleapiclient.http import MediaFileUpload
+
+    from shorts import db as sdb
+    from shorts import upload as up
+    from shorts.config import load_channel
+    from .common import open_library
+    settings, conn, _llm = open_library()
+    ch = load_channel(channel_id, settings.config_dir)
+    counts = dict(conn.execute("SELECT status, COUNT(*) FROM shorts WHERE channel=? GROUP BY status", (ch.id,)).fetchall())
+    log(f"[upload] '{ch.id}' ({ch.name}) in the database now: {counts}; publish times {ch.publish_times_utc}, "
+        f"{ch.uploads_per_day} per day for its own Shorts, paused={ch.paused}, via={ch.upload_via}")
+    plan = json.loads(PLAN.read_text(encoding="utf-8")) if PLAN.exists() else []
+    done = {r[0] for r in conn.execute(
+        "SELECT video_path FROM shorts WHERE channel=? AND format_id=? AND status IN ('scheduled', 'uploaded')",
+        (ch.id, FORMAT_ID))}
+    todo = [m for m in plan if m["path"] not in done and Path(m["path"]).exists()]
+    if (ch.upload_via or "api") != "api":
+        log(f"[upload] '{ch.id}' uploads via the phone, not the API: nothing uploaded")
+        return []
+    until = up.blocked_until(settings, ch)
+    if until:
+        log(f"[upload] YouTube refused uploads for '{ch.id}' recently; try again after {up.iso(until)}")
+        return []
+    room = min(settings.channel_uploads_per_day - up.channel_uploads_last_day(conn, ch),
+               settings.upload_quota - up.uploads_today(conn))
+    log(f"[upload] {len(plan)} in the plan, {len(done)} already up, {len(todo)} to go, room for {max(room, 0)} now")
+    if not todo or room <= 0:
+        return []
+    yt = up.youtube(settings, ch, interactive=False)
+    up.check_channel(yt, ch)
+    out = []
+    for m in todo[:room]:
+        meta = upload_meta(m, ch, settings)
+        slot = next_day(conn, ch)
+        cur = conn.execute(
+            """INSERT INTO shorts (channel, format_id, topic, hook, title, description, tags, status, video_path,
+                                   duration) VALUES (?, ?, ?, ?, ?, ?, ?, 'rendered', ?, ?)""",
+            (ch.id, FORMAT_ID, m.get("why"), m.get("hook"), meta["title"], meta["description"],
+             json.dumps(meta["tags"]), m["path"], m.get("secs")))
+        conn.commit()
+        sid = cur.lastrowid
+        try:
+            req = yt.videos().insert(part="snippet,status", body=up.body_for(meta, slot),
+                                     media_body=MediaFileUpload(m["path"], mimetype="video/mp4", chunksize=8 << 20,
+                                                                resumable=True))
+            resp = None
+            while resp is None:
+                _, resp = req.next_chunk()
+        except Exception as e:  # noqa: BLE001
+            sdb.set_short(conn, sid, status="failed", error=str(e)[:500])
+            reason = up._limit_reason(e)
+            if reason == "uploadLimitExceeded":
+                up._blocked_path(settings, ch).write_text(up.iso(datetime.now(timezone.utc)), encoding="utf-8")
+            log(f"[upload] {m['short']} failed ({reason or e}); stopped after {len(out)}")
+            break
+        sdb.set_short(conn, sid, status="scheduled", youtube_id=resp["id"], publish_at=up.iso(slot),
+                      uploaded_at=up.iso(datetime.now(timezone.utc)))
+        out.append(resp["id"])
+        log(f"[upload] {m['short']} -> https://youtu.be/{resp['id']} publishes {up.iso(slot)}: {meta['title']}")
+    save_json(OUT / "upload-done.json", [dict(r) for r in conn.execute(
+        "SELECT id, title, youtube_id, publish_at, status, video_path FROM shorts WHERE channel=? AND format_id=? "
+        "ORDER BY publish_at", (ch.id, FORMAT_ID))])
+    log(f"[upload] {len(out)} uploaded now, {len(todo) - len(out)} still to go")
+    return out
+
+
+def unpublished(yt) -> list[dict]:
+    """Every video on the logged-in channel that is not public yet: private, with or without a publish time."""
+    ch = yt.channels().list(part="contentDetails", mine=True).execute()["items"][0]
+    playlist = ch["contentDetails"]["relatedPlaylists"]["uploads"]
+    ids, page = [], None
+    while True:
+        r = yt.playlistItems().list(part="contentDetails", playlistId=playlist, maxResults=50, pageToken=page).execute()
+        ids += [i["contentDetails"]["videoId"] for i in r.get("items", [])]
+        page = r.get("nextPageToken")
+        if not page:
+            break
+    out = []
+    for k in range(0, len(ids), 50):
+        r = yt.videos().list(part="status,snippet", id=",".join(ids[k:k + 50]), maxResults=50).execute()
+        for v in r.get("items", []):
+            st = v.get("status", {})
+            if st.get("privacyStatus") == "private":
+                out.append({"id": v["id"], "title": v["snippet"].get("title"), "publish_at": st.get("publishAt"),
+                            "uploaded": v["snippet"].get("publishedAt")})
+    return sorted(out, key=lambda v: v.get("publish_at") or "")
+
+
+def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
+    """Roeland 2026-11-13: remove every Short on the channel that is not public yet, so the
+    transcript-first batch starts tomorrow. Without delete it only lists them (clear-list.json).
+    With delete: deletes those videos on YouTube (never the transcript-first ones), marks their rows
+    rejected, and rejects the channel's approved Shorts so the daily upload adds no old ones."""
+    from shorts import upload as up
+    from shorts.config import load_channel
+    from .common import open_library
+    settings, conn, _llm = open_library()
+    ch = load_channel(channel_id, settings.config_dir)
+    yt = up.youtube(settings, ch, interactive=False)
+    up.check_channel(yt, ch)
+    ours = {r[0] for r in conn.execute("SELECT youtube_id FROM shorts WHERE channel=? AND format_id=? AND youtube_id "
+                                       "IS NOT NULL", (ch.id, FORMAT_ID))}
+    vids = [v for v in unpublished(yt) if v["id"] not in ours]
+    approved = [dict(r) for r in conn.execute("SELECT id, title FROM shorts WHERE channel=? AND status='approved' "
+                                              "AND format_id != ?", (ch.id, FORMAT_ID))]
+    log(f"[clear] '{ch.id}': {len(vids)} unpublished videos on YouTube, {len(approved)} approved and not uploaded")
+    for v in vids:
+        log(f"[clear]   {v['id']} publish {v['publish_at'] or 'never (private)'}: {v['title']}")
+    for a in approved:
+        log(f"[clear]   approved #{a['id']}: {a['title']}")
+    save_json(OUT / "clear-list.json", {"channel": ch.id, "videos": vids, "approved": approved,
+                                        "can_delete": up.can_manage(settings, ch)})
+    if not delete:
+        return vids
+    if not up.can_manage(settings, ch):
+        log(f"[clear] the saved YouTube login of '{ch.id}' may upload but not delete videos: nothing deleted. "
+            "Connect YouTube again with permission to manage videos.")
+        return []
+    gone = []
+    for v in vids:
+        try:
+            yt.videos().delete(id=v["id"]).execute()
+        except Exception as e:  # noqa: BLE001
+            log(f"[clear] {v['id']} not deleted: {e}")
+            continue
+        gone.append(v)
+        conn.execute("UPDATE shorts SET status='rejected', reject_reason=?, updated_at=datetime('now') "
+                     "WHERE channel=? AND youtube_id=?",
+                     ("deleted before publishing (Roeland 2026-11-13: transcript-first Shorts instead)", ch.id, v["id"]))
+        log(f"[clear] deleted {v['id']}: {v['title']}")
+    conn.execute("UPDATE shorts SET status='rejected', reject_reason=?, updated_at=datetime('now') "
+                 "WHERE channel=? AND status='approved' AND format_id != ?",
+                 ("not uploaded (Roeland 2026-11-13: transcript-first Shorts instead)", ch.id, FORMAT_ID))
+    conn.commit()
+    save_json(OUT / "clear-done.json", gone)
+    log(f"[clear] {len(gone)} of {len(vids)} deleted, {len(approved)} approved Shorts set to rejected")
+    return gone
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "batch", "upload", "clear", "clearnow"])
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
     ap.add_argument("--sources", type=int, default=3)
     ap.add_argument("--per-source", type=int, default=2)
@@ -1226,6 +1450,12 @@ def main(argv=None) -> None:
         return
     if a.step == "compare":
         compare()
+        return
+    if a.step in ("clear", "clearnow"):
+        clear(delete=a.step == "clearnow")
+        return
+    if a.step in ("batch", "upload"):
+        batch() if a.step == "batch" else upload()
         return
     if a.part is None:
         ap.error("--part is needed for prep and make")
