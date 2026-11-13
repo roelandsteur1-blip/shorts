@@ -1409,6 +1409,11 @@ def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
                                         "can_delete": up.can_manage(settings, ch)})
     if not delete:
         return vids
+    conn.execute("UPDATE shorts SET status='rejected', reject_reason=?, updated_at=datetime('now') "
+                 "WHERE channel=? AND status='approved' AND format_id != ?",
+                 ("not uploaded (Roeland 2026-11-13: transcript-first Shorts instead)", ch.id, FORMAT_ID))
+    conn.commit()
+    log(f"[clear] {len(approved)} approved Shorts set to rejected: the daily upload adds none of them")
     if not up.can_manage(settings, ch):
         log(f"[clear] the saved YouTube login of '{ch.id}' may upload but not delete videos: nothing deleted. "
             "Connect YouTube again with permission to manage videos.")
@@ -1425,10 +1430,6 @@ def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
                      "WHERE channel=? AND youtube_id=?",
                      ("deleted before publishing (Roeland 2026-11-13: transcript-first Shorts instead)", ch.id, v["id"]))
         log(f"[clear] deleted {v['id']}: {v['title']}")
-    conn.execute("UPDATE shorts SET status='rejected', reject_reason=?, updated_at=datetime('now') "
-                 "WHERE channel=? AND status='approved' AND format_id != ?",
-                 ("not uploaded (Roeland 2026-11-13: transcript-first Shorts instead)", ch.id, FORMAT_ID))
-    conn.commit()
     save_json(OUT / "clear-done.json", gone)
     log(f"[clear] {len(gone)} of {len(vids)} deleted, {len(approved)} approved Shorts set to rejected")
     return gone

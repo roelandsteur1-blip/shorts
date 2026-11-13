@@ -370,3 +370,9 @@ name = "tclipsclear"
 [[job]]
 id = "2026-11-13-tclipsbatch-1"
 name = "tclipsbatch"
+
+# historybuffed: reject its 15 approved classic Shorts so the daily upload adds none (the saved login
+# can't delete the 8 scheduled videos; Roeland deletes those in YouTube Studio).
+[[job]]
+id = "2026-11-13-tclipsclearnow-1"
+name = "tclipsclearnow"
