@@ -59,8 +59,57 @@ LOOKS = {
     "box": {"size": 46, "colour": (255, 255, 255), "stroke": 0, "box": (0, 0, 0, 205)},
     "karaoke": {"size": 50, "colour": (255, 255, 255), "stroke": 4, "hot": (255, 221, 0)},
     "pop": {"size": 64, "colour": (255, 255, 255), "stroke": 6, "hot": (80, 220, 120), "upper": True, "max_words": 3},
+    "cream": {"size": 46, "colour": (245, 230, 200), "stroke": 3},
 }
 LOOK = "classic"                            # default until a look wins the test
+
+# Whole looks for a Short (Roeland, 2026-11-13): hook above the film, dialogue subtitles, context and
+# payoff below the film, credit and background, styled as one. "standard" is the look used so far.
+def _t(size, colour, **kw):
+    return {"size": size, "colour": colour, **kw}
+
+
+CREAM, BROWN, RED, NAVY, GREEN, YELLOW = (245, 230, 200), (40, 28, 15), (200, 30, 30), (25, 50, 95), (80, 220, 120), (255, 221, 0)
+THEMES = {
+    "standard": {"bg": "black", "subs": "classic", "credit": (170, 170, 170),
+                 "hook": _t(70, "white", stroke=3), "context": _t(46, "white", box=(0, 0, 0, 200)),
+                 "payoff": _t(46, YELLOW, box=(0, 0, 0, 200))},
+    "documentary": {"label": "Documentary", "bg": "black", "subs": "classic", "credit": (150, 150, 150),
+                    "hook": _t(64, "white"), "context": _t(42, (215, 215, 215), kind="regular"),
+                    "payoff": _t(44, "white", kind="regular")},
+    "news": {"label": "Breaking news", "bg": "0x0b1a33", "subs": "box", "credit": (150, 170, 200),
+             "hook": _t(56, "white", upper=True, box=RED + (255,)), "context": _t(42, "white", box=NAVY + (255,)),
+             "payoff": _t(44, "white", box=RED + (255,))},
+    "tabloid": {"label": "Tabloid", "bg": "black", "subs": "yellow", "credit": (170, 170, 170),
+                "hook": _t(72, YELLOW, upper=True, stroke=5), "context": _t(46, "white", stroke=3),
+                "payoff": _t(46, (0, 0, 0), box=YELLOW + (255,))},
+    "neon": {"label": "Neon", "bg": "0x0d0d12", "subs": "pop", "credit": (120, 200, 150),
+             "hook": _t(68, GREEN, upper=True, stroke=5), "context": _t(44, "white", box=(20, 60, 35, 230)),
+             "payoff": _t(46, (0, 0, 0), box=GREEN + (255,))},
+    "retro": {"label": "Retro film", "bg": "0x1e150c", "subs": "cream", "credit": (190, 165, 120),
+              "hook": _t(64, CREAM), "context": _t(44, CREAM, kind="regular"),
+              "payoff": _t(44, BROWN, box=CREAM + (255,))},
+}
+THEME = "standard"                          # default until a theme wins the test
+TEST_THEMES = ("documentary", "news", "tabloid", "neon", "retro")
+
+
+def styled_block(text: str, st: dict, width: int = W - 120) -> Image.Image:
+    """A centred text block in a theme style: size, colour, kind (bold/regular), upper, stroke, box."""
+    text = re.sub(r"[\U00010000-\U0010FFFF\u2600-\u27BF\uFE0F]", "", text or "").strip()
+    if st.get("upper"):
+        text = text.upper()
+    f = font(st.get("kind", "bold"), st["size"])
+    lines = wrap(text, f, width)
+    lh = int(st["size"] * 1.28)
+    im = Image.new("RGBA", (W, lh * len(lines) + 40), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    for i, ln in enumerate(lines):
+        y, tw = 20 + i * lh, f.getlength(ln)
+        if st.get("box"):
+            d.rounded_rectangle(((W - tw) / 2 - 20, y - 6, (W + tw) / 2 + 20, y + lh - 2), 12, fill=st["box"])
+        d.text(((W - tw) / 2, y), ln, font=f, fill=st["colour"], stroke_width=st.get("stroke", 0), stroke_fill="black")
+    return im
 
 KINDS = {
     "newsreel": {
@@ -632,7 +681,8 @@ def subtitle_track(words: list[list], start: float, end: float, look: dict, tmp:
     return lst, blank.height
 
 
-def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = False, look: str = LOOK) -> float:
+def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = False, look: str | None = None,
+           theme: str = THEME) -> float:
     """One Short from a local piece of the source (times in piece time). bare = the same cut with
     subtitles only, for the side-by-side test of what our layer adds."""
     from shorts import media
@@ -649,16 +699,17 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
         band_h = min(int(W * ch / cw), 900) // 2 * 2
         band_y = 640
         band = build_band(piece, [{"kind": "play", "t0": start, "t1": end, "speed": 1.0}], crop, band_h, True, tmp)
+        th = THEMES[theme]
         base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         if not bare and plan.get("hook"):
-            hook = text_block(plan["hook"], 70, "white")
+            hook = styled_block(plan["hook"], th["hook"])
             base.alpha_composite(hook, (0, max(150, band_y - hook.height - 50)))
-        credit = text_block(plan.get("credit", ""), 30, (170, 170, 170))
+        credit = text_block(plan.get("credit", ""), 30, th["credit"])
         base.alpha_composite(credit, (0, H - 200))
         base.save(tmp / "base.png")
-        inputs = ["-f", "lavfi", "-t", f"{total:.2f}", "-i", f"color=black:s={W}x{H}:r=30",
+        inputs = ["-f", "lavfi", "-t", f"{total:.2f}", "-i", f"color={th['bg']}:s={W}x{H}:r=30",
                   "-i", str(band), "-loop", "1", "-t", f"{total:.2f}", "-i", str(tmp / "base.png")]
-        subs, sub_h = subtitle_track(words, start, end, LOOKS[look], tmp)
+        subs, sub_h = subtitle_track(words, start, end, LOOKS[look or th['subs']], tmp)
         inputs += ["-f", "concat", "-safe", "0", "-i", str(subs)]
         fc = (f"[0:v][1:v]overlay=0:{band_y}[a0];[a0][2:v]overlay=0:0[b0];[3:v]format=rgba,fps=30[subs];"
               f"[b0][subs]overlay=0:{band_y + band_h - sub_h - 16}:eof_action=repeat[c0]")
@@ -667,11 +718,11 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
         if not bare:
             ctx_end = min(5.0, total * 0.3)
             pay_at = max(total - 5.0, total * 0.65)
-            for name, text, t0, t1, colour in (("ctx", plan.get("context"), 0.0, ctx_end, "white"),
-                                               ("pay", plan.get("payoff"), pay_at, total + 1, (255, 221, 0))):
+            for name, text, t0, t1 in (("context", plan.get("context"), 0.0, ctx_end),
+                                       ("payoff", plan.get("payoff"), pay_at, total + 1)):
                 if text:
                     png = tmp / f"{name}.png"
-                    text_block(text, 46, colour, box=True).save(png)
+                    styled_block(text, th[name]).save(png)
                     overlays.append((png, band_y + band_h + 50, t0, t1))
         for png, y, t0, t1 in overlays:
             inputs += ["-loop", "1", "-t", f"{total:.2f}", "-i", str(png)]
@@ -873,7 +924,7 @@ def share() -> list[Path]:
 
 def looks(names: list[str] | None = None) -> list[Path]:
     """Roeland's look test: the Shorts in config/look-test.toml, re-cut from their sources with the
-    texts listed there, once in every subtitle look. Into looks/<short>-<look>.mp4."""
+    texts listed there, once in every theme of TEST_THEMES. Into looks/<short>-<theme>.mp4."""
     from shorts import media
     test = tomllib.loads(LOOK_TEST.read_text(encoding="utf-8"))["short"]
     made = {m["short"]: m for m in json.loads((OUT / "made.json").read_text(encoding="utf-8")) if m.get("short")}
@@ -904,14 +955,15 @@ def looks(names: list[str] | None = None) -> list[Path]:
                    "-vf", "scale=-2:min(720\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
                    "-c:a", "aac", "-b:a", "160k", str(piece)])
         words = [[w[0], w[1] - p0, w[2] - p0] for s in sents[c["from"]:c["to"] + 1] for w in s["words"]]
-        plan = {"hook": row["hook"], "context": row["context"], "payoff": row["payoff"],
+        plan = {**{k: m.get(k) for k in ("hook", "context", "payoff")},  # a row without texts uses the made ones
+                **{k: row[k] for k in ("hook", "context", "payoff") if row.get(k)},
                 "credit": m.get("credit", ""), "start": c["start"] - p0, "end": c["end"] - p0}
-        for look in LOOKS:
-            f = dest / f"{name}-{look}.mp4"
-            render(str(piece), plan, words, f, look=look)
+        for theme in TEST_THEMES:
+            f = dest / f"{name}-{theme}.mp4"
+            render(str(piece), plan, words, f, theme=theme)
             out.append(f)
         piece.unlink(missing_ok=True)
-        log(f"[looks] {name}: {len(LOOKS)} looks made")
+        log(f"[looks] {name}: {len(TEST_THEMES)} themes made")
     return out
 
 

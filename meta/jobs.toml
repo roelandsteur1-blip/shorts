@@ -342,3 +342,9 @@ n = 4
 id = "2026-11-13-tclips-4"
 name = "tclips"
 n = 4
+
+# Roeland's look test, round 2: whole-Short themes (hook, subtitles, texts under the film, colours).
+# Runs after tclips-4, so feature-1a uses the remade film Short and its ragebait texts.
+[[job]]
+id = "2026-11-13-tclipslooks-2"
+name = "tclipslooks"
