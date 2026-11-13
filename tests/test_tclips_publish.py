@@ -217,3 +217,10 @@ def test_checked_plan_drops_and_adds_spares(tmp_path, monkeypatch):
     out = tclips.checked_plan(plan)
     assert [m["short"] for m in out] == ["a", "s"] and out[1]["path"] == str(tmp_path / "s.mp4")
     assert out[1]["secs"] == 20.0
+
+
+def test_upload_all_skips_the_channel_setting(plan, conn, settings, channel):
+    settings.channel_uploads_per_day = 5
+    plan(_FakeYouTube())
+    assert len(tclips.upload(channel.id, cap=False)) == 7
+    assert runner.ALLOWLIST["tclipsuploadall"][1] == ["uploadall"]

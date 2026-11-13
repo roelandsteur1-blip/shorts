@@ -73,13 +73,14 @@ ALLOWLIST = {
     # transcript-first: upload-plan.json to historybuffed, private with a publish time, 1 per day.
     # Writes its rows into the live shorts database and uploads to YouTube: Roeland asked 2026-11-13.
     "tclipsupload": ("meta.tclips", ["upload"], None),
+    "tclipsuploadall": ("meta.tclips", ["uploadall"], None),  # same, without the 5-per-24h setting (Roeland 2026-11-13)
     "tclipsclear": ("meta.tclips", ["clear"], None),  # read-only: lists historybuffed's not yet public videos
     "tclipsclearnow": ("meta.tclips", ["clearnow"], None),  # deletes them (Roeland asked 2026-11-13)
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_DIR = {"round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsupload": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
-JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsupload", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_DIR = {"round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
+JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

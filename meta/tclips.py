@@ -1307,7 +1307,7 @@ def next_day(conn, channel, now: datetime | None = None) -> datetime:
     return slot
 
 
-def upload(channel_id: str = UPLOAD_CHANNEL) -> list[str]:
+def upload(channel_id: str = UPLOAD_CHANNEL, cap: bool = True) -> list[str]:
     """Upload upload-plan.json to the channel as private Shorts with a publish time, one per day.
     Writes a row per Short into the live database (format_id 'tclips') so the dashboard schedule and
     stats see them and the normal daily upload never picks them. Stays within the channel's uploads
@@ -1335,8 +1335,9 @@ def upload(channel_id: str = UPLOAD_CHANNEL) -> list[str]:
     if until:
         log(f"[upload] YouTube refused uploads for '{ch.id}' recently; try again after {up.iso(until)}")
         return []
-    room = min(settings.channel_uploads_per_day - up.channel_uploads_last_day(conn, ch),
-               settings.upload_quota - up.uploads_today(conn))
+    room = settings.upload_quota - up.uploads_today(conn)
+    if cap:  # uploadall (Roeland 2026-11-13: all 20 at once) skips our own per-channel setting; YouTube's limit still stops it
+        room = min(room, settings.channel_uploads_per_day - up.channel_uploads_last_day(conn, ch))
     log(f"[upload] {len(plan)} in the plan, {len(done)} already up, {len(todo)} to go, room for {max(room, 0)} now")
     if not todo or room <= 0:
         return []
@@ -1454,7 +1455,7 @@ def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "batch", "upload", "clear", "clearnow"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "batch", "upload", "clear", "clearnow", "uploadall"])
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
     ap.add_argument("--sources", type=int, default=3)
     ap.add_argument("--per-source", type=int, default=2)
@@ -1471,6 +1472,9 @@ def main(argv=None) -> None:
         return
     if a.step in ("clear", "clearnow"):
         clear(delete=a.step == "clearnow")
+        return
+    if a.step == "uploadall":
+        upload(cap=False)
         return
     if a.step in ("batch", "upload"):
         batch() if a.step == "batch" else upload()

@@ -382,3 +382,8 @@ name = "tclipsclearnow"
 [[job]]
 id = "2026-11-13-tclipsupload-1"
 name = "tclipsupload"
+
+# Roeland: all 20 scheduled now, not 5 a day. The other 15 to historybuffed (stops on YouTube's own limit).
+[[job]]
+id = "2026-11-13-tclipsuploadall-1"
+name = "tclipsuploadall"
