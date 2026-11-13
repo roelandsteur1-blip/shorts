@@ -294,7 +294,7 @@ def test_every_look_renders_one_subtitle_track(tmp_path):
 def test_look_test_list_and_job():
     import tomllib
     rows = tomllib.loads(tclips.LOOK_TEST.read_text())["short"]
-    assert len(rows) == 5 and all(r["hook"] and r["context"] and r["payoff"] for r in rows)
+    assert len(rows) == 5 and all(r.get("hook") and r.get("context") and r.get("payoff") for r in rows if r["name"] != "feature-1a")
     assert len({r["name"].split("-")[0] for r in rows}) >= 4  # different kinds of source
     assert runner.command({"id": "2026-11-13-tclipslooks-1", "name": "tclipslooks"})[-2:] == ["meta.tclips", "looks"]
     assert "RAGEBAIT" in tclips.LAYER_PROMPT
@@ -311,5 +311,14 @@ def test_looks_step_recuts_a_listed_short_in_every_look(tmp_path, monkeypatch):
     (tmp_path / "out" / "sources-nasa.json").write_text(json.dumps([{"id": "s1", "url": str(src)}]))
     monkeypatch.setattr(tx, "get", lambda s: {"sentences": sents(7)})
     got = tclips.looks(["nasa-3b"])
-    assert sorted(f.name for f in got) == sorted(f"nasa-3b-{k}.mp4" for k in tclips.LOOKS)
+    assert sorted(f.name for f in got) == sorted(f"nasa-3b-{k}.mp4" for k in tclips.TEST_THEMES)
     assert not list((tmp_path / "out" / "work").glob("*.mp4"))
+
+
+def test_themes_style_every_text_and_point_at_real_parts():
+    assert tclips.THEME in tclips.THEMES and len(tclips.TEST_THEMES) == 5
+    for name, th in tclips.THEMES.items():
+        assert th["subs"] in tclips.LOOKS, name
+        for part in ("hook", "context", "payoff"):
+            im = tclips.styled_block("We reached the Moon in 7 years. Then stopped", th[part])
+            assert im.width == tclips.W and im.getbbox(), (name, part)

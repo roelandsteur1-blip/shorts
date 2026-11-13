@@ -1,5 +1,5 @@
 # Roeland's subtitle look test (2026-11-13): these Shorts, with their ragebait texts (the style he
-# picked), each rendered in every look of LOOKS in meta/tclips.py by `python -m meta.tclips looks`.
+# picked), each rendered in every theme of TEST_THEMES in meta/tclips.py by `python -m meta.tclips looks`.
 
 [[short]]
 name = "newsreel-1a"
@@ -20,10 +20,7 @@ context = "Leeuwenhoek looked at his own tooth tartar in the 1600s. It was alive
 payoff = "He described these moving 'animalcules' in 1683. Your mouth is doing the same thing right now."
 
 [[short]]
-name = "feature-1a"
-hook = "This is toxic. In 1940 it was romantic"
-context = "His Girl Friday: an editor sabotages his ex-wife's new life. The film cheers."
-payoff = "It's ranked among the greatest comedies ever made. Red flag or classic? You decide."
+name = "feature-1a"  # no texts: uses the ragebait ones of the 2026-11-13 remake
 
 [[short]]
 name = "nasa-3b"
