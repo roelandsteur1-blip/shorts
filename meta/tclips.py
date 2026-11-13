@@ -36,7 +36,7 @@ from urllib.parse import quote
 from PIL import Image, ImageDraw
 
 from . import transcript as tx
-from .clips import PD, UA, build_band, cuts, frame, grid, pick_file, probe_length, search, text_block, year_of
+from .clips import PD, UA, build_band, cuts, frame, grid, pick_file, probe_length, search, sfx, tag, text_block, year_of
 from .textcard import H, W, black_bars, font, log, wrap
 
 OUT = Path.home() / "meta-out" / "tclips"
@@ -221,6 +221,7 @@ original. Our layer has to ADD something the viewer can't get from the clip. Wri
 - "payoff": shown at the end. Max 22 words: a TRUE fact that goes beyond the clip (what happened
   next, what was later proven wrong), or a verdict with its reason. Only facts you are sure of;
   never invent names, dates or numbers.
+  Where it fits, end the payoff so it leads back into the hook (the Short loops to its first frame).
 - "title": YouTube title with story framing, 6-10 words, may end with 1-2 emoji.
 - "credit": short source line, e.g. "Universal Newsreel, 1957 (National Archives)".
 - "layer": which of these our texts honestly do: "context", "verdict", "payoff_fact",
@@ -657,6 +658,95 @@ def tighten(words: list[list], start: float, end: float, max_gap: float = MAX_GA
     return [(round(x, 3), round(y, 3)) for x, y in segs], out
 
 
+# Engagement elements (research/engagement-elementen.md; Roeland 2026-11-13: everything rated
+# "middel" or higher). FX on: punch-in zoom on the hook, cleaned and louder speech, a freeze frame
+# with "WAIT..." on the payoff, one red circle on the detail that matters, a loop ending that fades
+# back to the first frame, and quiet synthetic sound effects (made by ffmpeg: no licence question).
+FX = True
+FX_FREEZE = 1.2                             # seconds the payoff frame is held
+HOOK_ZOOM = (3.0, 0.12)                     # punch-in over the first 3 s, to 1.12x
+LOOP_FADE = 0.5                             # last seconds fade back to the first frame
+SFX_VOL = 0.25                              # about -12 dB under the dialogue
+CLEAN_AUDIO = "highpass=f=80,afftdn=nf=-25,equalizer=f=3000:t=q:w=1.5:g=3,loudnorm=I=-14:TP=-1.5"
+PLAIN_AUDIO = "loudnorm=I=-16:TP=-1.5"
+
+FOCUS_PROMPT = """Frames from a YouTube Short cut from an old film, numbered. Our hook: "{hook}".
+Our payoff: "{payoff}". What is said: {lines}
+
+Is there ONE detail a viewer should look at (a face, an object, a sign, a machine) that the hook,
+payoff or speech is about? Pick the frame where it is clearest and give its centre as fractions of
+the frame width and height (0-1). Only if it really helps: when the whole frame is the point, say none.
+Return JSON only: {{"frame": 3, "x": 0.42, "y": 0.55, "why": "one line"}} or {{"none": true}}"""
+
+
+def tick(out: Path) -> Path:
+    from shorts import media
+    media.run(["-f", "lavfi", "-i", "aevalsrc='0.8*sin(2*PI*1800*t)*exp(-60*t)|0.8*sin(2*PI*1800*t)*exp(-60*t)':d=0.12:s=48000",
+               "-ar", "48000", "-ac", "2", str(out)])
+    return out
+
+
+def ring(cx: float, cy: float, h: int, r: int = 95) -> Image.Image:
+    """A red circle (Tabloid style) on a transparent canvas the size of the film band."""
+    im = Image.new("RGBA", (W, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    x, y = cx * W, cy * h
+    d.ellipse((x - r - 4, y - r - 4, x + r + 4, y + r + 4), outline=(0, 0, 0, 160), width=16)
+    d.ellipse((x - r, y - r, x + r, y + r), outline=(230, 30, 30, 255), width=10)
+    return im
+
+
+def freeze_point(words_out: list[list], total: float) -> float:
+    """Output time for the payoff freeze: the end of the word closest to where the payoff starts,
+    so no word is cut in half."""
+    want = max(total - 5.0, total * 0.65)
+    ends = [w[2] for w in words_out if w[2] < total - 0.5] or [want]
+    return min(ends, key=lambda e: abs(e - want))
+
+
+def piece_time(segs: list[tuple[float, float]], t_out: float) -> tuple[int, float]:
+    """Segment index and piece time of an output time (before any freeze)."""
+    acc = 0.0
+    for i, (x, y) in enumerate(segs):
+        if t_out <= acc + (y - x) + 1e-6:
+            return i, x + (t_out - acc)
+        acc += y - x
+    return len(segs) - 1, segs[-1][1]
+
+
+def out_of_piece(segs: list[tuple[float, float]], t: float) -> float | None:
+    acc = 0.0
+    for x, y in segs:
+        if x - 1e-6 <= t <= y + 1e-6:
+            return acc + t - x
+        acc += y - x
+    return None
+
+
+def ask_focus(llm, settings, piece: str, plan: dict, words: list[list], lines: str) -> dict | None:
+    """Claude picks the one detail for the red circle, from frames after the hook zoom."""
+    segs, _ = tighten(words, plan["start"], plan["end"])
+    total = sum(y - x for x, y in segs)
+    if total < HOOK_ZOOM[0] + 2:
+        return None
+    outs = [HOOK_ZOOM[0] + 0.5 + k * (total - HOOK_ZOOM[0] - 2.5) / 5 for k in range(6)]
+    times = [piece_time(segs, t)[1] for t in outs]
+    try:
+        sheet = grid([(str(k + 1), frame(piece, t, 360)) for k, t in enumerate(times)], cols=3)
+    except RuntimeError:
+        return None
+    got = ask(llm, settings, FOCUS_PROMPT.format(hook=plan.get("hook"), payoff=plan.get("payoff"), lines=lines[:1200]),
+              [sheet])
+    try:
+        k = int(got["frame"]) - 1
+        x, y = float(got["x"]), float(got["y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if got.get("none") or not (0 <= k < 6 and 0.05 <= x <= 0.95 and 0.05 <= y <= 0.95):
+        return None
+    return {"t": round(times[k], 2), "x": x, "y": y, "why": got.get("why", "")}
+
+
 def subtitle_image(words: list[str], look: dict, hot: int | None = None) -> Image.Image:
     """One subtitle on a full-width transparent canvas of fixed height (two lines), text at the
     bottom. hot = index of the word being said, drawn in the look's "hot" colour."""
@@ -719,13 +809,33 @@ def subtitle_track(words: list[list], start: float, end: float, look: dict, tmp:
 
 
 def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = False, look: str | None = None,
-           theme: str = THEME) -> float:
+           theme: str = THEME, fx: bool | None = None, focus: dict | None = None) -> float:
     """One Short from a local piece of the source (times in piece time). bare = the same cut with
     subtitles only, for the side-by-side test of what our layer adds."""
     from shorts import media
+    fx = (FX if fx is None else fx) and not bare
     segs, words = tighten(words, plan["start"], plan["end"])
     start = segs[0][0]
     total = round(sum(y - x for x, y in segs), 3)
+    pieces = [{"kind": "play", "t0": x, "t1": y, "speed": 1.0} for x, y in segs]
+    frz = None
+    ring_at = None
+    if fx and total >= 8:
+        frz = round(freeze_point(words, total), 3)
+        i, tp = piece_time(segs, frz)
+        x, y = segs[i]
+        pieces = ([{"kind": "play", "t0": a, "t1": b, "speed": 1.0} for a, b in segs[:i]]
+                  + ([{"kind": "play", "t0": x, "t1": tp, "speed": 1.0}] if tp - x > 0.05 else [])
+                  + [{"kind": "freeze", "t0": tp, "t1": tp, "speed": 1.0, "secs": FX_FREEZE}]
+                  + ([{"kind": "play", "t0": tp, "t1": y, "speed": 1.0}] if y - tp > 0.05 else [])
+                  + [{"kind": "play", "t0": a, "t1": b, "speed": 1.0} for a, b in segs[i + 1:]])
+        words = [[w[0], w[1] + (FX_FREEZE if w[1] >= frz - 1e-3 else 0), w[2] + (FX_FREEZE if w[1] >= frz - 1e-3 else 0)]
+                 for w in words]
+        if focus:
+            fo = out_of_piece(segs, focus["t"])
+            if fo is not None and fo >= HOOK_ZOOM[0]:
+                ring_at = fo + (FX_FREEZE if fo >= frz else 0)
+        total = round(total + FX_FREEZE, 3)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         crop = black_bars(piece, start)
@@ -736,8 +846,7 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
             cw, ch = map(int, crop.split("=")[1].split(":")[:2])
         band_h = min(int(W * ch / cw), 900) // 2 * 2
         band_y = 640
-        band = build_band(piece, [{"kind": "play", "t0": x, "t1": y, "speed": 1.0} for x, y in segs], crop, band_h,
-                          True, tmp)
+        band = build_band(piece, pieces, crop, band_h, True, tmp)
         th = THEMES[theme]
         base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         if not bare and plan.get("hook"):
@@ -750,13 +859,37 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
                   "-i", str(band), "-loop", "1", "-t", f"{total:.2f}", "-i", str(tmp / "base.png")]
         subs, sub_h = subtitle_track(words, 0.0, total, LOOKS[look or th['subs']], tmp)
         inputs += ["-f", "concat", "-safe", "0", "-i", str(subs)]
-        fc = (f"[0:v][1:v]overlay=0:{band_y}[a0];[a0][2:v]overlay=0:0[b0];[3:v]format=rgba,fps=30[subs];"
+        bandv = "[1:v]"
+        if fx:  # punch-in on the hook: zoom 1 -> 1.12 over the first seconds, then a cut back to 1x
+            dur, amt = HOOK_ZOOM
+            fc_band = (f"[1:v]scale={W * 2}:{band_h * 2},zoompan=z='if(lt(on/30,{dur}),1+{amt}*on/30/{dur},1)':d=1"
+                       f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{band_h}:fps=30[bz];")
+            bandv = "[bz]"
+        else:
+            fc_band = ""
+        fc = (fc_band + f"[0:v]{bandv}overlay=0:{band_y}[a0];[a0][2:v]overlay=0:0[b0];[3:v]format=rgba,fps=30[subs];"
               f"[b0][subs]overlay=0:{band_y + band_h - sub_h - 16}:eof_action=repeat[c0]")
         last, idx = "c0", 4
         overlays = []  # (png, y, t0, t1)
+        if fx:
+            first = tmp / "first.png"
+            media.run(["-i", str(band), "-frames:v", "1", str(first)])
+            inputs += ["-loop", "1", "-t", f"{total:.2f}", "-i", str(first)]
+            fc += (f";[{idx}:v]format=rgba,fade=t=in:st={total - LOOP_FADE:.2f}:d={LOOP_FADE}:alpha=1[lp{idx}]"
+                   f";[{last}][lp{idx}]overlay=0:{band_y}[o{idx}]")
+            last, idx = f"o{idx}", idx + 1
+            if frz is not None:
+                wait = tag("WAIT...")
+                canvas = Image.new("RGBA", (W, wait.height + 10), (0, 0, 0, 0))
+                canvas.alpha_composite(wait, ((W - wait.width) // 2, 0))
+                canvas.save(tmp / "wait.png")
+                overlays.append((tmp / "wait.png", band_y + 24, frz, frz + FX_FREEZE))
+            if ring_at is not None:
+                ring(focus["x"], focus["y"], band_h).save(tmp / "ring.png")
+                overlays.append((tmp / "ring.png", band_y, ring_at, ring_at + 2.0))
         if not bare:
             ctx_end = min(5.0, total * 0.3)
-            pay_at = max(total - 5.0, total * 0.65)
+            pay_at = frz if frz is not None else max(total - 5.0, total * 0.65)
             for name, text, t0, t1 in (("context", plan.get("context"), 0.0, ctx_end),
                                        ("payoff", plan.get("payoff"), pay_at, total + 1)):
                 if text:
@@ -767,7 +900,21 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
             inputs += ["-loop", "1", "-t", f"{total:.2f}", "-i", str(png)]
             fc += f";[{last}][{idx}:v]overlay=0:{y}:enable='between(t,{t0:.2f},{t1:.2f})'[o{idx}]"
             last, idx = f"o{idx}", idx + 1
-        fc += f";[{last}]format=yuv420p[out];[1:a]loudnorm=I=-16:TP=-1.5,aresample=48000[aud]"
+        fc += f";[{last}]format=yuv420p[out];[1:a]{CLEAN_AUDIO if fx else PLAIN_AUDIO},aresample=48000[a1]"
+        cues = []  # (sound file, at)
+        if fx:
+            cues.append((sfx("whoosh", tmp / "whoosh.wav"), 0.0))
+            if frz is not None:
+                cues += [(sfx("whoosh", tmp / "whoosh2.wav"), max(0.0, frz - 0.35)), (sfx("hit", tmp / "hit.wav"), frz)]
+            if ring_at is not None:
+                cues.append((tick(tmp / "tick.wav"), ring_at))
+        mix = "[a1]"
+        for f, at in cues:
+            inputs += ["-i", str(f)]
+            fc += f";[{idx}:a]volume={SFX_VOL},adelay={int(at * 1000)}|{int(at * 1000)}[s{idx}]"
+            mix += f"[s{idx}]"
+            idx += 1
+        fc += (f";{mix}amix=inputs={len(cues) + 1}:duration=first:normalize=0[aud]" if cues else ";[a1]anull[aud]")
         media.run(inputs + ["-filter_complex", fc, "-map", "[out]", "-map", "[aud]", "-t", f"{total:.2f}",
                             "-r", "30", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac",
                             "-b:a", "160k", "-movflags", "+faststart", str(out)])
@@ -877,7 +1024,8 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool) -> dict 
     name = f"{kind}-{si + 1}{chr(97 + k)}"
     lengths = {}
     out = OUT / f"{name}.mp4"
-    lengths[out.name] = round(render(c["piece"], rplan, words, out), 1)
+    focus = ask_focus(llm, settings, c["piece"], rplan, words, c["text"]) if FX else None
+    lengths[out.name] = round(render(c["piece"], rplan, words, out, focus=focus), 1)
     if bare:
         out_b = OUT / f"{name}-bare.mp4"
         lengths[out_b.name] = round(render(c["piece"], rplan, words, out_b, bare=True), 1)
@@ -888,7 +1036,8 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool) -> dict 
             "lengths": lengths, "said": c["text"], "why": c["why"], "scores": c["scores"], "claude": c["claude"],
             "signals": c["signals"], "score": c["score"], "frame_check": c.get("check"), "layer": have,
             "hook": plan.get("hook"), "context": plan.get("context"), "payoff": plan.get("payoff"),
-            "yt_title": plan.get("title"), "credit": plan.get("credit"), "review": review.get("notes")}
+            "yt_title": plan.get("title"), "credit": plan.get("credit"), "review": review.get("notes"),
+            "focus": focus}
 
 
 # ---------- the two steps ----------
@@ -1010,9 +1159,55 @@ def looks(names: list[str] | None = None) -> list[Path]:
     return out
 
 
+def compare(names: list[str] | None = None) -> list[Path]:
+    """Every made Short twice, from the same cut and texts: <short>-plain.mp4 without the engagement
+    elements and <short>-fx.mp4 with them, into compare/ (Roeland's side-by-side, 2026-11-13)."""
+    from shorts import media
+    from .common import open_library
+    settings, _conn, llm = open_library()
+    made = [m for m in json.loads((OUT / "made.json").read_text(encoding="utf-8")) if m.get("short")]
+    srcs = {s["id"]: s for f in OUT.glob("sources-*.json") for s in json.loads(f.read_text(encoding="utf-8"))}
+    dest, work = OUT / "compare", OUT / "work"
+    dest.mkdir(parents=True, exist_ok=True)
+    work.mkdir(parents=True, exist_ok=True)
+    for old in dest.glob("*.mp4"):
+        old.unlink()
+    out, rows = [], []
+    for m in made:
+        name = m["short"]
+        src = srcs.get(m["source"])
+        if (names and name not in names) or not src:
+            continue
+        try:
+            sents = tx.get(src)["sentences"]
+            c = snap(sents, *m["sentences"])
+            if not c:
+                log(f"[compare] {name}: no longer makes a Short, skipped")
+                continue
+            p0 = max(0.0, c["start"] - 1.0)
+            piece = work / f"compare-{name}.mp4"
+            media.run(["-ss", f"{p0:.2f}", "-t", f"{c['end'] - p0 + 1.0:.2f}", "-i", src["url"],
+                       "-vf", "scale=-2:min(720\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                       "-c:a", "aac", "-b:a", "160k", str(piece)])
+            words = [[w[0], w[1] - p0, w[2] - p0] for s in sents[c["from"]:c["to"] + 1] for w in s["words"]]
+            plan = {**{k: m.get(k) for k in ("hook", "context", "payoff", "credit")},
+                    "start": c["start"] - p0, "end": c["end"] - p0}
+            plain = render(str(piece), plan, words, dest / f"{name}-plain.mp4", fx=False)
+            focus = ask_focus(llm, settings, str(piece), plan, words, m.get("said", ""))
+            fxd = render(str(piece), plan, words, dest / f"{name}-fx.mp4", fx=True, focus=focus)
+            piece.unlink(missing_ok=True)
+            out += [dest / f"{name}-plain.mp4", dest / f"{name}-fx.mp4"]
+            rows.append({"short": name, "plain_s": plain, "fx_s": fxd, "focus": focus})
+            log(f"[compare] {name}: plain {plain:.1f} s, with elements {fxd:.1f} s, circle: {bool(focus)}")
+        except Exception as e:  # noqa: BLE001 - one Short failing must not end the job
+            log(f"[compare] {name} failed: {e}")
+        save_json(OUT / "compare.json", rows)
+    return out
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share", "looks"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare"])
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
     ap.add_argument("--sources", type=int, default=3)
     ap.add_argument("--per-source", type=int, default=2)
@@ -1023,6 +1218,9 @@ def main(argv=None) -> None:
         return
     if a.step == "looks":
         looks()
+        return
+    if a.step == "compare":
+        compare()
         return
     if a.part is None:
         ap.error("--part is needed for prep and make")

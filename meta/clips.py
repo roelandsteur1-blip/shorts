@@ -405,7 +405,7 @@ def timeline(plan: dict, edited: bool, keep_audio: bool) -> list[dict]:
 
 
 def piece_len(p: dict) -> float:
-    return FREEZE if p["kind"] == "freeze" else (p["t1"] - p["t0"]) / p["speed"]
+    return p.get("secs", FREEZE) if p["kind"] == "freeze" else (p["t1"] - p["t0"]) / p["speed"]
 
 
 def out_time(pieces: list[dict], t: float) -> float:

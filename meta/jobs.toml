@@ -354,3 +354,9 @@ name = "tclipslooks"
 id = "2026-11-13-tclips-2"
 name = "tclips"
 n = 2
+
+# Every made Short without and with the engagement elements, for Roeland's side-by-side review.
+# Runs after the NASA remake (tclips-2), so the NASA Shorts are the new ones.
+[[job]]
+id = "2026-11-13-tclipscompare-1"
+name = "tclipscompare"
