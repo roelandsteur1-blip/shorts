@@ -322,3 +322,36 @@ def test_themes_style_every_text_and_point_at_real_parts():
         for part in ("hook", "context", "payoff"):
             im = tclips.styled_block("We reached the Moon in 7 years. Then stopped", th[part])
             assert im.width == tclips.W and im.getbbox(), (name, part)
+
+
+def test_long_silences_are_cut_out():
+    """The X-15 Short (2026-11-13) had a long silence: pauses over MAX_GAP shrink to KEEP_GAP."""
+    words = [["One", 1.0, 1.4], ["two.", 1.5, 2.0], ["Three", 9.0, 9.4], ["four.", 9.5, 10.0]]
+    segs, out = tclips.tighten(words, 0.7, 10.3)
+    assert len(segs) == 2 and segs[0][0] == 0.7 and segs[1][1] == 10.3
+    total = sum(y - x for x, y in segs)
+    assert abs(total - (10.3 - 0.7 - (7.0 - tclips.KEEP_GAP))) < 0.01
+    assert out[2][1] == round(2.0 + tclips.KEEP_GAP - 0.7, 3) and out[-1][2] <= total + 1e-6
+    # normal speech stays one stretch
+    segs, out = tclips.tighten([[f"w{i}", 1.0 + i * 0.5, 1.4 + i * 0.5] for i in range(10)], 0.7, 5.9)
+    assert segs == [(0.7, 5.9)] and out[0][1] == 0.3
+
+
+def test_render_cuts_the_silence(tmp_path):
+    src = tmp_path / "t.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:r=24:d=30",
+                    "-f", "lavfi", "-i", "sine=d=30", "-pix_fmt", "yuv420p", "-shortest", str(src)], check=True)
+    words = [[f"w{i}", 1.0 + i * 0.5, 1.4 + i * 0.5] for i in range(12)] + \
+            [[f"v{i}", 20.0 + i * 0.5, 20.4 + i * 0.5] for i in range(12)]
+    plan = {"hook": "h", "context": "c", "payoff": "p", "credit": "x", "start": 0.7, "end": 26.2}
+    total = tclips.render(str(src), plan, words, tmp_path / "o.mp4")
+    assert total < 15 and abs(total - (26.2 - 0.7 - (20.0 - 6.9 - tclips.KEEP_GAP))) < 0.01
+    p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                        str(tmp_path / "o.mp4")], capture_output=True, text=True)
+    assert abs(float(p.stdout) - total) < 0.2
+
+
+def test_tabloid_is_the_default_style():
+    """Roeland's pick in the style test (2026-11-13): new Shorts use the tabloid theme."""
+    import inspect
+    assert tclips.THEME == "tabloid" and inspect.signature(tclips.render).parameters["theme"].default == "tabloid"
