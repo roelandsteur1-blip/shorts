@@ -345,7 +345,7 @@ def find_archive(kind: str, n: int, titles: list[dict], deny: list[str], skip: s
             y = year_of(d)
             if t.get("year") and y and abs(y - int(t["year"])) > 1:
                 continue
-            queue.append((f"title{i}", d))
+            queue.append((f"pin#{i}", d))  # not "title...": open searches start with title:(
     for q in spec["searches"]:
         try:
             queue += [(q, d) for d in search(q, rows=30)]
@@ -358,7 +358,7 @@ def find_archive(kind: str, n: int, titles: list[dict], deny: list[str], skip: s
         if ident in seen or q in done:
             continue
         seen.add(ident)
-        checked_film = q.startswith("title")
+        checked_film = q.startswith("pin#")
         year = year_of(doc)
         if year and year > spec["max_year"] and ident not in allowed:
             continue
@@ -375,7 +375,7 @@ def find_archive(kind: str, n: int, titles: list[dict], deny: list[str], skip: s
         if checked_film:
             word = denied(meta, deny)
             ok, why = (False, f"deny list: {word}") if word else (True, "film on the hand-checked list")
-            entry = pinned[int(q[5:])]
+            entry = pinned[int(q[4:])]
             if ok and entry.get("rights"):
                 why = f"{why}: {entry['rights']}"
         else:
@@ -983,6 +983,8 @@ def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, b
     checks = {x.get("id"): x for x in rank.get("checks") or [] if isinstance(x, dict)}
     order = [lab for lab in rank.get("ranked") or [] if lab in labels]
     order += [lab for lab in labels if lab not in order]
+    if ex.get("weird_first"):  # example round: the weirdest moment wins, the frame rank breaks ties
+        order.sort(key=lambda lab: -float((labels[lab].get("scores") or {}).get("weird") or 0))
     made = []
     for lab in order:
         if len(made) >= per_source:
@@ -1039,7 +1041,10 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool, ex: dict
     lengths = {}
     out = ex.get("out", OUT) / f"{name}.mp4"
     focus = ask_focus(llm, settings, c["piece"], rplan, words, c["text"]) if FX else None
-    lengths[out.name] = round(render(c["piece"], rplan, words, out, focus=focus), 1)
+    tmp_out = OUT / "work" / f"render-{name}.mp4"  # whole file appears at once (the runner shares finished ones live)
+    lengths[out.name] = round(render(c["piece"], rplan, words, tmp_out, focus=focus), 1)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(tmp_out), out)
     if bare:
         out_b = OUT / f"{name}-bare.mp4"
         lengths[out_b.name] = round(render(c["piece"], rplan, words, out_b, bare=True), 1)
@@ -1231,7 +1236,7 @@ def compare(names: list[str] | None = None) -> list[Path]:
 # important. Defaults stay (ragebait texts, Tabloid, silences cut, no effects). Nothing is uploaded.
 EXAMPLES = {"newsreel": 4, "prelinger": 3, "feature": 3}   # Shorts per kind in the final 10
 EXAMPLE_NEW = {"newsreel": 4, "prelinger": 3}              # fresh sources (features: the 3 checked films, new moments)
-EXAMPLE_PER_SOURCE = 2
+EXAMPLE_SPARE = 2                           # extra fresh sources in case one gives no Short
 EX_DIR = OUT / "examples"
 WEIRD = """
 
@@ -1268,79 +1273,64 @@ def used_lines() -> dict[str, list[tuple[int, int]]]:
     return out
 
 
-def pick_examples(made: list[dict], want: dict[str, int] = EXAMPLES) -> list[dict]:
-    """The final set: per kind the weirdest (then best scored), at most one per source while others
-    are left; a kind that falls short is filled from the rest."""
-    def key(m):
-        return (-(float(m.get("weird") or 0)), -(m.get("score") or 0))
-    out, left = [], sorted(made, key=key)
-    for kind, n in want.items():
-        mine = [m for m in left if m["kind"] == kind]
-        firsts = list({m["source"]: m for m in reversed(mine)}.values())  # best per source
-        got = sorted(firsts, key=key)[:n]
-        got += [m for m in mine if m not in got][:n - len(got)]
-        out += got
-    total = sum(want.values())
-    out += [m for m in left if m not in out][:total - len(out)]
-    return out[:total]
-
-
 def examples() -> list[dict]:
     """Roeland's 10 example Shorts (2026-11-13): fresh newsreel and Prelinger sources plus new moments
     from the checked films, the weirdest moment of each, titles in the style of the channels that
-    win. Into examples/ and examples.json; never uploaded."""
+    win. One Short per source, so every render is a keeper: the runner shares each one as soon as it
+    is done (Roeland: not all at once at the end). Into examples/ and examples.json; never uploaded."""
     from .common import open_library
     settings, _conn, llm = open_library()
     EX_DIR.mkdir(parents=True, exist_ok=True)
     for old in EX_DIR.glob("*.mp4"):
         old.unlink()
     titles, deny = load_titles()
-    srcs: list[dict] = []
-    for kind, n in EXAMPLE_NEW.items():
-        old = OUT / f"sources-{kind}.json"
-        skip = {s["id"] for s in json.loads(old.read_text(encoding="utf-8"))} if old.exists() else set()
-        for s in find_archive(kind, n, titles, deny, skip=skip):
-            try:
-                tx.get(s)
-            except Exception as e:  # noqa: BLE001 - one source failing must not end the job
-                log(f"[examples] {s['id']}: transcript failed: {e}")
-                continue
-            srcs.append(s)
-    films = OUT / "sources-feature.json"
-    if films.exists():
-        srcs += [s for s in json.loads(films.read_text(encoding="utf-8")) if not s.get("error")]
-    save_json(OUT / "sources-examples.json", srcs)
-    log(f"[examples] {len(srcs)} sources: {', '.join(s['id'] for s in srcs)}")
     avoid = used_lines()
+    films = OUT / "sources-feature.json"
+    film_srcs = [s for s in json.loads(films.read_text(encoding="utf-8")) if not s.get("error")] if films.exists() else []
     made: list[dict] = []
-    count: dict[str, int] = {}
-    for s in srcs:
-        kind = s["kind"]
-        si = count.get(kind, 0)
-        count[kind] = si + 1
-        film = kind == "feature"
-        ex = {"lo": 8.0 if film else MIN_LEN, "hi": 30.0 if film else MAX_LEN, "min_tight": 8.0 if film else MIN_TIGHT,
-              "moments": (WEIRD_FILM.format(lo=8, hi=30) if film else WEIRD),
-              "layer": TITLE_FILM if film else TITLE_ARCHIVE, "avoid": avoid.get(s["id"], []),
-              "out": EX_DIR, "prefix": "ex-"}
-        log(f"=== [examples] {kind} {s['id']}: {s['title']}")
-        try:
-            made += make_source(s, kind, si, settings, llm, EXAMPLE_PER_SOURCE, False, ex=ex)
-        except Exception as e:  # noqa: BLE001
-            log(f"[examples] {s['id']} failed: {e}")
-        save_json(OUT / "examples.json", made)
-    keep = pick_examples(made)
-    names = {m["short"] for m in keep}
-    for f in EX_DIR.glob("*.mp4"):
-        if f.stem not in names:
-            f.unlink()
-    save_json(OUT / "examples.json", keep)
-    save_json(OUT / "examples-all.json", made)
-    for m in keep:
-        log(f"[examples] {m['short']} ({m['lengths'].get(m['short'] + '.mp4')} s, weird {m.get('weird')}): "
-            f"{m.get('yt_title')} | hook: {m.get('hook')}")
-    log(f"[examples] {len(made)} made, {len(keep)} kept in {EX_DIR}")
-    return keep
+    for kind, want in EXAMPLES.items():
+        if kind == "feature":
+            srcs = film_srcs
+        else:
+            old = OUT / f"sources-{kind}.json"
+            skip = {s["id"] for s in json.loads(old.read_text(encoding="utf-8"))} if old.exists() else set()
+            srcs = find_archive(kind, want + EXAMPLE_SPARE, titles, deny, skip=skip)
+        log(f"[examples] {kind}: {len(srcs)} sources for {want} Shorts: {', '.join(s['id'] for s in srcs)}")
+        got, film = 0, kind == "feature"
+        rounds = 2 if film else 1  # films: a second Short from a good film when another film gives none
+        for r in range(rounds):
+            for si, s in enumerate(srcs):
+                if got >= want:
+                    break
+                if r and not any(m["source"] == s["id"] for m in made):  # round 2: films that gave a Short
+                    continue
+                try:
+                    tx.get(s)
+                except Exception as e:  # noqa: BLE001 - one source failing must not end the job
+                    log(f"[examples] {s['id']}: transcript failed: {e}")
+                    continue
+                ex = {"lo": 8.0 if film else MIN_LEN, "hi": 30.0 if film else MAX_LEN,
+                      "min_tight": 8.0 if film else MIN_TIGHT,
+                      "moments": WEIRD_FILM.format(lo=8, hi=30) if film else WEIRD,
+                      "layer": TITLE_FILM if film else TITLE_ARCHIVE,
+                      "avoid": avoid.get(s["id"], []) + [tuple(m["sentences"]) for m in made if m["source"] == s["id"]],
+                      "out": EX_DIR, "prefix": "ex2-" if r else "ex-", "weird_first": True}
+                log(f"=== [examples] {kind} {s['id']}: {s['title']}")
+                try:
+                    one = make_source(s, kind, si, settings, llm, 1, False, ex=ex)
+                except Exception as e:  # noqa: BLE001
+                    log(f"[examples] {s['id']} failed: {e}")
+                    one = []
+                for m in one:
+                    got += 1
+                    made.append(m)
+                    log(f"[examples] READY {len(made)}: {m['short']} ({m['lengths'].get(m['short'] + '.mp4')} s, "
+                        f"weird {m.get('weird')}): {m.get('yt_title')} | hook: {m.get('hook')}")
+                save_json(OUT / "examples.json", made)
+        if got < want:
+            log(f"[examples] {kind}: only {got} of {want}")
+    log(f"[examples] {len(made)} example Shorts in {EX_DIR}")
+    return made
 
 
 BATCH = 20                                  # Shorts per upload batch (Roeland 2026-11-13: 20 on historybuffed)

@@ -85,7 +85,7 @@ JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "r
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3
-PROGRESS_EVERY = 600  # seconds between progress pushes while a job runs
+PROGRESS_EVERY = 300  # seconds between progress pushes while a job runs (with the videos finished so far)
 
 
 def log(msg: str) -> None:
@@ -120,11 +120,20 @@ def git_results(*args: str, check: bool = True) -> subprocess.CompletedProcess:
                           check=check)
 
 
+def new_videos(start: float) -> list[Path]:
+    """Videos a job made since it started. Files in a work/ folder (pieces, renders in progress) are
+    left out, so a progress push only shares finished videos."""
+    return sorted(f for f in OUT.glob("**/*.mp4") if f.stat().st_mtime >= start and ".shot." not in f.name
+                  and "work" not in f.relative_to(OUT).parts[:-1])
+
+
 def previews(files: list[Path], dest: Path) -> None:
     """Small 540x960 copies of new videos plus one sheet of frames, so results stay a few MB."""
     dest.mkdir(parents=True, exist_ok=True)
     frames = []
     for f in files:
+        if (dest / f.name).exists() and (dest / f.name).stat().st_mtime >= f.stat().st_mtime:
+            continue  # shared by an earlier progress push
         try:
             subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(f), "-vf",
                             "scale=540:960", "-c:v", "libx264", "-crf", "32", "-preset", "veryfast",
@@ -244,12 +253,12 @@ def main() -> None:
                     break
                 if time.time() - last > PROGRESS_EVERY:  # progress note with the log so far
                     last = time.time()
-                    publish(jid, "running", logfile.read_text(encoding="utf-8", errors="replace"), [])
+                    publish(jid, "running", logfile.read_text(encoding="utf-8", errors="replace"), new_videos(start))
         text = logfile.read_text(encoding="utf-8", errors="replace")
         rc = p.returncode
         status = "timed out" if rc is None or (rc < 0 and time.time() - start > MAX_HOURS * 3600) else (
             "done" if rc == 0 else f"failed ({rc})")
-        files = sorted(f for f in OUT.glob("**/*.mp4") if f.stat().st_mtime >= start and ".shot." not in f.name)
+        files = new_videos(start)
         done[jid] = status
         STATE.write_text(json.dumps(done, indent=1), encoding="utf-8")
         log(f"job {jid}: {status}, {len(files)} new videos")
