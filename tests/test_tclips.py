@@ -174,7 +174,7 @@ def test_render_with_subtitles_and_bare(tmp_path):
     for bare in (False, True):
         out = tmp_path / f"o-{bare}.mp4"
         total = tclips.render(str(src), plan, words, out, bare=bare)
-        assert abs(total - (18.0 if bare else 18.0 + tclips.FX_FREEZE)) < 0.01  # FX on: the payoff freeze
+        assert abs(total - 18.0) < 0.01  # FX off (Roeland): no payoff freeze
         p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration",
                             "-of", "csv=p=0", str(out)], capture_output=True, text=True)
         assert "video,1080,1920" in p.stdout and "audio" in p.stdout
@@ -217,7 +217,7 @@ def test_make_source_end_to_end_with_a_fake_claude(tmp_path, monkeypatch):
     assert all(tclips.MIN_LEN <= v <= tclips.MAX_LEN + 1 for m in made for v in m["lengths"].values())
     assert (tmp_path / "out" / "newsreel-1b.mp4").exists()
     assert not list((tmp_path / "out" / "work").glob("*.mp4"))  # pieces cleaned up
-    assert len(llm.prompts) == 2 + 3 * 2  # moments, rank, then layer + review + focus per Short
+    assert len(llm.prompts) == 2 + 2 * 2  # moments, rank, then layer + review per Short (FX off: no focus)
 
 
 def test_checked_films_by_search_pick_one_clean_copy(monkeypatch):
@@ -380,3 +380,8 @@ def test_engagement_elements_render(tmp_path):
 
 def test_compare_takes_five_different_shorts():
     assert len(tclips.COMPARE) == 5 and len({n.split("-")[0] for n in tclips.COMPARE}) == 4
+
+
+def test_effects_are_off_by_default():
+    """Roeland 2026-11-13: he didn't like the engagement effects; they stay available behind fx=True."""
+    assert tclips.FX is False

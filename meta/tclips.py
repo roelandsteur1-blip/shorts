@@ -662,7 +662,7 @@ def tighten(words: list[list], start: float, end: float, max_gap: float = MAX_GA
 # "middel" or higher). FX on: punch-in zoom on the hook, cleaned and louder speech, a freeze frame
 # with "WAIT..." on the payoff, one red circle on the detail that matters, a loop ending that fades
 # back to the first frame, and quiet synthetic sound effects (made by ffmpeg: no licence question).
-FX = True
+FX = False                                 # Roeland 2026-11-13 after the side-by-side: he does not like the effects
 FX_FREEZE = 1.2                             # seconds the payoff frame is held
 HOOK_ZOOM = (3.0, 0.12)                     # punch-in over the first 3 s, to 1.12x
 LOOP_FADE = 0.5                             # last seconds fade back to the first frame
