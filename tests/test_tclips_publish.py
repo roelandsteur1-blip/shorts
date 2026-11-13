@@ -198,6 +198,7 @@ def test_clear_lists_then_deletes_only_unpublished_old_shorts(plan, conn, settin
     assert json.loads((tclips.OUT / "clear-list.json").read_text())["approved"][0]["id"] == keep
     monkeypatch.setattr(upload, "can_manage", lambda s, ch: False)
     assert tclips.clear(channel.id, delete=True) == [] and yt.deleted == []
+    assert conn.execute("SELECT status FROM shorts WHERE id=?", (keep,)).fetchone()[0] == "rejected"
     monkeypatch.setattr(upload, "can_manage", lambda s, ch: True)
     tclips.clear(channel.id, delete=True)
     assert sorted(yt.deleted) == ["v2", "v3"]
