@@ -394,3 +394,9 @@ name = "tclipsuploadall"
 [[job]]
 id = "2026-11-13-tclipsexamples-1"
 name = "tclipsexamples"
+
+# Retry of tclipsexamples-1 (crashed: the newsreel search was taken for a checked film). One Short per
+# source, and the runner now shares each finished video every 5 minutes (Roeland: not all at the end).
+[[job]]
+id = "2026-11-13-tclipsexamples-2"
+name = "tclipsexamples"

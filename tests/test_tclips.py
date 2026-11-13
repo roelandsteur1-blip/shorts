@@ -428,13 +428,62 @@ def test_example_lens_lengths_avoid_and_titles(tmp_path, monkeypatch):
     assert any("Cult Cinema Classics" in p for p in llm.prompts if "OUR layer" in p)
 
 
-def test_pick_examples_weirdest_per_kind_one_per_source_first():
-    def m(name, kind, src, weird, score=3.0):
-        return {"short": name, "kind": kind, "source": src, "weird": weird, "score": score}
-    made = [m("a", "newsreel", "n1", 5), m("b", "newsreel", "n1", 4), m("c", "newsreel", "n2", 3),
-            m("d", "feature", "f1", 2), m("e", "feature", "f2", 5), m("f", "prelinger", "p1", 4)]
-    got = [x["short"] for x in tclips.pick_examples(made, {"newsreel": 2, "feature": 1, "prelinger": 2})]
-    assert got[:2] == ["a", "c"]          # one per source before a second from n1
-    assert got[2] == "e" and got[3] == "f"
-    assert len(got) == 5 and "b" in got   # prelinger short of one: filled from the rest
-    assert runner.command({"id": "2026-11-13-tclipsexamples-1", "name": "tclipsexamples"})[-1] == "examples"
+def test_open_newsreel_search_is_not_taken_for_a_checked_film(monkeypatch):
+    """tclipsexamples-1 (2026-11-13) crashed: the newsreel searches start with title:( and were
+    read as a checked-film entry."""
+    q = tclips.KINDS["newsreel"]["searches"][0]
+    monkeypatch.setattr(tclips, "search", lambda qq, rows=30: [{"identifier": "UN-1", "year": "1957"},
+                                                               {"identifier": "UN-old", "year": "1957"}] if qq == q else [])
+    monkeypatch.setattr(tclips, "archive_item", lambda i: {"url": f"u/{i}", "length": 400, "captions_url": None,
+                                                           "meta": {"title": "Universal Newsreel 1957", "year": "1957"}})
+    got = tclips.find_archive("newsreel", 3, [], [], skip={"UN-old"})
+    assert [g["id"] for g in got] == ["UN-1"]
+
+
+def test_runner_shares_only_finished_videos(tmp_path, monkeypatch):
+    import os
+    import time
+    monkeypatch.setattr(runner, "OUT", tmp_path)
+    start = time.time() - 5
+    (tmp_path / "tclips" / "examples").mkdir(parents=True)
+    (tmp_path / "tclips" / "work").mkdir()
+    done = tmp_path / "tclips" / "examples" / "ex-newsreel-1a.mp4"
+    done.write_bytes(b"x")
+    (tmp_path / "tclips" / "work" / "render-ex-newsreel-2a.mp4").write_bytes(b"x")
+    old = tmp_path / "tclips" / "old.mp4"
+    old.write_bytes(b"x")
+    os.utime(old, (start - 100, start - 100))
+    assert runner.new_videos(start) == [done]
+    assert runner.command({"id": "2026-11-13-tclipsexamples-2", "name": "tclipsexamples"})[-1] == "examples"
+
+
+def test_examples_one_short_per_source_until_each_kind_is_full(tmp_path, monkeypatch):
+    import json
+    import sys
+    import types
+    monkeypatch.setattr(tclips, "OUT", tmp_path)
+    monkeypatch.setattr(tclips, "EX_DIR", tmp_path / "examples")
+    monkeypatch.setattr(tclips, "PLAN", tmp_path / "upload-plan.json")
+    monkeypatch.setitem(sys.modules, "meta.common", types.SimpleNamespace(open_library=lambda: (None, None, None)))
+    (tmp_path / "sources-feature.json").write_text(json.dumps([{"id": f"f{i}", "kind": "feature", "title": "F"}
+                                                                for i in range(3)]))
+    (tmp_path / "made.json").write_text(json.dumps([{"short": "feature-1a", "source": "f0", "sentences": [3, 6]}]))
+    monkeypatch.setattr(tclips, "find_archive", lambda kind, n, t, d, skip=(): [
+        {"id": f"{kind}{i}", "kind": kind, "title": "T"} for i in range(n)])
+    monkeypatch.setattr(tx, "get", lambda s: {})
+    calls = []
+
+    def fake_make(s, kind, si, settings, llm, per, bare, ex=None):
+        calls.append((s["id"], per, ex["avoid"], ex["lo"]))
+        if s["id"] in ("newsreel1", "f1"):
+            return []  # a source that gives nothing: a spare takes its place
+        return [{"short": f"{ex['prefix']}{kind}-{si + 1}a", "source": s["id"], "sentences": [10, 12],
+                 "lengths": {}, "kind": kind}]
+    monkeypatch.setattr(tclips, "make_source", fake_make)
+    made = tclips.examples()
+    kinds = [m["kind"] for m in made]
+    assert kinds.count("newsreel") == 4 and kinds.count("prelinger") == 3 and kinds.count("feature") == 3
+    assert all(per == 1 for _, per, _, _ in calls)
+    assert ("f0", 1, [(3, 6)], 8.0) in calls                       # film lines used before are avoided
+    assert [m["source"] for m in made if m["kind"] == "feature"] == ["f0", "f2", "f0"]  # f1 gave none: 2nd from f0
+    assert (tmp_path / "examples.json").exists()
