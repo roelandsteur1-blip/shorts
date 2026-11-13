@@ -1,0 +1,32 @@
+# Roeland's subtitle look test (2026-11-13): these Shorts, with their ragebait texts (the style he
+# picked), each rendered in every look of LOOKS in meta/tclips.py by `python -m meta.tclips looks`.
+
+[[short]]
+name = "newsreel-1a"
+hook = "We reached the Moon in 7 years. Then stopped"
+context = "September 1962: Kennedy asks Texas to back a $20 billion moonshot."
+payoff = "Apollo 11 landed in July 1969. Nobody has walked on the Moon since 1972. Why not?"
+
+[[short]]
+name = "newsreel-2a"
+hook = "Your 'snow day' is nothing next to 1947"
+context = "New York, the day after Christmas 1947: two inches of snow an hour."
+payoff = "Central Park got 26.4 inches, a record until 2006. Modern winters are soft. Prove me wrong."
+
+[[short]]
+name = "prelinger-1a"
+hook = "You have never brushed well enough. Here's proof"
+context = "Leeuwenhoek looked at his own tooth tartar in the 1600s. It was alive."
+payoff = "He described these moving 'animalcules' in 1683. Your mouth is doing the same thing right now."
+
+[[short]]
+name = "feature-1a"
+hook = "This is toxic. In 1940 it was romantic"
+context = "His Girl Friday: an editor sabotages his ex-wife's new life. The film cheers."
+payoff = "It's ranked among the greatest comedies ever made. Red flag or classic? You decide."
+
+[[short]]
+name = "nasa-3b"
+hook = "No crewed plane has beaten this 1960s record"
+context = "The X-15: a rocket plane dropped from a B-52 to fly at the edge of space."
+payoff = "In 1967 it hit Mach 6.7. Still the record for a crewed powered plane. Did we just stop trying?"

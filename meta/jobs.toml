@@ -324,3 +324,21 @@ n = 4
 [[job]]
 id = "2026-11-12-tclipsshare-1"
 name = "tclipsshare"
+
+# 2026-11-13: Roeland's subtitle look test (config/look-test.toml, ragebait texts) in every look.
+# Runs before the feature remake below, which changes feature-1a.
+[[job]]
+id = "2026-11-13-tclipslooks-1"
+name = "tclipslooks"
+
+# Reefer Madness subtitles ran ahead of the picture (audio drift): redo its transcript, then remake
+# the feature Shorts with the fix and the ragebait tone.
+[[job]]
+id = "2026-11-13-tclipsprep-4"
+name = "tclipsprep"
+n = 4
+
+[[job]]
+id = "2026-11-13-tclips-4"
+name = "tclips"
+n = 4
