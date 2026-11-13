@@ -90,7 +90,7 @@ THEMES = {
               "hook": _t(64, CREAM), "context": _t(44, CREAM, kind="regular"),
               "payoff": _t(44, BROWN, box=CREAM + (255,))},
 }
-THEME = "standard"                          # default until a theme wins the test
+THEME = "tabloid"                           # Roeland picked it in the style test (2026-11-13)
 TEST_THEMES = ("documentary", "news", "tabloid", "neon", "retro")
 
 
@@ -158,7 +158,9 @@ Transcript, one sentence per line: [sentence number] minutes:seconds text
 {transcript}
 
 Find {n} candidate moments that would each work as a 15-45 second Short that keeps the ORIGINAL
-SOUND. Read whole stretches, don't score single lines: a moment is usually 3-12 sentences. Score
+SOUND. Read whole stretches, don't score single lines: a moment is usually 3-12 sentences. Speech
+should run almost without pause: the time stamps show long gaps between lines, and a moment with a
+long silence or a stretch of only music is dull (silences get cut out, which can leave it too short). Score
 each moment 1-5 on:
 1. self_contained: understandable on its own, or with one line of context from us.
 2. clear_start: starts at the start of a sentence, on a person speaking or on the action.
@@ -620,6 +622,41 @@ def subtitle_blocks(words: list[list], start: float, end: float, max_words: int 
     return out
 
 
+# No dull stretches (Roeland, 2026-11-13: the X-15 Short had a long silence). Every pause between
+# words longer than MAX_GAP is cut down to KEEP_GAP; a Short that ends up shorter than MIN_TIGHT is dropped.
+MAX_GAP = 0.8
+KEEP_GAP = 0.3
+MIN_TIGHT = 10.0
+
+
+def tighten(words: list[list], start: float, end: float, max_gap: float = MAX_GAP,
+            keep: float = KEEP_GAP) -> tuple[list[tuple[float, float]], list[list]]:
+    """The stretches of start..end to play, with long silences cut out, and the words moved to
+    output time (0 = start of the Short)."""
+    ws = sorted((w for w in words if w[1] >= start - 0.05 and w[2] <= end + 0.05), key=lambda w: w[1])
+    if not ws:
+        return [(start, end)], []
+    segs, a, last = [], max(start, ws[0][1] - AIR), ws[0][2]
+    for w in ws[1:]:
+        if w[1] - last > max_gap:
+            segs.append((a, last + keep / 2))
+            a = w[1] - keep / 2
+        last = max(last, w[2])
+    segs.append((a, max(a + 0.1, min(end, last + AIR))))
+    acc, starts = 0.0, []
+    for x, y in segs:
+        starts.append(acc)
+        acc += y - x
+    out = []
+    for w in ws:
+        i = next((k for k, (x, y) in enumerate(segs) if x - 1e-6 <= w[1] <= y + 1e-6), None)
+        if i is None:
+            continue
+        x, y = segs[i]
+        out.append([w[0], round(starts[i] + w[1] - x, 3), round(starts[i] + min(w[2], y) - x, 3)])
+    return [(round(x, 3), round(y, 3)) for x, y in segs], out
+
+
 def subtitle_image(words: list[str], look: dict, hot: int | None = None) -> Image.Image:
     """One subtitle on a full-width transparent canvas of fixed height (two lines), text at the
     bottom. hot = index of the word being said, drawn in the look's "hot" colour."""
@@ -686,8 +723,9 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
     """One Short from a local piece of the source (times in piece time). bare = the same cut with
     subtitles only, for the side-by-side test of what our layer adds."""
     from shorts import media
-    start, end = plan["start"], plan["end"]
-    total = end - start
+    segs, words = tighten(words, plan["start"], plan["end"])
+    start = segs[0][0]
+    total = round(sum(y - x for x, y in segs), 3)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         crop = black_bars(piece, start)
@@ -698,7 +736,8 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
             cw, ch = map(int, crop.split("=")[1].split(":")[:2])
         band_h = min(int(W * ch / cw), 900) // 2 * 2
         band_y = 640
-        band = build_band(piece, [{"kind": "play", "t0": start, "t1": end, "speed": 1.0}], crop, band_h, True, tmp)
+        band = build_band(piece, [{"kind": "play", "t0": x, "t1": y, "speed": 1.0} for x, y in segs], crop, band_h,
+                          True, tmp)
         th = THEMES[theme]
         base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         if not bare and plan.get("hook"):
@@ -709,7 +748,7 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
         base.save(tmp / "base.png")
         inputs = ["-f", "lavfi", "-t", f"{total:.2f}", "-i", f"color={th['bg']}:s={W}x{H}:r=30",
                   "-i", str(band), "-loop", "1", "-t", f"{total:.2f}", "-i", str(tmp / "base.png")]
-        subs, sub_h = subtitle_track(words, start, end, LOOKS[look or th['subs']], tmp)
+        subs, sub_h = subtitle_track(words, 0.0, total, LOOKS[look or th['subs']], tmp)
         inputs += ["-f", "concat", "-safe", "0", "-i", str(subs)]
         fc = (f"[0:v][1:v]overlay=0:{band_y}[a0];[a0][2:v]overlay=0:0[b0];[3:v]format=rgba,fps=30[subs];"
               f"[b0][subs]overlay=0:{band_y + band_h - sub_h - 16}:eof_action=repeat[c0]")
@@ -831,6 +870,10 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool) -> dict 
         return None
     words = [[w[0], w[1] - c["p0"], w[2] - c["p0"]] for s in t["sentences"][c["from"]:c["to"] + 1] for w in s["words"]]
     rplan = {**plan, "start": s0, "end": s1}
+    tight = sum(y - x for x, y in tighten(words, s0, s1)[0])
+    if tight < MIN_TIGHT:
+        log(f"[{kind}] {src['id']}: only {tight:.0f} s left once the silences are cut: no Short")
+        return None
     name = f"{kind}-{si + 1}{chr(97 + k)}"
     lengths = {}
     out = OUT / f"{name}.mp4"

@@ -348,3 +348,9 @@ n = 4
 [[job]]
 id = "2026-11-13-tclipslooks-2"
 name = "tclipslooks"
+
+# Remake the NASA Shorts with the tabloid style and the silences cut out (the X-15 Short had a long pause).
+[[job]]
+id = "2026-11-13-tclips-2"
+name = "tclips"
+n = 2
