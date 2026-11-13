@@ -360,3 +360,13 @@ n = 2
 [[job]]
 id = "2026-11-13-tclipscompare-1"
 name = "tclipscompare"
+
+# historybuffed: list the videos that are not public yet (read-only) before they are deleted.
+[[job]]
+id = "2026-11-13-tclipsclear-1"
+name = "tclipsclear"
+
+# 20 fresh transcript-first Shorts (ragebait, Tabloid, silences cut, no effects) for historybuffed.
+[[job]]
+id = "2026-11-13-tclipsbatch-1"
+name = "tclipsbatch"
