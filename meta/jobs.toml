@@ -462,3 +462,8 @@ name = "tchanneljobs"
 [[job]]
 id = "2026-11-14-update-5"
 name = "update"
+
+# Roeland 2026-11-14 "is it stopped now?": read-only look at the Make jobs again (Claude limit?).
+[[job]]
+id = "2026-11-14-tchanneljobs-2"
+name = "tchanneljobs"
