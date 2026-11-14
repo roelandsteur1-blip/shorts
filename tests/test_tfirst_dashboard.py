@@ -361,3 +361,36 @@ def test_stats_page_shows_make_times_and_youtube_numbers(client, out, conn, sett
     with client.application.app_context():
         assert not tfirst.stats_due(base)        # nothing connected: no fetch every 6 hours
         assert tfirst.start_next(base) is None   # the stats job never counts as a make
+
+
+def test_login_finishes_by_pasting_the_localhost_address(client, monkeypatch):
+    """No ssh tunnel: the laptop's browser can't open localhost:8765, but the pasted address is
+    passed on to the login server waiting on the server (here a tiny stand-in)."""
+    import http.server
+    import threading
+    from shorts.web import tfirst
+    got = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            got.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.handle_request, daemon=True).start()
+    url = ("http://localhost:8765/?state=QxirZ&iss=https://accounts.google.com&code=4/0AUn6H"
+           "&scope=https://www.googleapis.com/auth/youtube.upload")
+    assert tfirst.finish_login(url, port=srv.server_port) is None
+    assert got and "code=4%2F0AUn6H" in got[0] and "state=QxirZ" in got[0]
+    srv.server_close()
+    assert "not the address" in tfirst.finish_login("https://evil.example/?code=1&state=2")
+    assert "no longer waiting" in tfirst.finish_login(url, port=srv.server_port)
+    monkeypatch.setattr(tfirst, "finish_login", lambda u: None)
+    r = client.post("/channels/oldschooladvice/login", data={"url": url})
+    assert r.status_code == 302 and "Logged%20in" in r.headers["Location"]
+    assert client.post("/channels/nope/login", data={"url": url}).status_code == 404
