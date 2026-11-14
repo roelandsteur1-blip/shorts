@@ -487,3 +487,98 @@ def test_examples_one_short_per_source_until_each_kind_is_full(tmp_path, monkeyp
     assert ("f0", 1, [(3, 6)], 8.0) in calls                       # film lines used before are avoided
     assert [m["source"] for m in made if m["kind"] == "feature"] == ["f0", "f2", "f0"]  # f1 gave none: 2nd from f0
     assert (tmp_path / "examples.json").exists()
+
+
+def test_render_is_one_pass_and_keeps_sound_with_the_picture(tmp_path, monkeypatch):
+    """Without effects the band is cut inside the render's own graph: one ffmpeg run, still
+    pictures as single frames, and a flash in the film still lands on its beep."""
+    from shorts import media
+    src = tmp_path / "flash.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    "color=c=gray:s=640x480:r=24,drawbox=c=white:t=fill:enable='between(mod(t\\,2)\\,1\\,1.1)'",
+                    "-f", "lavfi", "-i", "sine=f=1000:r=48000,volume='if(between(mod(t,2),1,1.1),1,0)':eval=frame",
+                    "-t", "24", "-pix_fmt", "yuv420p", "-c:a", "aac", str(src)], check=True)
+    runs = []
+    real = media.run
+    monkeypatch.setattr(media, "run", lambda a, **k: runs.append(a) or real(a, **k))
+    words = [[f"w{i}", 0.5 + i * 0.5, 0.9 + i * 0.5] for i in range(20)] + \
+            [[f"v{i}", 13.0 + i * 0.5, 13.4 + i * 0.5] for i in range(18)]  # a 2.6 s pause: cut out
+    plan = {"hook": "A hook here", "context": "Some context", "payoff": "The payoff.", "credit": "Test",
+            "start": 0.5, "end": 22.0}
+    out = tmp_path / "o.mp4"
+    tclips.render(str(src), plan, words, out)
+    assert len(runs) == 1 and "-loop" not in runs[0]
+    # every flash (white band) has its beep within a frame or two
+    v = subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(out), "-vf", "crop=400:200:340:900,scale=4:4,format=gray",
+                        "-f", "rawvideo", "-"], capture_output=True).stdout
+    lum = np.frombuffer(v, np.uint8).reshape(-1, 16).mean(1)
+    flashes = (np.where((lum[1:] > 200) & (lum[:-1] <= 200))[0] + 1) / 30
+    a = np.abs(np.frombuffer(subprocess.run(["ffmpeg", "-loglevel", "error", "-i", str(out), "-ac", "1", "-ar", "8000",
+                                             "-f", "s16le", "-"], capture_output=True).stdout, np.int16).astype(float))
+    loud = np.convolve(a, np.ones(40) / 40, "same") > a.max() * 0.2
+    beeps = (np.where(loud[1:] & ~loud[:-1])[0] + 1) / 8000
+    assert len(flashes) >= 8
+    assert all(np.min(np.abs(beeps - f)) < 0.08 for f in flashes)
+
+
+def test_cut_from_the_kept_copy_when_there_is_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(tx, "VIDEOS", tmp_path / "videos")
+    src = {"id": "a/b c", "url": "https://example.org/f.mp4"}
+    assert tx.local(src) == src["url"]
+    tx.video_path(src["id"]).parent.mkdir(parents=True)
+    tx.video_path(src["id"]).write_bytes(b"x")
+    assert tx.local(src) == str(tx.video_path(src["id"]))
+
+
+def test_transcript_download_keeps_the_film_and_prunes(tmp_path, monkeypatch):
+    film = tmp_path / "film.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=320x240:r=24:d=6",
+                    "-f", "lavfi", "-i", "sine=d=6", "-pix_fmt", "yuv420p", "-shortest", str(film)], check=True)
+    monkeypatch.setattr(tx, "VIDEOS", tmp_path / "videos")
+    monkeypatch.setattr(tx, "VIDEO_MIN_FREE_GB", 0.0)
+    keep = tx.video_path("film")
+    secs = tx.fetch_audio(str(film), tmp_path / "a.wav", keep=keep)
+    assert abs(secs - 6) < 0.2 and keep.exists() and not list(keep.parent.glob("*.part*"))
+    old = keep.with_name("old.mkv")
+    old.write_bytes(b"0" * 1000)
+    import os
+    os.utime(old, (1, 1))
+    tx.prune_videos(cap_gb=keep.stat().st_size / 1e9)
+    assert keep.exists() and not old.exists()
+
+
+def test_a_failed_render_frees_its_place_for_the_next_moment(tmp_path, monkeypatch):
+    """Renders run next to Claude's next steps; one that fails lets the next moment in, with its own letter."""
+    src = tmp_path / "long.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=s=640x480:r=24:d=70",
+                    "-f", "lavfi", "-i", "sine=d=70", "-pix_fmt", "yuv420p", "-shortest", str(src)], check=True)
+    monkeypatch.setattr(tclips, "OUT", tmp_path / "out")
+    monkeypatch.setattr(tx, "get", lambda s: {"origin": "whisper", "sentences": sents(17)})
+    real, calls = tclips.render, []
+
+    def flaky(piece, plan, words, out, **kw):
+        calls.append(out.name)
+        if len(calls) == 1:
+            raise RuntimeError("disk full")
+        return real(piece, plan, words, out, **kw)
+    monkeypatch.setattr(tclips, "render", flaky)
+
+    class FakeLLM:
+        def ask_json(self, prompt, cmd, retries=1, images=None):
+            if "candidate moments" in prompt:
+                return {"moments": [{"from": 1, "to": 4, "why": "w", "scores": {"surprising": 5}},
+                                    {"from": 8, "to": 11, "why": "w2", "scores": {"surprising": 3}}]}
+            if "rank the best" in prompt:
+                return {"ranked": ["M1", "M2"], "checks": []}
+            if "OUR layer" in prompt:
+                return {"usable": True, "hook": "They really did this", "context": "In 1957, on TV",
+                        "payoff": "It was banned two years later.", "title": "t", "credit": "Test (1957)",
+                        "layer": ["context", "payoff_fact"]}
+            return {"ok": True}
+
+    class Settings:
+        claude_cmd = "claude"
+    made = tclips.make_source({"id": "test", "url": str(src), "title": "Test film", "year": 1957},
+                              "newsreel", 0, Settings(), FakeLLM(), per_source=1, bare_first=False)
+    assert [m["short"] for m in made] == ["newsreel-1b"] and len(calls) == 2
+    assert not list((tmp_path / "out" / "work").glob("*.mp4"))
