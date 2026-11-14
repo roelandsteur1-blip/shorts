@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% block title %}{{ s.name }}{% endblock %}{% block body %}
+<p><a href="/shorts">&larr; Shorts</a></p>
+<div class="grid">
+<div>{% if s.video %}<video src="/video/{{ s.name }}.mp4" controls playsinline preload="metadata"></video>{% else %}<p class="muted">Video no longer on the server.</p>{% endif %}</div>
+<div>
+<h1 style="margin-top:0">{{ s.title }}</h1>
+<p><code>{{ s.name }}</code> · {{ s.kind_label }}{% if s.secs %} · {{ s.secs|round(1) }} s{% endif %}{% if s.score %} · score {{ s.score }}{% endif %}</p>
+{% if s.row and s.row.youtube_id %}<p><a href="https://youtu.be/{{ s.row.youtube_id }}" target="_blank" rel="noopener">youtu.be/{{ s.row.youtube_id }}</a> · {{ s.state }}{% if s.row.publish_at %} · publishes {{ s.row.publish_at[:16].replace('T', ' ') }} UTC{% endif %}{% if s.row.views is not none %} · {{ s.row.views }} views{% endif %}{% if s.row.likes is not none %} · {{ s.row.likes }} likes{% endif %}{% if s.row.avg_view_pct %} · {{ s.row.avg_view_pct|round|int }}% viewed{% endif %}</p>
+{% elif s.row and s.row.error %}<p class="bad">Upload failed: {{ s.row.error }}</p>{% else %}<p class="muted">{{ 'In the upload plan, not on YouTube yet.' if s.state == 'planned' else 'Not uploaded.' }}</p>{% endif %}
+<div class="card">
+{% if s.hook %}<p><b>Hook</b><br>{{ s.hook }}</p>{% endif %}
+{% if s.context %}<p><b>Context</b><br>{{ s.context }}</p>{% endif %}
+{% if s.payoff %}<p><b>Payoff</b><br>{{ s.payoff }}</p>{% endif %}
+{% if s.why %}<p><b>Why this moment</b><br>{{ s.why }}</p>{% endif %}
+</div>
+<div class="card">
+<p><b>Source</b><br>{% if s.link %}<a href="{{ s.link }}" target="_blank" rel="noopener">{{ s.source }}</a>{% else %}{{ s.source }}{% endif %}{% if s.year %} ({{ s.year }}){% endif %}{% if s.at %} · at {{ s.at }}{% endif %}</p>
+{% if s.rights %}<p><b>Rights</b><br>{{ s.rights }}</p>{% endif %}
+{% if s.said %}<details><summary>What is said</summary><p>{{ s.said }}</p></details>{% endif %}
+</div>
+</div></div>
+{% endblock %}

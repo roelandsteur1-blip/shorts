@@ -8,7 +8,7 @@ import pytest
 
 from shorts import db, upload, ytstats
 
-from test_schedule_stats import add_short, cfg, client  # noqa: F401 - fixtures
+from test_schedule_stats import add_short, cfg  # noqa: F401 - fixtures
 
 NOW = datetime(2026, 10, 19, 14, 0, tzinfo=timezone.utc)
 
@@ -210,59 +210,10 @@ def test_hidden_marks_cleared_once(tmp_path):
     assert db.connect(path).execute("SELECT stats_hidden FROM shorts").fetchone()[0] == 1  # later hides stay
 
 
-def test_stats_page(client, conn, settings, channel, yt):
-    add_short(conn, status="scheduled", title="Big one", youtube_id="y1", publish_at="2026-10-15T15:00:00Z")
-    add_short(conn, status="scheduled", title="Small one", youtube_id="y2", publish_at="2026-10-16T15:00:00Z")
-    add_short(conn, status="scheduled", title="Tonight", youtube_id="y3", publish_at="2026-10-19T21:00:00Z")
-    yt.add("y1", views=5000, title="Big one"); yt.add("y2", views=300, title="Small one")  # noqa: E702
-    yt.add("y3", privacy="private", publish_at="2026-10-19T21:00:00Z", title="Tonight")
-    yt.add("y4", views=77, title="Made by hand")
-    yt.analytics = {"y1": [4000, 3000, 70.0, 20.0, 40, 1, 5], "y2": [300, 60, 40.0, 10.0, 2, 0, 1]}
-    sync(conn, settings, channel)
-    page = client.get("/stats").data.decode()
-    live = page[page.index("Live Shorts"):page.index("Not live")]
-    assert "5,000" in live and "75%" in live and live.index("Big one") < live.index("Small one")
-    assert "Made by hand" in live and "not from pipeline" in live and "Tonight" not in live
-    assert "Tonight" in page[page.index("Not live"):] and "Scheduled" in page
-    assert "3</b>live" in page and "1</b>scheduled" in page and "Analytics up to 2026-10-17" in page
-    # the channel's real count, not the Shorts' Analytics subscribersGained (6 here)
-    assert "1,234</b>subscribers" in page and "6</b>subs from Shorts" in page
-    page = client.get("/stats?sort=newest").data.decode()
-    assert page.index("Small one") < page.index("Big one") < page.index("Made by hand")
-    # Hide, then show again
-    client.post("/stats/hide/y1", data={"hidden": "1"})
-    page = client.get("/stats").data.decode()
-    assert "5,000" not in page[page.index("Live Shorts"):page.index("Hidden")] and "Show again" in page
-    assert conn.execute("SELECT stats_hidden FROM shorts WHERE youtube_id='y1'").fetchone()[0] == 1
-    client.post("/stats/hide/y1", data={"hidden": "0"})
-    assert "Show again" not in client.get("/stats").data.decode()
 
 
-def test_stats_page_shows_errors(client, conn, settings, channel, yt):
-    yt.fail = "the YouTube login for 'Space' has expired"
-    with pytest.raises(RuntimeError):
-        sync(conn, settings, channel)
-    page = client.get("/stats").data.decode()
-    assert "Last fetch failed" in page and "has expired" in page
 
 
-def test_home_schedule_comes_from_youtube(conn, settings, channel, client, yt):
-    from datetime import timedelta
-
-    from shorts.web import home
-    home._yt_cache.clear()
-    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
-    later = (datetime.now(timezone.utc) + timedelta(days=10)).strftime("%Y-%m-%dT15:00:00Z")
-    add_short(conn, status="scheduled", youtube_id="ours", publish_at=soon)  # deleted on YouTube
-    yt.add("byhand", privacy="private", publish_at=soon)
-    yt.add("studio", privacy="private", publish_at=later)  # beyond 7 days
-    yt.add("live1", views=5)
-    videos, subs = ytstats.scheduled(settings, channel, ["ours"])
-    assert [v["youtube_id"] for v in videos] == ["byhand", "studio"] and subs == 1234
-
-    (settings.secrets_dir / "token-space.json").write_text("{}")
-    with client.application.app_context():
-        _check_home(home, channel, yt)
 
 
 def _check_home(home, channel, yt):
@@ -279,23 +230,6 @@ def _check_home(home, channel, yt):
     assert not card["from_youtube"] and card["scheduled_week"] == 1  # our own data
 
 
-def test_home_schedule_counts_fresh_uploads_missing_from_the_playlist(conn, settings, channel, client, yt):
-    from datetime import timedelta
-
-    from shorts.web import home
-    home._yt_cache.clear()
-    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
-    add_short(conn, status="uploaded", youtube_id="fresh", publish_at=soon)  # our status out of date
-    yt.add("fresh", privacy="private", publish_at=soon)
-    yt.add("old", privacy="private", publish_at=soon)
-    yt.playlist = ["old"]  # YouTube's uploads list doesn't have the fresh upload yet
-    (settings.secrets_dir / "token-space.json").write_text("{}")
-    with client.application.app_context():
-        assert len(home.youtube_schedule([channel])["space"]) == 2
-        calls = len(yt.calls)
-        conn.execute("UPDATE shorts SET uploaded_at='2026-10-21T10:00:00Z'"); conn.commit()
-        home.youtube_schedule([channel])
-        assert len(yt.calls) > calls  # a new upload refreshes the cache
 
 
 def test_hidden_subscriber_count(conn, settings, channel, yt):
@@ -304,52 +238,7 @@ def test_hidden_subscriber_count(conn, settings, channel, yt):
     assert conn.execute("SELECT subscribers FROM yt_sync").fetchone()[0] is None
 
 
-def test_channel_avg_viewed_weighted_by_views(client, conn, settings, channel, yt):
-    from shorts.web import stats as stats_page
-    yt.add("big", views=1000); yt.add("small", views=10); yt.add("old", views=0)  # noqa: E702
-    yt.analytics = {"big": [900, 450, 80.0, 20.0, 9, 0, 1], "small": [100, 50, 20.0, 5.0, 1, 0, 0]}
-    sync(conn, settings, channel)  # "old" isn't in Analytics: zeros, which must not count as 0% viewed
-    with client.application.app_context():
-        card = stats_page.channel_cards(conn, None)[0]
-    assert round(card["pct"]) == 74 and card["engaged"] == 0.5  # (80*900 + 20*100) / 1000, not (80+20+0)/3
 
 
-def test_schedule_page_follows_youtube(conn, settings, channel, client, yt):
-    from datetime import timedelta
-
-    from shorts.web import home
-    home._yt_cache.clear()
-    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
-    moved = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%dT21:00:00Z")
-    sid = add_short(conn, status="uploaded", youtube_id="ours", title="Ours", publish_at=soon)  # status out of date
-    yt.add("ours", privacy="private", publish_at=moved, title="Ours")  # time changed in Studio
-    yt.add("byhand", privacy="private", publish_at=soon, title="Made in Studio")
-    (settings.secrets_dir / "token-space.json").write_text("{}")
-    page = client.get("/schedule").data.decode()
-    sched = page[page.index("<h3>Scheduled"):]
-    assert "as YouTube has it" in sched and "Made in Studio" in sched and "not from pipeline" in sched
-    assert sched.index("Made in Studio") < sched.index("Ours")
-    row = conn.execute("SELECT status, publish_at FROM shorts WHERE id=?", (sid,)).fetchone()
-    assert tuple(row) == ("scheduled", moved)
 
 
-def test_home_shows_old_schedule_while_refreshing_in_background(conn, settings, channel, client, yt):
-    from datetime import timedelta
-
-    from shorts.web import home
-    home._yt_cache.clear()
-    soon = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT15:00:00Z")
-    yt.add("one", privacy="private", publish_at=soon)
-    (settings.secrets_dir / "token-space.json").write_text("{}")
-    with client.application.app_context():
-        assert len(home.youtube_schedule([channel])["space"]) == 1
-        yt.add("two", privacy="private", publish_at=soon)
-        t, last, videos = home._yt_cache["space"]
-        home._yt_cache["space"] = (t - home.YT_CACHE_SECONDS - 1, last, videos)  # expired
-        calls = len(yt.calls)
-        assert len(home.youtube_schedule([channel])["space"]) == 1  # the old answer, at once
-    for _ in range(100):  # the background thread asks YouTube again
-        if home._yt_cache["space"][0] > t and not home._refreshing:
-            break
-        time.sleep(0.05)
-    assert len(yt.calls) > calls and len(home._yt_cache["space"][2]) == 2

@@ -47,3 +47,10 @@ Plan: project file `plan/transcript-first-build-plan.md`. Two steps per kind of 
 
 Runner jobs `tclipsprep` and `tclips` (n = part). Transcripts use NASA's own captions or a human
 subtitle file when there is one, else faster-whisper distil-large-v3 from the research venv.
+
+## Classic pipeline off (2026-11-14)
+
+Roeland switched the dashboard to transcript-first only. Runner job `classicoff` pauses every channel
+(the Pause button's `paused = true` line; YouTube keeps what is scheduled) and writes a disk report
+to `~/meta-out/classicoff/classicoff.json`; `diskinfo` writes only the report. Neither deletes a file:
+what goes is Roeland's call after reading the report.

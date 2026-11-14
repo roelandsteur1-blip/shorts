@@ -55,7 +55,10 @@ Install Tailscale on the laptop and phone with the same account; the dashboard i
 
 ## Daily use
 
-- Dashboard: the Tailscale address.
+- Dashboard: the Tailscale address. Since 2026-11-14 it shows the transcript-first Shorts maker only
+  (Overview, Shorts, Schedule, Sources, Jobs); the classic pages are in `archive/classic-dashboard`,
+  so the sections below about connecting channels, the phone upload and the bench pages describe the
+  archived pages.
 - Logs: `journalctl -u shorts-dashboard -f`, job logs in `~/shorts-data/logs`.
 - Update the code: `cd ~/shorts && git fetch origin main && git reset --hard origin/main && sudo systemctl restart shorts-dashboard`
   (running jobs keep going and the restarted dashboard picks them up again; needs KillMode=process

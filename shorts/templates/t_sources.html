@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block title %}Sources{% endblock %}{% block body %}
+<h1>Sources</h1>
+<p class="muted">Long free films the maker picked. Newsreels, NASA and Prelinger films pass by the rights rules in <code>meta/tclips.py</code>; feature films only from the hand-checked list below.</p>
+{% if sources %}<table class="stack labels"><tr><th>Source</th><th>Kind</th><th>Length</th><th>Transcript</th><th>Shorts</th><th>Rights</th></tr>
+{% for s in sources %}<tr><td>{% if s.link %}<a href="{{ s.link }}" target="_blank" rel="noopener">{{ s.title }}</a>{% else %}{{ s.title }}{% endif %}{% if s.year %} <span class="muted">({{ s.year }})</span>{% endif %}</td>
+<td>{{ s.kind_label }}</td><td>{{ s.minutes }} min</td><td>{{ '✓' if s.transcript else '–' }}</td><td>{{ s.shorts }}{% if s.up %} <span class="muted">({{ s.up }} up)</span>{% endif %}</td><td class="muted" style="font-size:13px">{{ s.rights }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">No sources picked yet.</p>{% endif %}
+<h2>Hand-checked films <span class="muted">config/clip-titles.toml</span></h2>
+{% if titles %}<table class="stack labels"><tr><th>Title</th><th>Kind</th><th>Rights</th><th>Checked</th></tr>
+{% for t in titles %}<tr><td>{{ t.title or t.id or t.search }}{% if t.year %} <span class="muted">({{ t.year }})</span>{% endif %}{% if t.note %}<br><small class="muted">{{ t.note }}</small>{% endif %}</td><td>{{ labels.get(t.kind, t.kind) }}</td><td style="font-size:13px">{{ t.rights }}</td><td class="muted">{{ t.checked }}</td></tr>{% endfor %}</table>{% endif %}
+{% if deny %}<p class="muted">Never used (deny list): {{ deny|join(', ') }}</p>{% endif %}
+{% endblock %}

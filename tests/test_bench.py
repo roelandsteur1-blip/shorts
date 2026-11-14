@@ -134,39 +134,6 @@ def test_bench_end_to_end(bench_run, monkeypatch):
         assert heading in text
     assert "| today |" in text
 
-    # A person checks the judge on the dashboard, one clip at a time; the report compares.
-    from shorts.web import create_app
-    client = create_app(settings, start_runner=False).test_client()
-    # Not while Claude is still judging: the sample must spread over all blocks.
-    path = bench.root(settings) / "judge.json"
-    full = path.read_text()
-    path.write_text(json.dumps(dict(list(json.loads(full).items())[:1])))
-    assert b'href="/bench/check"' not in client.get("/bench").data
-    assert not (bench.root(settings) / "human-sample.json").exists()
-    path.write_text(full)
-    assert b'href="/bench/check"' in client.get("/bench").data
-    page = client.get("/bench/check")
-    assert page.status_code == 200 and b"/bench/strip/" in page.data
-    item = json.loads((bench.root(settings) / "human-sample.json").read_text())[0]
-    assert client.get(f"/bench/strip/{item['sid']}.jpg").data[:2] == b"\xff\xd8"
-    r = client.post("/bench/check", data={"block": item["block"], "sid": item["sid"], "topic": "2", "watch": "1"})
-    assert r.status_code == 302
-    assert "agree with Roeland" in report.build(settings)
-
-    # The blind review: letters only, every moment once, the pick lands in the report.
-    assert b'href="/bench/review"' in client.get("/bench").data
-    for _ in made:
-        page = client.get("/bench/review")
-        key = page.data.split(b'name="block" value="')[1].split(b'"')[0].decode()
-        assert b"winner" not in page.data and b"today" not in page.data
-        r = client.get(f"/bench/clip/{key}/A.mp4")
-        assert r.status_code == 200 and r.mimetype == "video/mp4"
-        letter = next(k for k, v in chains.letters(key).items() if v == "winner")
-        assert client.post("/bench/review", data={"block": key, "best": letter}).status_code == 302
-    assert client.get("/bench/review").status_code == 302
-    assert client.get("/bench/clip/1/Z.mp4").status_code == 404
-    assert f"| winner | {len(made)} of {len(made)}" in report.build(settings)
-
 
 def test_judge_survives_the_usage_limit(bench_run, monkeypatch):
     settings = bench_run

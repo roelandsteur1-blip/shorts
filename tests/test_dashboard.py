@@ -5,7 +5,6 @@ import time
 import pytest
 
 from shorts import jobs
-from shorts.web import create_app
 
 
 def fake_command(script):
@@ -72,41 +71,10 @@ def test_stop_and_recover(conn, settings):
     assert conn.execute("SELECT status FROM jobs WHERE id=?", (c,)).fetchone()[0] == "interrupted"
 
 
-@pytest.fixture
-def client(settings):
-    return create_app(settings, start_runner=False).test_client()
 
 
-def test_home_and_make_page(client, conn):
-    page = client.get("/").data
-    assert b"Space Shorts" in page and b"Make Shorts" in page and b"YouTube not connected" in page
-    assert b"what_youre_seeing" in client.get("/make").data
-    r = client.post("/make", data={"channel": "space", "count": "3", "format": "scale_of"})
-    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
-    assert r.headers["Location"].endswith(f"/jobs/{job['id']}")
-    assert (job["channel"], job["command"], job["status"]) == ("space", '["make", "-n", "3", "--format", "scale_of"]', "queued")
-    assert client.post("/make", data={"channel": "space", "format": "nope"}).status_code == 400
-    assert client.post("/make", data={"channel": "nope"}).status_code == 404
-    assert b"queued" in client.get(f"/jobs/{job['id']}").data
-    assert client.get(f"/jobs/{job['id']}.json").get_json()["status"] == "queued"
-    client.post(f"/jobs/{job['id']}/stop")
-    assert client.get(f"/jobs/{job['id']}.json").get_json()["status"] == "stopped"
 
 
-def test_dashboard_listens_on_localhost_only(settings, monkeypatch):
-    from flask import Flask
-    from shorts import web
-    seen = {}
-    monkeypatch.setattr(Flask, "run", lambda self, **kw: seen.update(kw))
-    monkeypatch.setattr(jobs.Runner, "start", lambda self: None)
-    # start-up steps that write into config/ (the repo's own when tests run) or reach YouTube/Drive
-    from shorts import channels, drive
-    from shorts.web import home
-    for mod, name in ((channels, "add_video_types"), (channels, "seed_channels"),
-                      (drive, "start_checker"), (home, "warm_up")):
-        monkeypatch.setattr(mod, name, lambda *a, **k: None)
-    web.serve(settings, 5001)
-    assert seen["host"] == "127.0.0.1"
 
 
 def test_jobs_survive_a_dashboard_restart(conn, settings):
@@ -144,89 +112,9 @@ def test_jobs_survive_a_dashboard_restart(conn, settings):
     assert conn.execute("SELECT status FROM jobs WHERE id=?", (b,)).fetchone()[0] == "stopped"
 
 
-def test_sources_status_and_test_button(client, settings, monkeypatch):
-    import requests
-    from shorts import sources
-    from shorts.sources import pixabay, prelinger
-
-    assert sources.status(settings, "pixabay")[0] == "needs-key"
-    sources.set_enabled(settings, "commons", False)
-    assert sources.status(settings, "commons")[0] == "off"
-    assert sources.status(settings, "prelinger")[0] == "untested"
-
-    def bad_key(query, page=1, session=None, key=None):
-        resp = requests.Response()
-        resp.status_code = 401
-        raise requests.HTTPError(response=resp)
-    monkeypatch.setattr(pixabay, "search", bad_key)
-    r = client.post("/sources/pixabay", data={"api_key": " wrong "})
-    assert r.status_code == 302
-    state, msg = sources.status(settings, "pixabay")
-    assert state == "failing" and "key rejected" in msg
-
-    monkeypatch.setattr(prelinger, "search", lambda q, page=1, session=None, key=None: [
-        sources.Item(source="prelinger", source_id=str(i), title="t", license_hint="http://creativecommons.org/publicdomain/mark/1.0/")
-        for i in range(3)])
-    monkeypatch.setattr(prelinger, "rights", lambda item: sources.Rights(license="public-domain"))
-    client.post("/sources/prelinger/test")
-    state, msg = sources.status(settings, "prelinger")
-    assert state == "connected" and "3 results" in msg and "3 of the first 3 usable" in msg
-
-    page = client.get("/sources").get_data(as_text=True)
-    assert "Connected" in page and "Failing" in page and "Test all" in page
-    assert "1 of 6 archives connected" in page
 
 
-def test_accept_all_approves_shorts_waiting_for_review(client, conn):
-    def add(channel, status):
-        return conn.execute("INSERT INTO shorts (channel, format_id, status) VALUES (?, 'f', ?)",
-                            (channel, status)).lastrowid
-    a, b, other, rej = add("space", "rendered"), add("space", "rendered"), add("history", "rendered"), add("space", "rejected")
-    conn.commit()
-    assert b"Accept all (3)" in client.get("/review").data
-    assert b"Accept all" not in client.get("/review?status=approved").data
-    r = client.post("/review/approve-all", data={"channel": "space"})
-    assert r.status_code == 302 and "channel=space" in r.headers["Location"]
-    status = dict(conn.execute("SELECT id, status FROM shorts").fetchall())
-    assert (status[a], status[b], status[other], status[rej]) == ("approved", "approved", "rendered", "rejected")
-    client.post("/review/approve-all", data={"channel": ""})
-    assert conn.execute("SELECT status FROM shorts WHERE id=?", (other,)).fetchone()[0] == "approved"
 
 
-def test_footage_review_pages_render(client, tmp_path, monkeypatch):
-    from shorts.web import footage_review as fr
-    monkeypatch.setattr(fr, "OUT", tmp_path)
-    assert b"Footage collector review" in client.get("/bench/footage").data
-    (tmp_path / "pieces" / "clips").mkdir(parents=True)
-    (tmp_path / "pieces" / "clips" / "space-saturn-A.mp4").write_bytes(b"x")
-    (tmp_path / "pieces" / "made-part1.json").write_text(
-        '{"subjects": [{"niche": "space", "name": "Saturn", "candidates": [{"preview": "space-saturn-A.mp4"}]}]}')
-    r = client.get("/bench/footage/clips/0")
-    assert r.status_code == 200 and b"space-saturn-A.mp4" in r.data
-    assert client.get("/bench/footage/clips/1").status_code == 302
-    (tmp_path / "round3" / "shorts").mkdir(parents=True)
-    (tmp_path / "round3" / "shorts" / "space-quiz-A.mp4").write_bytes(b"x")
-    (tmp_path / "round3" / "shorts" / "space-quiz-B.mp4").write_bytes(b"x")
-    (tmp_path / "round3" / "made-part1.json").write_text(
-        '{"shorts": [{"niche": "space", "kind": "quiz", "key": {"A": "new", "B": "today"},'
-        ' "new": {"file": "space-quiz-A.mp4"}, "today": {"file": "space-quiz-B.mp4"}}]}')
-    assert b"Round 3" in client.get("/bench/footage").data
-    assert b"space-quiz-B.mp4" in client.get("/bench/footage/shorts/0").data
 
 
-def test_reject_all_rejects_shorts_waiting_for_review(client, conn):
-    def add(channel, status):
-        return conn.execute("INSERT INTO shorts (channel, format_id, status) VALUES (?, 'f', ?)",
-                            (channel, status)).lastrowid
-    a, b, other, ok = add("space", "rendered"), add("space", "rendered"), add("history", "rendered"), add("space", "approved")
-    conn.commit()
-    page = client.get("/review").data
-    assert b"Reject all (3)" in page and b"confirm('Reject all 3" in page
-    assert b"Reject all" not in client.get("/review?status=approved").data
-    r = client.post("/review/reject-all", data={"channel": "space"})
-    assert r.status_code == 302 and "channel=space" in r.headers["Location"]
-    rows = {i: (s, why) for i, s, why in conn.execute("SELECT id, status, reject_reason FROM shorts")}
-    assert (rows[a], rows[b]) == (("rejected", None), ("rejected", None))
-    assert rows[other][0] == "rendered" and rows[ok][0] == "approved"
-    client.post("/review/reject-all", data={"channel": ""})
-    assert conn.execute("SELECT status FROM shorts WHERE id=?", (other,)).fetchone()[0] == "rejected"

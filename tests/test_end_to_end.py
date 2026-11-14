@@ -3,7 +3,6 @@ import json
 
 from conftest import fake_claude
 from shorts import media, pipeline
-from shorts.web import create_app
 
 
 def test_scenes_and_audio_stripped(library):
@@ -32,17 +31,6 @@ def test_make_renders_reviewable_short(library, settings, channel, monkeypatch):
     # Two Shorts never open with the same source video.
     heroes = library.execute("""SELECT sc.asset_id FROM shorts s JOIN scenes sc ON sc.id=s.hero_scene_id""").fetchall()
     assert len({h[0] for h in heroes}) == 2
-
-    app = create_app(settings, start_runner=False)
-    client = app.test_client()
-    assert b"Saturn" in client.get("/review").data
-    assert b"Saturn" not in client.get("/review?channel=other").data
-    page = client.get(f"/short/{done[0]}").data
-    assert b"Facts and sources" in page and b"Approve" in page
-    assert client.get(f"/video/{done[0]}").status_code == 200
-    client.post(f"/short/{done[0]}", data={"action": "approve", "title": "New title", "tags": "a, b, c, d"})
-    s = library.execute("SELECT status, title, tags FROM shorts WHERE id=?", (done[0],)).fetchone()
-    assert (s["status"], s["title"], json.loads(s["tags"])) == ("approved", "New title", ["a", "b", "c"])
 
 
 def test_music_is_mixed(library, settings, channel, monkeypatch):

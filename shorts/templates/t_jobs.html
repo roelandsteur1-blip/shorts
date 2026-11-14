@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block title %}Jobs{% endblock %}{% block body %}
+<h1>Server jobs</h1>
+<p class="muted">Jobs the runner on this server takes from <code>meta/jobs.toml</code> on main (checked every 5 minutes). Results go to the private <code>Shorts_results</code> repo.</p>
+{% if jobs %}<table class="stack labels"><tr><th>Job</th><th>State</th><th>What</th></tr>
+{% for j in jobs %}<tr><td><b>{{ j.name }}</b>{% if j.n %} {{ j.n }}{% endif %}<br><code>{{ j.id }}</code></td>
+<td>{% if j.state == 'running' %}<span class="ok">running</span>{% elif j.state == 'waiting' %}<span class="warn">waiting</span>{% elif j.state in ('done', 'ok') %}{{ j.state }}{% else %}<span class="bad">{{ j.state }}</span>{% endif %}</td>
+<td style="font-size:13px">{{ j.note }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">No jobs found.</p>{% endif %}
+{% endblock %}

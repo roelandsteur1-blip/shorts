@@ -163,31 +163,8 @@ def cfg(tmp_path, settings):
     return d
 
 
-@pytest.fixture
-def client(settings, cfg):
-    from shorts.web import create_app
-    return create_app(settings, start_runner=False).test_client()
 
 
-def test_library_and_sources_pages(client, conn, settings, cfg, monkeypatch, tmp_path):
-    kf = tmp_path / "kf.jpg"
-    kf.write_bytes(b"\xff\xd8jpeg")
-    _, ids = add_video(conn, "commons", "clip", [vec("x")], keyframe=str(kf))
-    conn.execute("UPDATE scenes SET sorted=1 WHERE id=?", (ids[0],))
-    conn.commit()
-    page = client.get("/library").data
-    assert b"War &amp; military" in page and b"Re-sort all" in page
-    assert client.get(f"/keyframe/{ids[0]}").status_code == 200
-
-    page = client.get("/sources").data
-    assert b"Prelinger" in page and b"Switch off" in page
-    client.post("/sources/prelinger", data={"enabled": "0"})
-    assert b"switched off" in client.get("/sources").data
-    client.post("/sources/commons/try", data={"query": "glider"})
-    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
-    assert json.loads(job["command"]) == ["sources", "--try", "commons", "glider"] and job["heavy"] == 0
-    client.post("/library/sort", data={"all": "1"})
-    assert json.loads(conn.execute("SELECT command FROM jobs ORDER BY id DESC").fetchone()[0]) == ["categorize", "--all"]
 
 
 def test_space_channel_config():

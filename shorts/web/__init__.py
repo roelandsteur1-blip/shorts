@@ -1,7 +1,8 @@
 """The dashboard: `python -m shorts dashboard` on http://127.0.0.1:5000 (local only; on the server
-Tailscale makes it reachable from your own devices).
+Tailscale makes it reachable from your own devices). Since 2026-11-14 it shows the transcript-first
+Shorts maker (shorts/web/tfirst.py); the classic pipeline's pages are in archive/classic-dashboard.
 
-Server-rendered Flask pages; heavy work runs as background jobs (shorts/jobs.py)."""
+Server-rendered Flask pages; the transcript-first work runs as runner jobs (meta/runner.py)."""
 from __future__ import annotations
 
 import gzip
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from flask import Flask, g, request
 
-from ..config import Settings, all_channels
+from ..config import Settings
 from ..jobs import Runner
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
@@ -19,36 +20,18 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
     app = Flask(__name__, template_folder=str(TEMPLATES))
     app.config["SETTINGS"] = settings
     app.extensions["runner"] = runner or Runner(settings)
-    if start_runner:
-        app.extensions["runner"].start()
-        from ..channels import add_video_types, retire_channels, seed_channels
-        add_video_types(settings)  # older channel files: video_type = "classic"
-        seed_channels(settings)    # new channels prepared in config/channel-seeds
-        retire_channels(settings)  # channels removed by Roeland stay removed
-        from ..drive import start_checker
-        start_checker(settings)    # upload via phone: spot Shorts posted from the phone every 30 min
-        from .home import warm_up
-        warm_up(settings, all_channels(settings.config_dir))  # YouTube's schedule ready before the first visit
+    # start_runner is kept for callers; the classic job queue (shorts/jobs.py) is no longer started, so
+    # no queued classic job begins. A job that was running at the restart finishes on its own.
 
-    from . import bench, channels, footage_review, home, jobs, library, music, review, schedule, sources, stats, voices
-    for module in (home, review, jobs, library, sources, music, voices, channels, schedule, stats, bench, footage_review):
-        app.register_blueprint(module.bp)
+    # Transcript-first only (Roeland, 2026-11-14). The classic pages: archive/classic-dashboard.
+    from . import tfirst
+    app.register_blueprint(tfirst.bp)
 
     @app.teardown_appcontext
     def close_conn(_exc) -> None:
         c = g.pop("conn", None)
         if c is not None:
             c.close()
-
-    from .common import FILTER_COOKIE, chip_filter, chip_url, chips, filter_cookie_value
-    app.jinja_env.globals.update(chips=chips, chip_url=chip_url)
-
-    @app.after_request
-    def keep_filter(resp):
-        """A new chip pick (f=1 in the URL) is remembered for every page."""
-        if "f" in request.args and request.method == "GET":
-            resp.set_cookie(FILTER_COOKIE, filter_cookie_value(chip_filter()), max_age=365 * 86400, samesite="Lax")
-        return resp
 
     @app.after_request
     def compress(resp):

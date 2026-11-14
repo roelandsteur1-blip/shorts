@@ -4,7 +4,7 @@ import dataclasses
 
 from shorts import db, hero
 from test_multi_short import add_short, add_video
-from test_schedule_stats import cfg, client  # noqa: F401 - fixtures
+from test_schedule_stats import cfg  # noqa: F401 - fixtures
 
 
 def fit_all(conn, channel):
@@ -68,51 +68,7 @@ def test_connect_sets_up_schema_once(settings, monkeypatch):
     c.close()
 
 
-def test_pages_are_gzipped_when_the_browser_asks(client):
-    import gzip
-    plain = client.get("/review")
-    packed = client.get("/review", headers={"Accept-Encoding": "gzip, deflate, br"})
-    assert packed.headers["Content-Encoding"] == "gzip" and "Content-Encoding" not in plain.headers
-    assert gzip.decompress(packed.data) == plain.data and len(packed.data) < len(plain.data)
 
 
-def test_home_footage_numbers_cached_and_refreshed_in_background(client, conn, settings):
-    from shorts.web import cache
-    cache._store.clear()
-    _, ids = add_video(conn, 5)
-    with client.application.app_context():
-        from shorts.config import load_channel
-        ch = load_channel("space", settings.config_dir)
-        fit_all(conn, ch)
-        first = cache.footage(ch)
-    assert first["left"] > 0
-    add_short(conn, ids[0])
-    with client.application.app_context():
-        assert cache.footage(ch) == first  # the old numbers at once...
-    cache.wait_idle()
-    with client.application.app_context():
-        assert cache.footage(ch)["left"] == first["left"] - 1  # ...the new ones next visit
-    assert client.get("/").status_code == 200 and client.get("/library").status_code == 200
 
 
-def test_review_serves_a_light_copy_once_made(client, conn, settings, tmp_path):
-    import subprocess
-
-    from shorts import preview
-    src = tmp_path / "short.mp4"
-    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1080x1920:rate=30:duration=2",
-                    "-f", "lavfi", "-i", "sine=duration=2", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "10",
-                    "-c:a", "aac", "-shortest", str(src)], check=True)
-    sid = conn.execute("""INSERT INTO shorts (channel, format_id, topic, hook, status, video_path)
-                          VALUES ('space', 'f', 't', 'h', 'rendered', ?)""", (str(src),)).lastrowid
-    conn.commit()
-    full = client.get(f"/video/{sid}").data  # not ready yet: the full file, and a light copy queued
-    assert full == src.read_bytes()
-    assert client.get("/review").status_code == 200
-    preview.wait_idle()
-    light = preview.ready(settings, sid, str(src))
-    assert light and light.stat().st_size < src.stat().st_size
-    assert client.get(f"/video/{sid}").data == light.read_bytes()
-    assert client.get(f"/video/{sid}?full=1").data == full
-    page = client.get(f"/short/{sid}").data.decode()
-    assert "full quality" in page

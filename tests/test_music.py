@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 from shorts import music
-from shorts.web import create_app
 
 
 def tone(path, seconds=70, silence=0.0, freq=330):
@@ -137,19 +136,6 @@ def test_claim_moves_track_and_lists_shorts_to_rerender(conn, settings, channel)
     assert not music.usable(conn)
 
 
-def test_music_page(conn, settings, channel):
-    tone(settings.music_dir / "Calm piano.mp3", seconds=3)
-    app = create_app(settings, start_runner=False)
-    client = app.test_client()
-    page = client.get("/music?channel=space").data
-    assert b"Calm piano" in page and b"Fetch music now" in page
-    tid = conn.execute("SELECT id FROM tracks").fetchone()[0]
-    client.post(f"/music/{tid}", data={"channel": "space", "action": "mood", "mood": "tense"})
-    assert conn.execute("SELECT mood FROM tracks WHERE id=?", (tid,)).fetchone()[0] == "tense"
-    assert client.get(f"/music/file/{tid}").status_code == 200
-    r = client.post(f"/music/{tid}", data={"channel": "space", "action": "claimed"})
-    assert r.status_code == 302
-    assert conn.execute("SELECT command FROM jobs ORDER BY id DESC").fetchone()[0] == f'["music", "--claimed", "{tid}"]'
 
 
 def test_mood_from_words():
