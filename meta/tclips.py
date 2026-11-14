@@ -1503,9 +1503,26 @@ def channel_made(cid: str) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
 
 
+CH_SPARE = 4                                  # extra sources per kind in a channel make (some newsreels are silent)
+
+
+def silent_sources() -> set[str]:
+    """Sources whose cached transcript has (almost) no speech: silent newsreels and the like."""
+    out = set()
+    for f in tx.CACHE.glob("*.json") if tx.CACHE.exists() else []:
+        try:
+            t = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if len(t.get("sentences") or []) < 10 and t.get("id"):
+            out.add(t["id"])
+    return out
+
+
 def all_used_sources() -> set[str]:
-    """Source ids any earlier round used: the sources-<kind>.json picks and every channel's Shorts."""
-    used = set()
+    """Source ids any earlier round used: the sources-<kind>.json picks, every channel's Shorts and
+    sources known to have no speech."""
+    used = set(silent_sources())
     for f in OUT.glob("sources-*.json"):
         used |= {s.get("id") for s in json.loads(f.read_text(encoding="utf-8"))}
     for f in CH_DIR.glob("*/made.json"):
@@ -1556,7 +1573,7 @@ def channel_make(cid: str, n: int) -> list[dict]:
         if not want:
             continue
         film = kind == "feature"
-        srcs = channel_sources(kind, want + EXAMPLE_SPARE, titles, deny)
+        srcs = channel_sources(kind, want + CH_SPARE, titles, deny)
         log(f"[channel] {kind}: {len(srcs)} sources for {want} Shorts: {', '.join(s['id'] for s in srcs)}")
         got = 0
         for si, s in enumerate(srcs * (CH_PER_FILM if film else 1)):
