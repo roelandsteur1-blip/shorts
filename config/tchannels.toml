@@ -1,0 +1,53 @@
+# Channels of the transcript-first Shorts maker (meta/tclips.py `channel` step, dashboard /channels).
+# Roeland 2026-11-14: "bedenk 5 kanalen die passen bij de shorts die we nu kunnen maken".
+#
+# kinds  = which long free sources a Short may come from (newsreel | nasa | prelinger | feature)
+# lens   = what kind of moment wins (LENSES in meta/tclips.py)
+# titles = the YouTube title style (TITLE_STYLES in meta/tclips.py)
+# youtube = the channel id in config/channels/ to upload to, once the YouTube channel exists ("" = not yet)
+# The texts on screen keep the default tone (ragebait) and style (Tabloid) for every channel.
+
+[[channel]]
+id = "weirdnewsreels"
+name = "Weird Newsreels"
+pitch = "The oddest, funniest 'they really did this' moments from 1940s-60s newsreels: stunts, contests, strange inventions, over-the-top fashion. British Pathé's best-performing kind of Short."
+kinds = ["newsreel"]
+lens = "weird"
+titles = "curiosity"
+youtube = ""
+
+[[channel]]
+id = "oldschooladvice"
+name = "Old School Advice"
+pitch = "Advice, rules and 'facts' that old classroom and guidance films taught with a straight face and that sound absurd, wrong or oddly wise today. The payoff says what we know now."
+kinds = ["prelinger"]
+lens = "advice"
+titles = "curiosity"
+youtube = ""
+
+[[channel]]
+id = "yesterdaysfuture"
+name = "Yesterday's Future"
+pitch = "What the past promised about the future: flying cars, kitchens of tomorrow, moon bases by 1970. Each Short ends with what really happened."
+kinds = ["newsreel", "prelinger", "nasa"]
+lens = "future"
+titles = "curiosity"
+youtube = ""
+
+[[channel]]
+id = "spaceracefiles"
+name = "Space Race Files"
+pitch = "Candid, surprising and nerve-racking moments from NASA's own films, briefings and astronaut interviews: close calls, jokes, odd details nobody remembers."
+kinds = ["nasa", "newsreel"]
+lens = "space"
+titles = "curiosity"
+youtube = ""
+
+[[channel]]
+id = "classicmoments"
+name = "Classic Movie Moments"
+pitch = "Short, sharp beats from public-domain classic films (only the hand-checked ones): a stare, a snappy comeback, an outburst. 8-30 seconds, 1-3 word titles, Cult Cinema Classics style."
+kinds = ["feature"]
+lens = "film"
+titles = "film"
+youtube = ""

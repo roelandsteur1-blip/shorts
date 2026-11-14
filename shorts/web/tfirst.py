@@ -12,12 +12,17 @@ rows the upload writes (format_id 'tclips'):
 from __future__ import annotations
 
 import json
+import os
 import re
+import subprocess
+import sys
+import threading
+import time
 import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, abort, current_app, render_template, request, send_file
+from flask import Blueprint, abort, current_app, redirect, render_template, request, send_file
 
 from .common import conn, settings
 
@@ -78,7 +83,8 @@ def db_rows() -> dict[str, dict]:
 
 def video_for(name: str, plan_paths: dict[str, str]) -> Path | None:
     base = out_dir()
-    for p in (plan_paths.get(name), base / f"{name}.mp4", base / "examples" / f"{name}.mp4"):
+    chan = [base / "channels" / name.split("-", 1)[0] / f"{name}.mp4"] if "-" in name else []
+    for p in (plan_paths.get(name), base / f"{name}.mp4", base / "examples" / f"{name}.mp4", *chan):
         if p and Path(p).is_file():
             return Path(p)
     return None
@@ -92,7 +98,8 @@ def all_shorts() -> list[dict]:
     plan_paths = {m.get("short"): m.get("path") for m in plan if m.get("short")}
     rows = db_rows()
     seen: dict[str, dict] = {}
-    for group, items in (("upload", plan), ("examples", read_json(base / "examples.json", [])),
+    chan_rows = [m for f in sorted((base / "channels").glob("*/made.json")) for m in read_json(f, [])]
+    for group, items in (("upload", plan), ("channel", chan_rows), ("examples", read_json(base / "examples.json", [])),
                          ("made", read_json(base / "made.json", []))):
         for m in items:
             name = m.get("short")
@@ -109,7 +116,7 @@ def all_shorts() -> list[dict]:
                 "source": m.get("title_source") or m.get("source") or "", "link": m.get("link") or "",
                 "year": m.get("year"), "at": m.get("at") or "", "rights": m.get("rights") or "",
                 "score": m.get("score"), "secs": next(iter((m.get("lengths") or {}).values()), m.get("secs")),
-                "in_plan": name in plan_paths, "row": row, "video": bool(video),
+                "in_plan": name in plan_paths, "row": row, "video": bool(video), "channel": m.get("channel", ""),
             }
     return list(seen.values())
 
@@ -125,6 +132,120 @@ def state_of(s: dict, now: str) -> str:
     if s["in_plan"]:
         return "planned"
     return "example" if s["group"] == "examples" else "made"
+
+
+# ---------- channels and the Make button (Roeland 2026-11-14) ----------
+
+JOB_NAME = re.compile(r"[0-9]{8}-[0-9]{6}-[a-z0-9_-]{1,40}")
+MAX_N = 10
+
+
+def tchannels() -> list[dict]:
+    """config/tchannels.toml (the maker reads the same file)."""
+    try:
+        data = tomllib.loads((settings().config_dir / "tchannels.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [c for c in data.get("channel", []) if re.fullmatch(r"[a-z0-9_-]{1,40}", str(c.get("id", "")))]
+
+
+def jobs_dir(base: Path | None = None) -> Path:
+    return (base or out_dir()) / "dashjobs"
+
+
+def pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    try:  # a finished child we started is a zombie until reaped
+        return os.waitpid(pid, os.WNOHANG) == (0, 0)
+    except ChildProcessError:
+        return True
+
+
+def job_state(meta: dict, folder: Path) -> str:
+    exit_file = folder / f"{meta['id']}.exit"
+    if exit_file.exists():
+        code = exit_file.read_text().strip()
+        return "done" if code == "0" else f"failed ({code})"
+    if meta.get("pid") is None:
+        return "queued"
+    return "running" if pid_alive(meta["pid"]) else "stopped"
+
+
+def dash_jobs(base: Path | None = None) -> list[dict]:
+    """Make jobs started from the dashboard, newest first, with their state and last log lines."""
+    folder = jobs_dir(base)
+    out = []
+    for f in sorted(folder.glob("*.json"), reverse=True):
+        meta = read_json(f, None)
+        if not meta or not JOB_NAME.fullmatch(meta.get("id", "")):
+            continue
+        meta["state"] = job_state(meta, folder)
+        try:
+            lines = (folder / f"{meta['id']}.log").read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            lines = []
+        meta["tail"] = "\n".join(lines[-12:])
+        meta["ready"] = sum("[channel] READY" in ln for ln in lines)
+        out.append(meta)
+    out.sort(key=lambda j: j.get("seq") or 0, reverse=True)
+    return out
+
+
+def queue_job(base: Path, channel: str, n: int) -> dict:
+    folder = jobs_dir(base)
+    folder.mkdir(parents=True, exist_ok=True)
+    jid = f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{channel}"
+    meta = {"id": jid, "channel": channel, "n": n, "pid": None, "queued_at": now_iso(), "seq": time.time_ns()}
+    (folder / f"{jid}.json").write_text(json.dumps(meta), encoding="utf-8")
+    return meta
+
+
+def command_for(meta: dict) -> list[str]:
+    return [sys.executable, "-m", "meta.tclips", "channel", "--channel", meta["channel"], "-n", str(meta["n"])]
+
+
+def start_next(base: Path) -> dict | None:
+    """Start the oldest queued job when none is running: one make at a time, at low priority, in its own
+    session so a dashboard restart doesn't stop it. Its exit code lands in <id>.exit."""
+    jobs = dash_jobs(base)
+    if any(j["state"] == "running" for j in jobs):
+        return None
+    queued = [j for j in jobs if j["state"] == "queued"]
+    if not queued:
+        return None
+    meta = queued[-1]
+    folder = jobs_dir(base)
+    log_f = open(folder / f"{meta['id']}.log", "ab")
+    exit_f = folder / f"{meta['id']}.exit"
+    script = 'nice -n 10 "$@"; echo $? > "$EXIT_FILE"'
+    env = dict(os.environ, EXIT_FILE=str(exit_f), PYTHONUNBUFFERED="1")
+    proc = subprocess.Popen(["sh", "-c", script, "sh", *command_for(meta)], cwd=str(REPO), stdout=log_f,
+                            stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True, env=env)
+    log_f.close()
+    clean = {k: meta.get(k) for k in ("id", "channel", "n", "queued_at", "seq")}
+    clean.update(pid=proc.pid, started_at=now_iso())
+    (folder / f"{meta['id']}.json").write_text(json.dumps(clean), encoding="utf-8")
+    return clean
+
+
+def start_queue_thread(app) -> None:
+    """Every 20 s: start the next queued make when the last one has ended."""
+    def loop():
+        while True:
+            try:
+                with app.app_context():
+                    start_next(out_dir())
+            except Exception:  # noqa: BLE001 - keep the loop alive
+                pass
+            time.sleep(20)
+    threading.Thread(target=loop, name="tclips-queue", daemon=True).start()
 
 
 def runner_jobs(limit: int | None = None) -> list[dict]:
@@ -236,12 +357,15 @@ def shorts_page():
     pick = request.args.get("state", "all")
     pick = pick if pick in STATES else "all"
     kind = request.args.get("kind", "")
+    chan = request.args.get("channel", "")
     counts = {k: (len(shorts) if k == "all" else sum(1 for s in shorts if s["state"] == k)) for k in STATES}
-    shown = [s for s in shorts if (pick == "all" or s["state"] == pick) and (not kind or s["kind"] == kind)]
+    shown = [s for s in shorts if (pick == "all" or s["state"] == pick) and (not kind or s["kind"] == kind)
+             and (not chan or s["channel"] == chan)]
     shown.sort(key=lambda s: ((s["row"] or {}).get("publish_at") or "9", s["name"]))
     kinds = sorted({s["kind"] for s in shorts if s["kind"]})
     return render_template("t_shorts.html", shorts=shown, states=STATES, counts=counts, pick=pick, kind=kind,
-                           kinds=kinds, labels=KIND_LABELS)
+                           kinds=kinds, labels=KIND_LABELS, chan=chan,
+                           chans=[c for c in tchannels() if any(x["channel"] == c["id"] for x in shorts)])
 
 
 @bp.get("/shorts/<name>")
@@ -263,6 +387,59 @@ def video(name: str):
     if not path:
         abort(404)
     return send_file(path, mimetype="video/mp4", conditional=True, max_age=3600)
+
+
+@bp.get("/channels")
+def channels_page():
+    chans = tchannels()
+    shorts = all_shorts()
+    now = now_iso()
+    jobs = dash_jobs()
+    for c in chans:
+        mine = [x for x in shorts if x["channel"] == c["id"]]
+        for x in mine:
+            x["state"] = state_of(x, now)
+        c["shorts"] = sorted(mine, key=lambda x: x["name"], reverse=True)
+        c["jobs"] = [j for j in jobs if j["channel"] == c["id"]][:3]
+        c["busy"] = any(j["state"] in ("running", "queued") for j in c["jobs"])
+    running = next((j for j in jobs if j["state"] == "running"), None)
+    return render_template("t_channels.html", chans=chans, running=running, jobs=jobs[:10], max_n=MAX_N,
+                           labels=KIND_LABELS, msg=request.args.get("msg"))
+
+
+@bp.post("/channels/<cid>/make")
+def channel_make(cid: str):
+    if not any(c["id"] == cid for c in tchannels()):
+        abort(404)
+    try:
+        n = max(1, min(int(request.form.get("n", 1)), MAX_N))
+    except ValueError:
+        n = 1
+    base = out_dir()
+    queue_job(base, cid, n)
+    started = start_next(base)
+    msg = (f"Started: {n} Short{'s' if n > 1 else ''} for {cid}." if started and started["channel"] == cid
+           else f"Queued: {n} Short{'s' if n > 1 else ''} for {cid}; starts when the running make is done.")
+    return redirect(f"/channels?msg={msg}#{cid}")
+
+
+@bp.post("/channels/jobs/<jid>/stop")
+def stop_job(jid: str):
+    if not JOB_NAME.fullmatch(jid):
+        abort(404)
+    folder = jobs_dir()
+    meta = read_json(folder / f"{jid}.json", None)
+    if not meta:
+        abort(404)
+    if meta.get("pid") is None:
+        (folder / f"{jid}.json").unlink(missing_ok=True)  # still queued: just drop it
+    elif pid_alive(meta["pid"]):
+        import signal
+        try:
+            os.killpg(meta["pid"], signal.SIGTERM)
+        except OSError:
+            pass
+    return redirect("/channels?msg=Stopped.")
 
 
 @bp.get("/schedule")

@@ -153,3 +153,70 @@ def test_classicpurge_deletes_only_the_fixed_list(settings, tmp_path, monkeypatc
                  *(home / "meta-out" / d for d in ("tclips", "transcripts", "videos", "clips"))):
         assert kept.exists(), kept
     assert not classicpurge.safe(data, settings) and not classicpurge.safe(home, settings)
+
+
+def test_channels_page_make_button_runs_one_make_at_a_time(client, out, monkeypatch):
+    import sys
+    import time
+
+    from shorts.web import tfirst
+    base = out[0]
+    html = client.get("/channels").get_data(as_text=True)
+    for name in ("Weird Newsreels", "Old School Advice", "Yesterday&#39;s Future", "Space Race Files", "Classic Movie Moments"):
+        assert name in html
+    # the make itself: a short script that writes one finished Short like the maker does
+    script = ("import json, pathlib, sys; d = pathlib.Path(sys.argv[1]) / 'channels' / 'weirdnewsreels'; "
+              "d.mkdir(parents=True, exist_ok=True); (d / 'weirdnewsreels-11141200-1-newsreel-1a.mp4').write_bytes(b'v'); "
+              "(d / 'made.json').write_text(json.dumps([{'short': 'weirdnewsreels-11141200-1-newsreel-1a', "
+              "'channel': 'weirdnewsreels', 'kind': 'newsreel', 'hook': 'Robot butler of 1957'}])); "
+              "print('[channel] READY 1 of 1')")
+    monkeypatch.setattr(tfirst, "command_for", lambda meta: [sys.executable, "-c", script, str(base)])
+    r = client.post("/channels/weirdnewsreels/make", data={"n": "3"})
+    assert r.status_code == 302 and "Started" in r.headers["Location"]
+    r = client.post("/channels/classicmoments/make", data={"n": "99"})  # second one waits its turn
+    assert "Queued" in r.headers["Location"]
+    jobs = tfirst.dash_jobs(base)
+    assert [j["channel"] for j in jobs if j["state"] == "queued"] == ["classicmoments"] and jobs[-1]["channel"] == "weirdnewsreels"
+    assert next(j for j in jobs if j["channel"] == "classicmoments")["n"] == 10  # capped
+    assert jobs[-1]["n"] == 3
+    for _ in range(100):
+        if any(j["state"] == "done" for j in tfirst.dash_jobs(base)):
+            break
+        time.sleep(0.1)
+    done = next(j for j in tfirst.dash_jobs(base) if j["channel"] == "weirdnewsreels")
+    assert done["state"] == "done" and done["ready"] == 1
+    html = client.get("/channels").get_data(as_text=True)
+    assert "Robot butler of 1957" in html
+    assert client.get("/video/weirdnewsreels-11141200-1-newsreel-1a.mp4").status_code == 200
+    assert "Robot butler" in client.get("/shorts?channel=weirdnewsreels").get_data(as_text=True)
+    queued = next(j for j in tfirst.dash_jobs(base) if j["channel"] == "classicmoments")
+    client.post(f"/channels/jobs/{queued['id']}/stop")                 # cancel the queued one
+    assert all(j["channel"] != "classicmoments" for j in tfirst.dash_jobs(base))
+    assert client.post("/channels/nope/make").status_code == 404
+
+
+def test_tclips_channel_step_makes_n_shorts_from_the_channel_kinds(tmp_path, monkeypatch):
+    from meta import tclips
+    chans = {c["id"]: c for c in tclips.load_tchannels()}
+    assert set(chans) == {"weirdnewsreels", "oldschooladvice", "yesterdaysfuture", "spaceracefiles", "classicmoments"}
+    assert chans["yesterdaysfuture"]["kinds"] == ["newsreel", "prelinger", "nasa"]
+    monkeypatch.setattr(tclips, "OUT", tmp_path)
+    monkeypatch.setattr(tclips, "CH_DIR", tmp_path / "channels")
+    monkeypatch.setattr(tclips, "PLAN", tmp_path / "upload-plan.json")
+    import meta.common
+    monkeypatch.setattr(meta.common, "open_library", lambda: (None, None, None))
+    monkeypatch.setattr(tclips, "load_titles", lambda: ([], []))
+    monkeypatch.setattr(tclips.tx, "get", lambda s: {})
+    asked = []
+    monkeypatch.setattr(tclips, "channel_sources", lambda kind, n, t, d: [{"id": f"{kind}-src{i}", "title": "T"} for i in range(n)])
+
+    def fake_make_source(src, kind, si, settings, llm, per_source, bare, ex):
+        asked.append((kind, ex["label"].split(":")[0], "PREDICTS" in ex["moments"]))
+        return [{"short": f"{ex['prefix']}{kind}-{si + 1}a", "source": src["id"], "sentences": [1, 2],
+                 "lengths": {f"{ex['prefix']}{kind}-{si + 1}a.mp4": 20.0}}]
+    monkeypatch.setattr(tclips, "make_source", fake_make_source)
+    made = tclips.channel_make("yesterdaysfuture", 4)
+    assert len(made) == 4 and [a[0] for a in asked] == ["newsreel", "newsreel", "prelinger", "nasa"]
+    assert all(a[1] == "Yesterday's Future" and a[2] for a in asked)
+    saved = json.loads((tmp_path / "channels" / "yesterdaysfuture" / "made.json").read_text())
+    assert len(saved) == 4 and all(m["channel"] == "yesterdaysfuture" and m["short"].startswith("yesterdaysfuture-") for m in saved)

@@ -398,14 +398,16 @@ def find_archive(kind: str, n: int, titles: list[dict], deny: list[str], skip: s
     return out
 
 
-def find_nasa(n: int, titles: list[dict], deny: list[str]) -> list[dict]:
-    """NASA videos with NASA's own captions first (50 of 50 had them in the paper's count)."""
+def find_nasa(n: int, titles: list[dict], deny: list[str], skip: set[str] = frozenset(),
+              queries: list[str] | None = None) -> list[dict]:
+    """NASA videos with NASA's own captions first (50 of 50 had them in the paper's count).
+    skip = source ids already used ("nasa:<id>"); queries = other searches (a channel's own)."""
     import requests
     from shorts.sources.nasa import asset_files, credit_of
     spec = KINDS["nasa"]
     allowed = {t["id"][5:] for t in titles if t["kind"] == "nasa" and str(t["id"]).startswith("nasa:")}
-    out, seen = [], set()
-    for q in spec["queries"]:
+    out, seen = [], {str(i)[5:] for i in skip if str(i).startswith("nasa:")}
+    for q in queries or spec["queries"]:
         try:
             r = requests.get("https://images-api.nasa.gov/search", params={"q": q, "media_type": "video"},
                              headers=UA, timeout=60)
@@ -991,7 +993,7 @@ def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, b
     if len(sents) < 10:
         log(f"[{kind}] {src['id']}: only {len(sents)} sentences, skipped")
         return []
-    info = dict(label=spec["label"], title=src["title"], year=src.get("year") or "year unknown",
+    info = dict(label=ex.get("label") or spec["label"], title=src["title"], year=src.get("year") or "year unknown",
                 maker=src.get("maker", "unknown"), desc=src.get("desc", ""))
     text = tx.numbered(sents)[:90_000]  # ~25k tokens: a 60-minute briefing still fits
     found = ask(llm, settings, MOMENTS.format(**info, transcript=text, n="8 to 12", lo=f"{lo:.0f}", hi=f"{hi:.0f}",
@@ -1404,6 +1406,148 @@ def examples() -> list[dict]:
     return made
 
 
+# ---------- channels (config/tchannels.toml; Roeland 2026-11-14: 5 channels, Shorts per channel from the dashboard) ----------
+
+TCHANNELS = Path(__file__).resolve().parents[1] / "config" / "tchannels.toml"
+CH_DIR = OUT / "channels"
+LENSES = {
+    "weird": WEIRD,
+    "film": WEIRD_FILM,
+    "advice": """
+
+THIS CHANNEL: pick moments where the film gives ADVICE, a RULE or a "FACT" with a straight face that
+sounds absurd, wrong, quaint or surprisingly wise today (how to behave on a date, what to eat, how to
+treat a cold, what a good worker does). The clearer the instruction is said out loud, the better. Our
+payoff says what we know now. Add a 7th score, "weird" (1-5): how strange it sounds to a viewer
+today. Only return moments with weird >= 3.""",
+    "future": """
+
+THIS CHANNEL: pick moments where the past PREDICTS or PROMISES the future: a new invention "that will
+change everything", the home, car, city or space trip "of tomorrow", a date ("by 1970..."). The bolder
+and more specific the claim, the better. Our payoff must say, truthfully, what really happened
+(came true, came true much later, or never). Add a 7th score, "weird" (1-5): how bold or strange the
+promise sounds today. Only return moments with weird >= 3.""",
+    "space": """
+
+THIS CHANNEL: pick CANDID or SURPRISING space moments: an astronaut's joke or honest fear, a close
+call told in plain words, a strange detail of life in space, a number that sounds impossible. Not
+ceremonies, not long technical explanations. Add a 7th score, "weird" (1-5): how surprising or human
+it is to a viewer today. Only return moments with weird >= 3.""",
+}
+TITLE_STYLES = {"curiosity": TITLE_ARCHIVE, "film": TITLE_FILM, "default": ""}
+CH_PER_FILM = 2                               # Shorts per checked film in one run (there are only a few films)
+
+
+def load_tchannels(path: Path = TCHANNELS) -> list[dict]:
+    """The transcript-first channels, each with its kinds, lens and title style (unknown ones dropped)."""
+    if not path.exists():
+        return []
+    out = []
+    for c in tomllib.loads(path.read_text(encoding="utf-8")).get("channel", []):
+        kinds = [k for k in c.get("kinds", []) if k in KINDS]
+        if c.get("id") and re.fullmatch(r"[a-z0-9_-]{1,40}", c["id"]) and kinds:
+            out.append(dict(c, kinds=kinds, lens=c.get("lens") if c.get("lens") in LENSES else "weird",
+                            titles=c.get("titles") if c.get("titles") in TITLE_STYLES else "default"))
+    return out
+
+
+def channel_made(cid: str) -> list[dict]:
+    path = CH_DIR / cid / "made.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+
+
+def all_used_sources() -> set[str]:
+    """Source ids any earlier round used: the sources-<kind>.json picks and every channel's Shorts."""
+    used = set()
+    for f in OUT.glob("sources-*.json"):
+        used |= {s.get("id") for s in json.loads(f.read_text(encoding="utf-8"))}
+    for f in CH_DIR.glob("*/made.json"):
+        used |= {m.get("source") for m in json.loads(f.read_text(encoding="utf-8"))}
+    for f in (OUT / "examples.json",):
+        if f.exists():
+            used |= {m.get("source") for m in json.loads(f.read_text(encoding="utf-8"))}
+    return {u for u in used if u}
+
+
+def channel_sources(kind: str, n: int, titles: list[dict], deny: list[str]) -> list[dict]:
+    """n fresh sources of a kind for a channel; films come from the checked list (sources-feature.json)."""
+    if kind == "feature":
+        films = OUT / "sources-feature.json"
+        rows = json.loads(films.read_text(encoding="utf-8")) if films.exists() else []
+        if not rows:
+            rows = find_sources("feature", 3)
+            save_json(films, rows)
+        return [s for s in rows if not s.get("error")]
+    skip = all_used_sources()
+    if kind == "nasa":
+        return find_nasa(n, titles, deny, skip=skip)
+    return find_archive(kind, n, titles, deny, skip=skip)
+
+
+def channel_make(cid: str, n: int) -> list[dict]:
+    """n new Shorts for one channel of config/tchannels.toml, one per fresh source (films: up to
+    CH_PER_FILM each, other moments than before), its kinds taken in turn. Each finished Short is
+    added to channels/<cid>/made.json at once, so the dashboard shows it while the rest is made."""
+    from .common import open_library
+    ch = next((c for c in load_tchannels() if c["id"] == cid), None)
+    if not ch:
+        raise SystemExit(f"no channel '{cid}' in {TCHANNELS}")
+    settings, _conn, llm = open_library()
+    dest = CH_DIR / cid
+    dest.mkdir(parents=True, exist_ok=True)
+    titles, deny = load_titles()
+    avoid = used_lines()
+    made_all = channel_made(cid)
+    for m in made_all:
+        if m.get("source") and m.get("sentences"):
+            avoid.setdefault(m["source"], []).append(tuple(m["sentences"]))
+    stamp = datetime.now(timezone.utc).strftime("%m%d%H%M")
+    log(f"[channel] {ch['name']} ({cid}): {n} Shorts from {', '.join(ch['kinds'])}, lens {ch['lens']}, titles {ch['titles']}")
+    per_kind = {k: n // len(ch["kinds"]) + (1 if i < n % len(ch["kinds"]) else 0) for i, k in enumerate(ch["kinds"])}
+    made: list[dict] = []
+    for kind, want in per_kind.items():
+        if not want:
+            continue
+        film = kind == "feature"
+        srcs = channel_sources(kind, want + EXAMPLE_SPARE, titles, deny)
+        log(f"[channel] {kind}: {len(srcs)} sources for {want} Shorts: {', '.join(s['id'] for s in srcs)}")
+        got = 0
+        for si, s in enumerate(srcs * (CH_PER_FILM if film else 1)):
+            if got >= want:
+                break
+            try:
+                tx.get(s)
+            except Exception as e:  # noqa: BLE001 - one source failing must not end the job
+                log(f"[channel] {s['id']}: transcript failed: {e}")
+                continue
+            lens = LENSES[ch["lens"]]
+            ex = {"lo": 8.0 if film else MIN_LEN, "hi": 30.0 if film else MAX_LEN,
+                  "min_tight": 8.0 if film else MIN_TIGHT,
+                  "moments": (WEIRD_FILM if film else lens).format(lo=8, hi=30),
+                  "layer": TITLE_STYLES["film" if film else ch["titles"]],
+                  "label": f"{ch['name']}: {ch.get('pitch', '')}",
+                  "avoid": avoid.get(s["id"], []) + [tuple(m["sentences"]) for m in made if m["source"] == s["id"]],
+                  "out": dest, "prefix": f"{cid}-{stamp}-{got + 1}-", "weird_first": True}
+            log(f"=== [channel] {cid} {kind} {s['id']}: {s['title']}")
+            try:
+                one = make_source(s, kind, si, settings, llm, 1, False, ex=ex)
+            except Exception as e:  # noqa: BLE001
+                log(f"[channel] {s['id']} failed: {e}")
+                one = []
+            for m in one:
+                got += 1
+                m["channel"] = cid
+                made.append(m)
+                made_all.append(m)
+                save_json(dest / "made.json", made_all)
+                log(f"[channel] READY {len(made)} of {n}: {m['short']} ({m['lengths'].get(m['short'] + '.mp4')} s): "
+                    f"{m.get('yt_title')} | hook: {m.get('hook')}")
+        if got < want:
+            log(f"[channel] {kind}: only {got} of {want}")
+    log(f"[channel] {len(made)} of {n} new Shorts for {cid} in {dest}")
+    return made
+
+
 BATCH = 20                                  # Shorts per upload batch (Roeland 2026-11-13: 20 on historybuffed)
 BATCH_PER_SOURCE = 3
 UPLOAD_CHANNEL = "historybuffed"
@@ -1647,7 +1791,9 @@ def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "examples", "batch", "upload", "clear", "clearnow", "uploadall"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "examples", "batch", "upload", "clear", "clearnow", "uploadall", "channel"])
+    ap.add_argument("--channel", help="channel id from config/tchannels.toml (step channel)")
+    ap.add_argument("-n", type=int, default=1, help="Shorts to make (step channel, 1-10)")
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
     ap.add_argument("--sources", type=int, default=3)
     ap.add_argument("--per-source", type=int, default=2)
@@ -1664,6 +1810,11 @@ def main(argv=None) -> None:
         return
     if a.step == "examples":
         examples()
+        return
+    if a.step == "channel":
+        if not a.channel:
+            ap.error("--channel is needed for the channel step")
+        channel_make(a.channel, max(1, min(a.n, 10)))
         return
     if a.step in ("clear", "clearnow"):
         clear(delete=a.step == "clearnow")

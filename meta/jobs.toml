@@ -419,3 +419,8 @@ name = "update"
 [[job]]
 id = "2026-11-14-classicpurge-1"
 name = "classicpurge"
+
+# Roeland 2026-11-14: 5 transcript-first channels with a Make button per channel on the dashboard. Put it live.
+[[job]]
+id = "2026-11-14-update-2"
+name = "update"

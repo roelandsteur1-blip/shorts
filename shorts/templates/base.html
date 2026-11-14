@@ -166,6 +166,7 @@ audio{max-width:100%}
 <a class="brand" href="/"><span class="logo"><svg viewBox="0 0 12 14"><path d="M0 0v14l12-7z" fill="#fff"/></svg></span><span>Transcript-first Shorts</span></a>
 <nav>
 <a href="/" class="{{ 'on' if here == '/' }}">Overview</a>
+<a href="/channels" class="{{ 'on' if here.startswith('/channels') }}">Channels</a>
 <a href="/shorts" class="{{ 'on' if here.startswith('/shorts') }}">Shorts</a>
 <a href="/schedule" class="{{ 'on' if here.startswith('/schedule') }}">Schedule</a>
 <a href="/sources" class="{{ 'on' if here.startswith('/sources') }}">Sources</a>
