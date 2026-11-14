@@ -4,7 +4,7 @@
 # kinds  = which long free sources a Short may come from (newsreel | nasa | prelinger | feature)
 # lens   = what kind of moment wins (LENSES in meta/tclips.py)
 # titles = the YouTube title style (TITLE_STYLES in meta/tclips.py)
-# youtube = the channel id in config/channels/ to upload to, once the YouTube channel exists ("" = not yet)
+# YouTube: "Connect YouTube" on the Channels page makes config/channels/<id>.toml (video_type "transcript") and logs in.
 # The texts on screen keep the default tone (ragebait) and style (Tabloid) for every channel.
 
 [[channel]]
@@ -14,7 +14,6 @@ pitch = "The oddest, funniest 'they really did this' moments from 1940s-60s news
 kinds = ["newsreel"]
 lens = "weird"
 titles = "curiosity"
-youtube = ""
 
 [[channel]]
 id = "oldschooladvice"
@@ -23,7 +22,6 @@ pitch = "Advice, rules and 'facts' that old classroom and guidance films taught 
 kinds = ["prelinger"]
 lens = "advice"
 titles = "curiosity"
-youtube = ""
 
 [[channel]]
 id = "yesterdaysfuture"
@@ -32,7 +30,6 @@ pitch = "What the past promised about the future: flying cars, kitchens of tomor
 kinds = ["newsreel", "prelinger", "nasa"]
 lens = "future"
 titles = "curiosity"
-youtube = ""
 
 [[channel]]
 id = "spaceracefiles"
@@ -41,7 +38,6 @@ pitch = "Candid, surprising and nerve-racking moments from NASA's own films, bri
 kinds = ["nasa", "newsreel"]
 lens = "space"
 titles = "curiosity"
-youtube = ""
 
 [[channel]]
 id = "classicmoments"
@@ -50,4 +46,3 @@ pitch = "Short, sharp beats from public-domain classic films (only the hand-chec
 kinds = ["feature"]
 lens = "film"
 titles = "film"
-youtube = ""

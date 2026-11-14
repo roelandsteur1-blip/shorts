@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Channels{% endblock %}{% block body %}
 <h1>Channels</h1>{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
-<p class="muted">Each channel makes its own kind of transcript-first Short (<code>config/tchannels.toml</code>). <b>Make</b> picks fresh long sources, finds the best moments for the channel and renders them; one make runs at a time (about 10-25 minutes per Short), the rest wait in line. New Shorts appear below as soon as each one is done. Nothing is uploaded.</p>
+<p class="muted">Each channel makes its own kind of transcript-first Short (<code>config/tchannels.toml</code>). <b>Make</b> picks fresh long sources, finds the best moments for the channel and renders them; one make runs at a time (about 10-25 minutes per Short), the rest wait in line. New Shorts appear below as soon as each one is done. Nothing is uploaded yet.<br><b>Connect YouTube</b> works like the old dashboard: create the channel on YouTube first, run <code>ssh -i KEY -L 8765:localhost:8765 SERVER</code> on the laptop, press Connect, open the login link shown here in the laptop's browser, then confirm the channel.</p>
 {% if running %}<p class="warn">Making now: <b>{{ running.n }}</b> for <b>{{ running.channel }}</b> since {{ (running.started_at or '')[11:16] }} UTC, {{ running.ready }} done so far.</p>{% endif %}
 {% for c in chans %}<div class="card" id="{{ c.id }}">
 <h2 style="margin-top:0">{{ c.name }} <span class="muted" style="font-size:14px">{% for k in c.kinds %}{{ labels.get(k, k) }}{{ ' · ' if not loop.last }}{% endfor %}</span></h2>
@@ -8,7 +8,20 @@
 <form method="post" action="/channels/{{ c.id }}/make" class="actions">
 <label style="margin:0">Shorts <input type="number" name="n" value="1" min="1" max="{{ max_n }}" style="width:80px"></label>
 <button class="primary">Make</button>
-<span class="muted">{% if c.youtube %}uploads to {{ c.youtube }}{% else %}no YouTube channel linked yet{% endif %} · {{ c.shorts|length }} made</span></form>
+<span class="muted">{{ c.shorts|length }} made</span></form>
+{% set y = c.yt %}<div style="margin:10px 0"><b>YouTube</b>
+{% if y.confirmed %}<span class="ok">connected to {{ y.found.title if y.found else y.confirmed }}</span>
+<form method="post" action="/channels/{{ c.id }}/connect" class="inline"><input type="hidden" name="fresh" value="1"><button class="pill">Connect again</button></form>
+{% elif y.job and y.job.state == 'running' %}<span class="warn">waiting for the login…</span>
+{% if y.link %}<p style="margin:6px 0">With the tunnel running on the laptop (<code>ssh -i KEY -L 8765:localhost:8765 SERVER</code>), open: <a href="{{ y.link }}" target="_blank" rel="noopener">Google login for {{ c.name }}</a>. Log in with the account that owns the channel.</p>{% else %}<span class="muted">the login link appears here in a moment (reload)</span>{% endif %}
+<form method="post" action="/channels/jobs/{{ y.job.id }}/stop" class="inline"><button class="pill">Cancel</button></form>
+{% elif y.found %}<span>Logged in as <b>{{ y.found.title }}</b>. Is this the right channel?</span>
+<form method="post" action="/channels/{{ c.id }}/confirm" class="inline"><button class="pill approve">Yes, that's the one</button></form>
+<form method="post" action="/channels/{{ c.id }}/connect" class="inline"><input type="hidden" name="fresh" value="1"><button class="pill">No, log in with another account</button></form>
+{% else %}<span class="muted">not connected{% if y.job and y.job.state.startswith('failed') %} (last try failed, see the log below){% endif %}.</span>
+<form method="post" action="/channels/{{ c.id }}/connect" class="inline"><button class="pill">Connect YouTube</button></form>{% endif %}
+{% if y.job and y.job.state != 'running' and y.job.state != 'done' %}<details><summary>Connect log</summary><pre class="log">{{ y.job.tail }}</pre></details>{% endif %}
+</div>
 {% for j in c.jobs %}<details {{ 'open' if j.state == 'running' }}><summary>{{ j.n }} Short{{ 's' if j.n > 1 }} · <b class="{{ 'ok' if j.state == 'done' else ('warn' if j.state in ('running', 'queued') else 'bad') }}">{{ j.state }}</b>{% if j.state != 'queued' %} · {{ j.ready }} ready{% endif %} · <span class="muted">{{ (j.started_at or j.queued_at or '')[:16].replace('T', ' ') }} UTC</span>
 {% if j.state in ('running', 'queued') %}<form method="post" action="/channels/jobs/{{ j.id }}/stop" class="inline"><button class="pill">{{ 'Stop' if j.state == 'running' else 'Cancel' }}</button></form>{% endif %}</summary>
 {% if j.tail %}<pre class="log">{{ j.tail }}</pre>{% endif %}</details>{% endfor %}

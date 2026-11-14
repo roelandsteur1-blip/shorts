@@ -193,35 +193,33 @@ def dash_jobs(base: Path | None = None) -> list[dict]:
         except OSError:
             lines = []
         meta["tail"] = "\n".join(lines[-12:])
+        if meta.get("kind") == "connect":
+            meta["full"] = "\n".join(lines[-60:])
         meta["ready"] = sum("[channel] READY" in ln for ln in lines)
         out.append(meta)
     out.sort(key=lambda j: j.get("seq") or 0, reverse=True)
     return out
 
 
-def queue_job(base: Path, channel: str, n: int) -> dict:
+def queue_job(base: Path, channel: str, n: int, **extra) -> dict:
     folder = jobs_dir(base)
     folder.mkdir(parents=True, exist_ok=True)
     jid = f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-{channel}"
-    meta = {"id": jid, "channel": channel, "n": n, "pid": None, "queued_at": now_iso(), "seq": time.time_ns()}
+    meta = {"id": jid, "channel": channel, "n": n, "pid": None, "queued_at": now_iso(), "seq": time.time_ns(), **extra}
     (folder / f"{jid}.json").write_text(json.dumps(meta), encoding="utf-8")
     return meta
 
 
 def command_for(meta: dict) -> list[str]:
+    if meta.get("kind") == "connect":
+        return [sys.executable, "-m", "shorts", "--channel", meta["channel"], "connect",
+                *(["--fresh"] if meta.get("fresh") else [])]
     return [sys.executable, "-m", "meta.tclips", "channel", "--channel", meta["channel"], "-n", str(meta["n"])]
 
 
-def start_next(base: Path) -> dict | None:
-    """Start the oldest queued job when none is running: one make at a time, at low priority, in its own
-    session so a dashboard restart doesn't stop it. Its exit code lands in <id>.exit."""
-    jobs = dash_jobs(base)
-    if any(j["state"] == "running" for j in jobs):
-        return None
-    queued = [j for j in jobs if j["state"] == "queued"]
-    if not queued:
-        return None
-    meta = queued[-1]
+def launch(base: Path, meta: dict) -> dict:
+    """Run a job in its own session (a dashboard restart doesn't stop it), at low priority; its exit
+    code lands in <id>.exit and its output in <id>.log."""
     folder = jobs_dir(base)
     log_f = open(folder / f"{meta['id']}.log", "ab")
     exit_f = folder / f"{meta['id']}.exit"
@@ -230,10 +228,29 @@ def start_next(base: Path) -> dict | None:
     proc = subprocess.Popen(["sh", "-c", script, "sh", *command_for(meta)], cwd=str(REPO), stdout=log_f,
                             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True, env=env)
     log_f.close()
-    clean = {k: meta.get(k) for k in ("id", "channel", "n", "queued_at", "seq")}
+    clean = {k: meta.get(k) for k in ("id", "channel", "n", "queued_at", "seq", "kind", "fresh")}
     clean.update(pid=proc.pid, started_at=now_iso())
     (folder / f"{meta['id']}.json").write_text(json.dumps(clean), encoding="utf-8")
     return clean
+
+
+def start_next(base: Path) -> dict | None:
+    """Start the oldest queued make when no make is running: one make at a time. Connect jobs don't
+    queue (they only wait for a login) and don't count."""
+    jobs = [j for j in dash_jobs(base) if j.get("kind") != "connect"]
+    if any(j["state"] == "running" for j in jobs):
+        return None
+    queued = [j for j in jobs if j["state"] == "queued"]
+    return launch(base, queued[-1]) if queued else None
+
+
+def stop_pid(pid: int | None) -> None:
+    import signal
+    if pid and pid_alive(pid):
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except OSError:
+            pass
 
 
 def start_queue_thread(app) -> None:
@@ -427,9 +444,10 @@ def channels_page():
         for x in mine:
             x["state"] = state_of(x, now)
         c["shorts"] = sorted(mine, key=lambda x: x["name"], reverse=True)
-        c["jobs"] = [j for j in jobs if j["channel"] == c["id"]][:3]
+        c["jobs"] = [j for j in jobs if j["channel"] == c["id"] and j.get("kind") != "connect"][:3]
         c["busy"] = any(j["state"] in ("running", "queued") for j in c["jobs"])
-    running = next((j for j in jobs if j["state"] == "running"), None)
+        c["yt"] = youtube_state(c["id"], jobs)
+    running = next((j for j in jobs if j["state"] == "running" and j.get("kind") != "connect"), None)
     return render_template("t_channels.html", chans=chans, running=running, jobs=jobs[:10], max_n=MAX_N,
                            labels=KIND_LABELS, msg=request.args.get("msg"))
 
@@ -450,6 +468,80 @@ def channel_make(cid: str):
     return redirect(f"/channels?msg={msg}#{cid}")
 
 
+# ---------- Connect YouTube, the same way the old dashboard did (Roeland 2026-11-14) ----------
+# Each channel gets a channel file config/channels/<id>.toml (video_type "transcript", made here on
+# the first Connect). Connect runs `python -m shorts --channel <id> connect`: Google's login link
+# appears in the log on the Channels page; with `ssh -L 8765:localhost:8765 <server>` running on
+# the laptop, opening it there logs in. Then "Is this the right channel?" -> Yes saves its id, and
+# uploads refuse any other channel (shorts/upload.py check_channel).
+
+def channel_file(cid: str) -> Path:
+    return settings().config_dir / "channels" / f"{cid}.toml"
+
+
+def ensure_channel_file(c: dict) -> None:
+    path = channel_file(c["id"])
+    if path.exists():
+        return
+    from .. import tomlw
+    from ..channels import HEADER
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tomlw.write(path, {"id": c["id"], "name": c.get("name") or c["id"], "language": "en",
+                       "niche": c.get("pitch") or c.get("name") or c["id"], "video_type": "transcript",
+                       "search_terms": [], "formats": [], "style": {}, "uploads_per_day": 1,
+                       "publish_times_utc": ["16:00"]}, HEADER)
+
+
+def youtube_state(cid: str, jobs: list[dict]) -> dict:
+    from ..upload import found_path, token_path
+    st = settings()
+    data = {}
+    if channel_file(cid).exists():
+        try:
+            data = tomllib.loads(channel_file(cid).read_text(encoding="utf-8"))
+        except ValueError:
+            data = {}
+    found = read_json(found_path(st, cid), None)
+    job = next((j for j in jobs if j["channel"] == cid and j.get("kind") == "connect"), None)
+    link = None
+    if job and job["state"] == "running":
+        m = re.search(r"https://accounts\.google\.com/\S+", job.get("full") or "")
+        link = m.group(0) if m else None
+    return {"confirmed": data.get("youtube_channel_id"), "found": found, "logged_in": token_path(st, cid).exists(),
+            "job": job, "link": link}
+
+
+@bp.post("/channels/<cid>/connect")
+def connect_youtube(cid: str):
+    c = next((c for c in tchannels() if c["id"] == cid), None)
+    if not c:
+        abort(404)
+    ensure_channel_file(c)
+    base = out_dir()
+    # A login still waiting for Google (any channel) holds the server's login port 8765: stop it first.
+    for j in dash_jobs(base):
+        if j.get("kind") == "connect" and j["state"] == "running":
+            stop_pid(j["pid"])
+    launch(base, queue_job(base, cid, 0, kind="connect", fresh=bool(request.form.get("fresh"))))
+    return redirect(f"/channels?msg=Connect started for {c.get('name', cid)}: open the login link below.#{cid}")
+
+
+@bp.post("/channels/<cid>/confirm")
+def confirm_youtube(cid: str):
+    from .. import tomlw
+    from ..channels import HEADER
+    from ..upload import found_path
+    if not any(c["id"] == cid for c in tchannels()) or not channel_file(cid).exists():
+        abort(404)
+    found = read_json(found_path(settings(), cid), None)
+    if not found:
+        abort(400)
+    data = tomllib.loads(channel_file(cid).read_text(encoding="utf-8"))
+    data["youtube_channel_id"] = found["id"]
+    tomlw.write(channel_file(cid), data, HEADER)
+    return redirect(f"/channels?msg=Connected to {found.get('title')}.#{cid}")
+
+
 @bp.post("/channels/jobs/<jid>/stop")
 def stop_job(jid: str):
     if not JOB_NAME.fullmatch(jid):
@@ -460,12 +552,8 @@ def stop_job(jid: str):
         abort(404)
     if meta.get("pid") is None:
         (folder / f"{jid}.json").unlink(missing_ok=True)  # still queued: just drop it
-    elif pid_alive(meta["pid"]):
-        import signal
-        try:
-            os.killpg(meta["pid"], signal.SIGTERM)
-        except OSError:
-            pass
+    else:
+        stop_pid(meta["pid"])
     return redirect("/channels?msg=Stopped.")
 
 
