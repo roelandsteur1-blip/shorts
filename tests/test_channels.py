@@ -17,10 +17,6 @@ def cfg(tmp_path, settings):
     return d
 
 
-@pytest.fixture
-def client(settings, cfg):
-    from shorts.web import create_app
-    return create_app(settings, start_runner=False).test_client()
 
 
 DRAFT = {"niche_tags": ["#history", "old news", "newsreels", "extra"], "categories": ["history", "war", "made_up"],
@@ -40,49 +36,8 @@ def form_for(data, n_formats=3):
     return form
 
 
-def test_wizard_creates_a_channel(client, settings, cfg, monkeypatch):
-    assert b"create_channel" in client.get("/channels/new").data
-    assert b"Draft with Claude" in client.get("/channels/new/describe").data
-
-    monkeypatch.setattr(llm, "ask", lambda *a, **k: json.dumps(DRAFT))
-    d = client.post("/channels/draft", data={"name": "Oud Nieuws", "niche": "Dutch history", "language": "nl"}).get_json()
-    assert d["categories"] == ["history", "war"] and d["sources"] == ["prelinger", "commons"]
-    assert d["niche_tags"] == ["history", "old news", "newsreels"]
-    assert [f["id"] for f in d["formats"]] == ["then_now", "story"]
-    assert client.post("/channels/draft", data={"name": ""}).status_code == 400
-
-    r = client.post("/channels/new", data=form_for({"name": "Oud Nieuws", "id": "oudnieuws", "niche": "Dutch history"}))
-    assert r.status_code == 302 and r.headers["Location"].endswith("/channels/oudnieuws?created=1")
-    ch = load_channel("oudnieuws", cfg)
-    assert (ch.language, ch.categories, ch.sources, ch.niche_tags) == ("nl", ["history", "war"], ["prelinger", "commons"], ["history", "old news", "newsreels"])
-    assert ch.formats == [{"id": "then_now", "title": "Then and now", "brief": "Compare the past\nwith today.", "enabled": True}]
-    assert ch.style["font"] == "Montserrat ExtraBold" and ch.hero_query is None
-    # The same id twice is refused, and so is a broken form.
-    assert client.post("/channels/new", data=form_for({"name": "X", "id": "oudnieuws", "niche": "n"})).status_code == 400
-    bad = form_for({"name": "Y", "id": "y_ch", "niche": "n"}) | {"publish_times_utc": "25:00", "format_enabled_0": ""}
-    page = client.post("/channels/new", data=bad)
-    assert page.status_code == 400 and b"upload times" in page.data and b"at least one format" in page.data
-    assert not (cfg / "channels" / "y_ch.toml").exists()
-
-    page = client.get("/channels/oudnieuws").data
-    assert b"Connect YouTube" in page and b"no tracks yet" in page and b"Try it" in page
-    assert b"Oud Nieuws" in client.get("/").data
 
 
-def test_settings_keep_style_and_backup(client, cfg):
-    path = cfg / "channels" / "space.toml"
-    # Fields of removed features: the file still loads, and loses them on the next save.
-    path.write_text(path.read_text().replace('id = "space"', 'id = "space"\nauto_run = true\nhashtags = ["#space"]'))
-    assert load_channel("space", cfg).id == "space"
-    before = tomllib.loads(path.read_text())
-    form = form_for({"name": "Space Shorts", "niche": "space exploration and astronomy"}, n_formats=1)
-    form.update(categories=["space"], sources=["nasa", "internet_archive"], language="en")
-    r = client.post("/channels/space", data=form)
-    assert r.status_code == 302
-    after = tomllib.loads((cfg / "channels" / "space.toml").read_text())
-    assert after["style"] == before["style"] and after["id"] == "space"
-    assert after["sources"] == ["nasa", "internet_archive"] and "auto_run" not in after and "hashtags" not in after
-    assert (cfg / "channels" / "space.toml.bak").read_text().startswith("# One file per channel")
 
 
 class FakeYT:
@@ -101,19 +56,6 @@ class FakeYT:
                                                        "thumbnails": {"default": {"url": "https://yt/x.jpg"}}}}]}
 
 
-def test_connect_and_confirm(client, settings, cfg, conn, monkeypatch):
-    monkeypatch.setattr(upload, "youtube", lambda s, ch: FakeYT("UC123"))
-    found = upload.connect(settings, load_channel("space", cfg))
-    assert found == {"id": "UC123", "title": "Space Facts", "thumbnail": "https://yt/x.jpg"}
-    page = client.get("/channels/space").data
-    assert b"Space Facts" in page and b"that's the one" in page
-    client.post("/channels/space/confirm")
-    assert load_channel("space", cfg).youtube_channel_id == "UC123"
-    client.post("/channels/space/connect", data={"fresh": "1"})
-    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
-    assert json.loads(job["command"]) == ["connect", "--fresh"] and job["heavy"] == 0
-    client.post("/channels/space/try")
-    assert json.loads(conn.execute("SELECT command FROM jobs ORDER BY id DESC").fetchone()[0]) == ["make", "-n", "3"]
 
 
 def test_upload_refuses_another_channel(channel):

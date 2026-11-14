@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 
 from shorts import channels as chans, db, drive, music, upload
 from shorts.config import load_channel
-from shorts.web import create_app
 
 NOW = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)
 
@@ -197,10 +196,6 @@ def test_upload_all_sends_phone_channels_to_drive(conn, settings, channel, tmp_p
     assert sent == [("space", None)] and "to Google Drive" in out["space"]
 
 
-def test_channel_page_shows_phone_option(settings):
-    app = create_app(settings, start_runner=False)
-    html = app.test_client().get("/channels/space").get_data(as_text=True)
-    assert 'name="upload_via"' in html and "Via my phone" in html
 
 
 def test_norm_ignores_case_hashtags_and_punctuation():

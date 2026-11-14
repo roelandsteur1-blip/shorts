@@ -17,10 +17,6 @@ def cfg(tmp_path, settings):
     return d
 
 
-@pytest.fixture
-def client(settings, cfg):
-    from shorts.web import create_app
-    return create_app(settings, start_runner=False).test_client()
 
 
 def add_short(conn, status="approved", title="A Short", **fields):
@@ -46,31 +42,8 @@ def test_edit_blocks(conn, channel):
     assert abs(s["duration"] - sum(b["seconds"] for b in blocks)) < 0.01
 
 
-def test_edit_page_queues_rerender(client, conn):
-    sid = add_short(conn, status="rendered")
-    page = client.get(f"/short/{sid}").data
-    assert b"Save text and re-render" in page and b'name="block_1"' in page
-    r = client.post(f"/short/{sid}/blocks", data={"block_0": "first", "block_1": "a better second line", "block_2": "third"})
-    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
-    assert json.loads(job["command"]) == ["rerender", str(sid)] and r.headers["Location"].endswith(f"/jobs/{job['id']}")
-    # Uploaded Shorts can't be edited here any more.
-    done = add_short(conn, status="scheduled", youtube_id="abc")
-    assert client.post(f"/short/{done}/blocks", data={"block_0": "x"}).status_code == 400
-    assert b"Save text and re-render" not in client.get(f"/short/{done}").data
 
 
-def test_schedule_page(client, conn, settings):
-    add_short(conn, title="Waiting one")
-    add_short(conn, status="scheduled", title="Next week one", youtube_id="yt1", publish_at="2099-01-02T15:00:00Z",
-              uploaded_at=upload.iso(datetime.now(timezone.utc)))
-    add_short(conn, status="scheduled", title="Old one", youtube_id="yt0", publish_at="2020-01-02T15:00:00Z")
-    page = client.get("/schedule").data.decode()
-    assert "Waiting one" in page and "Schedule approved now" in page
-    assert "2099-01-02" in page and "youtu.be/yt1" in page and "Old one" in page
-    assert "Uploads today: <b class=\"\">1 of 100</b>" in page
-    client.post("/jobs/start", data={"command": "upload", "channel": "space"})
-    assert json.loads(conn.execute("SELECT command FROM jobs ORDER BY id DESC").fetchone()[0]) == ["upload"]
-    assert client.post("/jobs/start", data={"command": "rm", "channel": "space"}).status_code == 400
 
 
 def test_pacific_midnight():
@@ -151,38 +124,5 @@ def test_channel_daily_cap(conn, settings, channel, fake_upload):
     assert upload.upload_approved(conn, settings, channel) == []
 
 
-def test_daily_upload_all_channels(conn, settings, cfg, client, fake_upload):
-    fake_upload(_FakeYouTube(ok=100))
-    settings.channel_uploads_per_day = 2
-    for _ in range(3):
-        add_short(conn, video_path="x.mp4")
-    out = upload.upload_all(conn, settings)
-    assert out["space"] == "uploaded 2" and set(out) == set(list_channels(cfg))
-    page = client.get("/schedule").data.decode()
-    assert "Daily upload" in page and "2 of 2</b> uploaded in the last 24 hours" in page
-    r = client.post("/schedule/upload-all")
-    job = conn.execute("SELECT * FROM jobs ORDER BY id DESC").fetchone()
-    assert json.loads(job["command"]) == ["upload-all"] and job["channel"] is None
-    assert r.headers["Location"].endswith(f"/jobs/{job['id']}")
 
 
-def test_home_daily_buttons(client, conn, cfg):
-    page = client.get("/").data.decode()
-    assert "Make for every channel" in page and "Daily upload" in page
-    for _ in range(3):
-        add_short(conn, status="approved")
-    add_short(conn, status="rendered")
-    add_short(conn, status="scheduled")  # uploaded already: doesn't count
-    r = client.post("/make-all", data={"count": "500"})  # capped at 100
-    assert r.status_code == 302
-    # One job for every channel (Claude writes the next channel while the previous one renders).
-    jobs = conn.execute("SELECT channel, command FROM jobs").fetchall()
-    assert len(jobs) == 1 and jobs[0]["channel"] is None
-    assert json.loads(jobs[0]["command"]) == ["make-all", "--to", "100"]
-    from shorts.pipeline import top_up_orders
-    chans = [load_channel(c, cfg) for c in list_channels(cfg)]
-    orders, _ = top_up_orders(conn, chans, 100)
-    assert {ch.id: n for ch, n, _ in orders}["space"] == 96
-    # Space already has 4 waiting: topping up to 3 skips it.
-    orders, enough = top_up_orders(conn, chans, 3)
-    assert "space" not in {ch.id for ch, _, _ in orders} and any("(4)" in e for e in enough)

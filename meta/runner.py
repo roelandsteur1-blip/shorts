@@ -57,7 +57,6 @@ ALLOWLIST = {
     "research-tools": ("meta.collector.tools", [], None),  # tools into ~/research-venv (Roeland OK'd 2026-11-04)
     "study": ("meta.study", [], None),  # competitor channel study (meta/study.toml), read-only
     "jobsinfo": ("meta.jobsinfo", [], None),  # read-only: recent dashboard jobs + service restarts
-    "pagetime": ("meta.pagetime", [], None),
     "nichestats": ("meta.nichestats", [], None),  # read-only: views per channel and per niche from the Stats data  # how fast the dashboard pages are and where the time goes (read-only)
     "collectprobe": ("meta.collectprobe", [], None),  # read-only: why the collector finds nothing (verdicts per clip)
     "clips": ("meta.clips", [], None),
@@ -77,11 +76,15 @@ ALLOWLIST = {
     "tclipsuploadall": ("meta.tclips", ["uploadall"], None),  # same, without the 5-per-24h setting (Roeland 2026-11-13)
     "tclipsclear": ("meta.tclips", ["clear"], None),  # read-only: lists historybuffed's not yet public videos
     "tclipsclearnow": ("meta.tclips", ["clearnow"], None),  # deletes them (Roeland asked 2026-11-13)
+    # Roeland 2026-11-14 ("everything to transcript-first"): pause every channel (the Pause button's one line)
+    # and report disk use; diskinfo only reports. Neither deletes a file.
+    "classicoff": ("meta.classicoff", [], None),
+    "diskinfo": ("meta.classicoff", ["--report"], None),
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_DIR = {"round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsexamples": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
-JSON_JOBS = ("collectprobe", "pagetime", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsexamples", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_DIR = {"diskinfo": "classicoff", "round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsexamples": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
+JSON_JOBS = ("classicoff", "diskinfo", "collectprobe", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsexamples", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

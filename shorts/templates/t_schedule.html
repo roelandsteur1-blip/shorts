@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block title %}Schedule{% endblock %}{% block body %}
+<h1>Schedule <span class="muted">{{ channel }}</span></h1>
+<p class="muted">Transcript-first Shorts in the database (format <code>tclips</code>). They are uploaded private with a publish time; YouTube publishes them by itself.</p>
+{% if rows %}<table class="stack labels"><tr><th>Publishes (UTC)</th><th>Short</th><th>State</th><th>Views</th><th>YouTube</th></tr>
+{% for r in rows %}<tr><td>{{ (r.publish_at or '')[:16].replace('T', ' ') or '-' }}</td><td><a href="/shorts/{{ r.name }}">{{ r.title }}</a></td>
+<td>{% if r.live %}<span class="ok">live</span>{% elif r.status == 'failed' %}<span class="bad">failed</span>{% else %}{{ r.status }}{% endif %}</td>
+<td>{{ r.views if r.views is not none else '' }}</td>
+<td>{% if r.youtube_id %}<a href="https://youtu.be/{{ r.youtube_id }}" target="_blank" rel="noopener">{{ r.youtube_id }}</a>{% endif %}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">Nothing uploaded yet.</p>{% endif %}
+{% endblock %}

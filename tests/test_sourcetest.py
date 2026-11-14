@@ -16,10 +16,6 @@ def cfg(tmp_path, settings):
     return d
 
 
-@pytest.fixture
-def client(settings, cfg):
-    from shorts.web import create_app
-    return create_app(settings, start_runner=False).test_client()
 
 
 def test_defaults_from_the_research(cfg):
@@ -52,53 +48,5 @@ def test_run_writes_sheet_and_counts(settings, cfg, monkeypatch, conn):
     assert sourcetest.load(settings, "space")["subjects"] == ["Saturn", "Moon"]
 
 
-def test_page_run_and_save(client, settings, cfg, conn):
-    page = client.get("/channels/space/source-test")
-    assert page.status_code == 200 and b"Run source test" in page.data and b"Saturn" in page.data
-    assert client.get("/channels/space/source-test/sheet.jpg").status_code == 404
-    r = client.post("/channels/space/source-test/run", data={"subjects": "Saturn\nMoon | x\n"})
-    assert r.status_code == 302
-    row = conn.execute("SELECT command FROM jobs ORDER BY id DESC LIMIT 1").fetchone()
-    assert json.loads(row[0]) == ["source-test", "--subjects", "Saturn|Moon   x"]
-    out = sourcetest.folder(settings, "space")
-    out.mkdir(parents=True)
-    (out / "sheet.jpg").write_bytes(b"jpg")
-    (out / "result.json").write_text(json.dumps({"columns": ["Library today", "Openverse photos", "NASA video"],
-                                                 "usable": {"Library today": 3}, "subjects": ["Saturn"],
-                                                 "at": "2026-11-05T20:00", "minutes": 2}))
-    page = client.get("/channels/space/source-test")
-    assert b"3 of 1 subjects" in page.data or b"(3 of 1" in page.data
-    assert client.get("/channels/space/source-test/sheet.jpg").data == b"jpg"
-    assert client.post("/channels/space/source-test/save", data={"source": ["bogus"]}).status_code == 400
-    r = client.post("/channels/space/source-test/save", data={"source": ["Library today", "NASA video", "bogus"]})
-    assert r.status_code == 302
-    assert load_channel("space", cfg).collector_sources == ["Library today", "NASA video"]
-    assert b"Your saved choice" in client.get("/channels/space/source-test").data
-    assert b"Open source test" in client.get("/channels/space").data
 
 
-def test_tick_without_a_test_and_copy_sibling_pick(client, settings, cfg):
-    """Every archive the collector can search is tickable before any source test, and a channel
-    without its own pick copies the saved pick of a channel with the same niche."""
-    from shorts.collector import COLUMNS
-    ch = load_channel("space", cfg)
-    assert sourcetest.choices(ch) == [sourcetest.LIBRARY] + list(COLUMNS)
-    from meta.collector import sweep
-    every = [n for n, _, k in sweep.sources_for({})]
-    page = client.get("/channels/space/source-test").data
-    for col in COLUMNS:
-        assert col == "Pixabay (B-roll)" or col.encode() in page  # Pixabay: no key in tests
-    for col in ("Internet Archive", "Prelinger", "NASA SVS"):  # same list as after a test
-        assert col in every and col.encode() in page
-    r = client.post("/channels/space/source-test/save", data={"source": ["Commons video (name)", "NASA video"]})
-    assert r.status_code == 302
-    assert load_channel("space", cfg).collector_sources == ["Commons video (name)", "NASA video"]
-    # a second space channel without ticks borrows the first one's pick
-    text = (cfg / "channels" / "space.toml").read_text(encoding="utf-8")
-    text = "\n".join(x for x in text.splitlines() if not x.startswith("collector_sources"))
-    (cfg / "channels" / "spacetwo.toml").write_text(text.replace('id = "space"', 'id = "spacetwo"', 1), encoding="utf-8")
-    two = load_channel("spacetwo", cfg)
-    assert not two.collector_sources
-    assert sourcetest.picked(two, cfg) == ["Commons video (name)", "NASA video"]
-    assert sourcetest.picked(two) != ["Commons video (name)", "NASA video"]  # no config dir: research default
-    assert b"saved choice of" in client.get("/channels/spacetwo/source-test").data

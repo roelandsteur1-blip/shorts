@@ -400,3 +400,15 @@ name = "tclipsexamples"
 [[job]]
 id = "2026-11-13-tclipsexamples-2"
 name = "tclipsexamples"
+
+# Roeland 2026-11-14: everything to transcript-first. Pause every classic channel (one line per channel
+# file, undo by removing it; YouTube keeps what is scheduled) and report disk use. Deletes nothing.
+[[job]]
+id = "2026-11-14-classicoff-1"
+name = "classicoff"
+
+# Roeland 2026-11-14 asked for the dashboard to be set up for the new maker: put the transcript-first
+# dashboard live (~/shorts to main, restart shorts-dashboard). Runner jobs run from ~/meta-run, untouched.
+[[job]]
+id = "2026-11-14-update-1"
+name = "update"

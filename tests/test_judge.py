@@ -189,29 +189,6 @@ def test_judgetest_metrics_and_pairs(tmp_path, monkeypatch):
     assert "Footage judge test" in (tmp_path / "out" / "report.md").read_text()
 
 
-def test_judge_page(tmp_path, monkeypatch):
-    from shorts.web import footage_review as fr
-    monkeypatch.setattr(fr, "OUT", tmp_path)
-    (tmp_path / "pieces" / "clips").mkdir(parents=True)
-    for n in ("space-saturn-A.mp4", "space-saturn-B.mp4"):
-        (tmp_path / "pieces" / "clips" / n).write_bytes(b"x")
-    (tmp_path / "judgetest").mkdir()
-    (tmp_path / "judgetest" / "made.json").write_text(json.dumps({"pairs": [
-        {"key": "space/Saturn", "niche": "space", "name": "Saturn",
-         "files": [["A", "space-saturn-A.mp4"], ["B", "space-saturn-B.mp4"]],
-         "versions": {"A": "today", "B": "new"}, "new_interest": 3.9, "new_why": "rings visible"}]}))
-    from flask import Flask
-    app = Flask(__name__, template_folder=str(__import__("pathlib").Path(fr.__file__).parent.parent / "templates"))
-    app.register_blueprint(fr.bp)
-    c = app.test_client()
-    r = c.get("/bench/footage/judge/0")
-    assert r.status_code == 200 and b"space-saturn-B.mp4" in r.data
-    assert b"New filter" in r.data and b"Today's filter" in r.data and b"rings visible" in r.data
-    assert c.post("/bench/footage/judge/0", data={"best": "B", "boring": ["A", "Q"]}).status_code == 302
-    assert c.post("/bench/footage/judge/0", data={"best": "Q"}).status_code == 400
-    m = json.loads((tmp_path / "marks" / "footage.json").read_text())
-    assert m["judge"]["space/Saturn"] == {"best": "B", "boring": ["A"], "wrong": [], "note": ""}
-    assert c.get("/bench/footage/judge/1").status_code == 302
 
 
 def test_video_before_photo_and_old_first():

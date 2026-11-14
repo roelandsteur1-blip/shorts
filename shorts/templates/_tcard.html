@@ -1,0 +1,9 @@
+<div class="card tshort">
+{% if s.video %}<video src="/video/{{ s.name }}.mp4" preload="none" controls playsinline poster=""></video>{% else %}<p class="muted">Video no longer on the server.</p>{% endif %}
+<p style="margin:10px 0 4px"><a href="/shorts/{{ s.name }}"><b>{{ s.title }}</b></a></p>
+<p style="margin:0" class="muted">{{ s.kind_label }}{% if s.year %} · {{ s.year }}{% endif %}{% if s.secs %} · {{ s.secs|round(1) }} s{% endif %} · <code>{{ s.name }}</code></p>
+<p style="margin:6px 0 0">{% if s.state == 'live' %}<span class="pill ok">live</span>{% elif s.state == 'scheduled' %}<span class="pill">scheduled {{ s.row.publish_at[:16].replace('T', ' ') }} UTC</span>{% elif s.state == 'planned' %}<span class="pill warn">in upload plan</span>{% elif s.state == 'failed' %}<span class="pill bad">upload failed</span>{% elif s.state == 'example' %}<span class="pill">example</span>{% else %}<span class="pill">made</span>{% endif %}
+{% if s.row and s.row.youtube_id %}<a class="pill" href="https://youtu.be/{{ s.row.youtube_id }}" target="_blank" rel="noopener">YouTube</a>{% endif %}
+{% if s.row and s.row.views is not none %}<span class="pill">{{ s.row.views }} views</span>{% endif %}
+{% if s.row and s.row.avg_view_pct %}<span class="pill">{{ s.row.avg_view_pct|round|int }}% viewed</span>{% endif %}</p>
+</div>

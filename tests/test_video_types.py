@@ -6,7 +6,6 @@ import pytest
 
 from shorts import channels as chans, metatype, pipeline, render
 from shorts.config import load_channel
-from shorts.web import create_app
 
 
 @pytest.mark.parametrize("cid,niche", [
@@ -99,10 +98,6 @@ def test_old_channel_files_get_classic(settings, tmp_path):
     assert chans.add_video_types(s) == []
 
 
-def test_channel_page_has_video_type(settings):
-    client = create_app(settings, start_runner=False).test_client()
-    page = client.get("/channels/space").data
-    assert b"Video type" in page and b"Quiz:" in page and b"Automatic: Space" in page
 
 
 def test_seed_channels_once(settings, tmp_path):

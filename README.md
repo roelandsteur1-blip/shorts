@@ -40,14 +40,15 @@ Op de server, in `~/shorts`: `.venv/bin/python -m shorts <commando>`. Bijna alle
 
 Het dashboard draait als dienst op de server en luistert alleen op 127.0.0.1; via Tailscale (`tailscale serve`) open je het vanaf je eigen apparaten. Er staat niets open naar het internet.
 
-- **Home**: per kanaal een kaart met Shorts om te reviewen, goedgekeurd, ingepland voor de komende 7 dagen, aantal ongebruikte video's en de laatste taak. Knoppen *Make Shorts*, *Review*, *Schedule*.
-- **Make**: kies kanaal, aantal en format en start. Het werk draait op de achtergrond als `python -m shorts --channel <id> make -n N`, met de huidige stap (download / script / feitencheck / render), "3 van 10", de laatste logregels en een Stop-knop. Er draait één zware taak tegelijk; de rest wacht in de rij. Reviewen kan intussen gewoon.
-- **Review**: dezelfde reviewpagina als eerst, met een kanaalfilter. Toetsen: <kbd>A</kbd> goedkeuren, <kbd>R</kbd> afwijzen (met de gekozen reden), <kbd>N</kbd> volgende, <kbd>E</kbd> tekst bewerken, spatie pauze; de volgende Short laadt al op de achtergrond. Een fout woord? Pas de tekst van een blok aan en klik *Save text and re-render*: de Short wordt opnieuw gerenderd met hetzelfde beeld (de feitencheck draait niet opnieuw).
-- **Schedule**: per kanaal de goedgekeurde Shorts met de tijd waarop ze zouden verschijnen, de knop *Schedule approved now* (uploadt ze privé met een publicatietijd), wat er per dag ingepland staat en wat al online is. Bovenaan het aantal uploads vandaag van de gedeelde limiet (`upload_quota` in `config/settings.toml`, standaard 100; reset om middernacht Californische tijd). `upload` stopt vanzelf bij die limiet.
-- **Stats**: views, engaged views (het dichtst bij "bekeken vs weggeswipet") en kijkpercentage per Short, per kanaal en per format. *Fetch stats* haalt nieuwe cijfers op.
-- **Library**: per kanaal welke video's het gebruikt (Claude sorteert elke video tegen de niche van elk kanaal; een verkeerde verbeter je met één klik), en per categorie het aantal bruikbare scènes. Categorieën bepalen alleen waar nieuw beeld gezocht wordt.
-- **Sources**: elke bron met aan/uit, licentie, gedownload en afgewezen (met de redenen), en een proefzoektocht.
-- **Jobs**: alle taken met hun log. Is het dashboard midden in een taak herstart, dan staat die op *interrupted*: een `make` krijgt de knop *Finish* (draait `finish`), andere taken *Run again*.
+Sinds 14 november 2026 is het dashboard alleen nog voor de **transcript-first Shorts-maker** (`meta/tclips.py`, `shorts/web/tfirst.py`). Het leest wat de maker en de job-runner op de server achterlaten (`~/meta-out/tclips`, `~/meta-out/transcripts`, `~/meta-out/runner-done.json`, `meta/jobs.toml`) en de rijen met `format_id = 'tclips'` in de database:
+
+- **Overview**: live, ingepland, in het uploadplan en gemaakt-maar-niet-gebruikt, de volgende Shorts op YouTube, de laatst gepubliceerde met views, en welke server-jobs draaien of wachten.
+- **Shorts**: elke Short met video, filter op status en soort bron; per Short hook, context, payoff, bron, rechten en YouTube-cijfers.
+- **Schedule**: de transcript-first Shorts op historybuffed met publicatietijd en status.
+- **Sources**: de lange bronnen die de maker koos (met transcript ja/nee en aantal Shorts) en de met de hand gecheckte films uit `config/clip-titles.toml`.
+- **Jobs**: de jobs van de runner uit `meta/jobs.toml` met hun status.
+
+De pagina's van de klassieke pipeline (Home, Make, Review, Library, Music, Voices, Stats, bench, footage-review) staan in `archive/classic-dashboard/`, met hun tests. De klassieke kanalen zijn gepauzeerd (runner-job `classicoff`); wat ze al op YouTube hadden ingepland verschijnt gewoon.
 
 Logbestanden van taken staan in `~/shorts-data/logs`.
 
