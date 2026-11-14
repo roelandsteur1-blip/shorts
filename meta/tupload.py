@@ -158,14 +158,38 @@ def upload_channel(cid: str, conn=None, settings=None, now: datetime | None = No
     return out
 
 
+def connected(settings, cid: str) -> bool:
+    """A confirmed YouTube login: the channel file has youtube_channel_id and the token exists."""
+    from shorts import upload as up
+    from shorts.config import load_channel
+    try:
+        ch = load_channel(cid, settings.config_dir)
+    except Exception:  # noqa: BLE001 - no channel file yet: never connected
+        return False
+    return bool(ch.youtube_channel_id) and up.token_path(settings, cid).exists()
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--channel")
+    ap.add_argument("--enable", action="store_true",
+                    help="turn the switch on (1 a day, best first) for every connected channel, then upload")
     a = ap.parse_args(argv)
     from .common import open_library
     from .tclips import load_tchannels
     settings, conn, _llm = open_library()
     ids = [a.channel] if a.channel else [c["id"] for c in load_tchannels()]
+    if a.enable:
+        for cid in ids:
+            if connected(settings, cid):
+                cfg = load_cfg(OUT, cid)
+                if not cfg["on"]:
+                    cfg.update(on=True, mode="auto", per_day=1)
+                    save_cfg(OUT, cid, cfg)
+                print(f"[upload] {cid}: connected, upload on ({cfg['per_day']} a day, {cfg['mode']}), "
+                      f"{len(queue(OUT, cid, done_paths(conn, cid), cfg))} Shorts left to upload", flush=True)
+            else:
+                print(f"[upload] {cid}: not connected to YouTube, left off", flush=True)
     for cid in ids:
         try:
             upload_channel(cid, conn, settings)

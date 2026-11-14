@@ -90,6 +90,8 @@ ALLOWLIST = {
     "tclipsarchiveplan": ("meta.tclips", ["archiveplan"], None),
     # read-only: state + logs of the dashboard Make jobs, processes, transcript cache (why making is slow)
     "tchanneljobs": ("meta.tchanneljobs", [], None),
+    # Roeland 2026-11-14 "upload on the connected channels": switch on (1 a day, best first) + first upload round
+    "tuploadon": ("meta.tupload", ["--enable"], None),
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results

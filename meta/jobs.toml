@@ -482,3 +482,8 @@ name = "update"
 [[job]]
 id = "2026-11-14-update-8"
 name = "update"
+
+# Roeland 2026-11-14 "upload on the connected channels": switch on for every connected channel, then upload.
+[[job]]
+id = "2026-11-14-tuploadon-1"
+name = "tuploadon"
