@@ -88,6 +88,8 @@ ALLOWLIST = {
     "tclipsarchive": ("meta.tclips", ["archive"], None),
     # Roeland 2026-11-14 "all, also what is on YouTube": upload plan away, tclips rows rejected (he deletes in Studio)
     "tclipsarchiveplan": ("meta.tclips", ["archiveplan"], None),
+    # read-only: state + logs of the dashboard Make jobs, processes, transcript cache (why making is slow)
+    "tchanneljobs": ("meta.tchanneljobs", [], None),
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
