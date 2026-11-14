@@ -254,3 +254,21 @@ def test_archive_moves_test_shorts_but_keeps_the_upload_plan(tmp_path, monkeypat
     assert (tmp_path / "upload").is_dir() and (tmp_path / "upload-plan.json").exists() and (tmp_path / "channels").is_dir()
     assert tclips.used_lines() == {"s1": [(3, 5)]}  # moved Shorts still count as used lines
     assert tclips.archive_current() is None
+
+
+def test_archive_plan_stops_uploads_and_rejects_rows(tmp_path, monkeypatch, conn, settings):
+    from meta import tclips
+    import meta.common
+    monkeypatch.setattr(tclips, "OUT", tmp_path)
+    monkeypatch.setattr(tclips, "PLAN", tmp_path / "upload-plan.json")
+    monkeypatch.setattr(meta.common, "open_library", lambda: (settings, conn, None))
+    (tmp_path / "upload").mkdir()
+    (tmp_path / "upload-plan.json").write_text(json.dumps([{"short": "a", "source": "s", "sentences": [1, 2]}]))
+    conn.execute("INSERT INTO shorts (channel, format_id, title, status) VALUES ('historybuffed', 'tclips', 'x', 'scheduled')")
+    conn.execute("INSERT INTO shorts (channel, format_id, title, status) VALUES ('space', 'classic', 'y', 'scheduled')")
+    conn.commit()
+    dest = tclips.archive_plan()
+    assert (dest / "upload").is_dir() and not (tmp_path / "upload-plan.json").exists()
+    rows = dict(conn.execute("SELECT format_id, status FROM shorts").fetchall())
+    assert rows == {"tclips": "rejected", "classic": "scheduled"}
+    assert tclips.used_lines() == {"s": [(1, 2)]}

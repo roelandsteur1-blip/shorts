@@ -1336,7 +1336,8 @@ year, no emoji, no film name. The on-screen hook keeps the ragebait tone."""
 def used_lines() -> dict[str, list[tuple[int, int]]]:
     """Sentence ranges per source that earlier Shorts used (made.json and the upload plan)."""
     rows = []
-    for f in (OUT / "made.json", PLAN, *sorted(OUT.glob("old/*/made.json")), *sorted(OUT.glob("old/*/examples.json"))):
+    for f in (OUT / "made.json", PLAN, *sorted(OUT.glob("old/*/made.json")), *sorted(OUT.glob("old/*/examples.json")),
+              *sorted(OUT.glob("old/*/upload-plan.json"))):
         if f.exists():
             rows += json.loads(f.read_text(encoding="utf-8"))
     out: dict[str, list[tuple[int, int]]] = {}
@@ -1409,6 +1410,31 @@ def examples() -> list[dict]:
 # ---------- archive the test Shorts (Roeland 2026-11-14: "remove all current shorts") ----------
 
 ARCHIVE_ITEMS = ("made.json", "examples.json", "examples", "compare", "compare.json", "looks", "share")
+
+
+PLAN_ITEMS = ("upload-plan.json", "upload-done.json", "upload")
+
+
+def archive_plan() -> Path | None:
+    """Roeland 2026-11-14 (all 20 historybuffed Shorts go, he deletes the scheduled ones in YouTube
+    Studio): move the upload plan, its videos and upload-done.json to OUT/old/<time>/ so nothing more
+    is uploaded, and mark the transcript-first rows in the live database rejected."""
+    from .common import open_library
+    _settings, conn, _llm = open_library()
+    n = conn.execute("""UPDATE shorts SET status='rejected', reject_reason='removed by Roeland 2026-11-14'
+                         WHERE format_id=? AND status IN ('scheduled', 'uploaded', 'rendered', 'failed')""",
+                     (FORMAT_ID,)).rowcount
+    conn.commit()
+    log(f"[archive] {n} transcript-first rows in the database set to rejected")
+    items = [OUT / n for n in PLAN_ITEMS if (OUT / n).exists()]
+    if not items:
+        return None
+    dest = OUT / "old" / (datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-plan")
+    dest.mkdir(parents=True, exist_ok=True)
+    for p in items:
+        shutil.move(str(p), dest / p.name)
+    log(f"[archive] moved {', '.join(p.name for p in items)} to {dest}")
+    return dest
 
 
 def archive_current() -> Path | None:
@@ -1812,7 +1838,7 @@ def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "examples", "batch", "upload", "clear", "clearnow", "uploadall", "channel", "archive"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "examples", "batch", "upload", "clear", "clearnow", "uploadall", "channel", "archive", "archiveplan"])
     ap.add_argument("--channel", help="channel id from config/tchannels.toml (step channel)")
     ap.add_argument("-n", type=int, default=1, help="Shorts to make (step channel, 1-10)")
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
@@ -1831,6 +1857,9 @@ def main(argv=None) -> None:
         return
     if a.step == "examples":
         examples()
+        return
+    if a.step == "archiveplan":
+        archive_plan()
         return
     if a.step == "archive":
         archive_current()
