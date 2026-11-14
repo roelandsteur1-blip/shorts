@@ -457,3 +457,8 @@ name = "update"
 [[job]]
 id = "2026-11-14-tchanneljobs-1"
 name = "tchanneljobs"
+
+# Channels page reloads itself while a make runs and shows the makes waiting in line. Put it live.
+[[job]]
+id = "2026-11-14-update-5"
+name = "update"
