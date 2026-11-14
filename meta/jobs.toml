@@ -430,3 +430,14 @@ name = "update"
 id = "2026-11-14-tchannelweird-1"
 name = "tchannelweird"
 n = 1
+
+# Roeland 2026-11-14 "remove all current shorts": move every test/example Short to ~/meta-out/tclips/old/<time>
+# (a move, undo by moving back). The historybuffed upload plan and its 20 videos stay.
+[[job]]
+id = "2026-11-14-tclipsarchive-1"
+name = "tclipsarchive"
+
+# Put the sortable Shorts page live.
+[[job]]
+id = "2026-11-14-update-3"
+name = "update"

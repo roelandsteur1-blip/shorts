@@ -220,3 +220,37 @@ def test_tclips_channel_step_makes_n_shorts_from_the_channel_kinds(tmp_path, mon
     assert all(a[1] == "Yesterday's Future" and a[2] for a in asked)
     saved = json.loads((tmp_path / "channels" / "yesterdaysfuture" / "made.json").read_text())
     assert len(saved) == 4 and all(m["channel"] == "yesterdaysfuture" and m["short"].startswith("yesterdaysfuture-") for m in saved)
+
+
+def test_shorts_page_groups_and_sorts_by_channel(client, out):
+    base = out[0]
+    d = base / "channels" / "spaceracefiles"
+    d.mkdir(parents=True)
+    (d / "made.json").write_text(json.dumps([{"short": "spaceracefiles-11141300-1-nasa-1a", "channel": "spaceracefiles",
+                                              "kind": "nasa", "hook": "Astronaut joke"}]))
+    html = client.get("/shorts").get_data(as_text=True)
+    # grouped in the order of config/tchannels.toml, then historybuffed, then the old tests
+    assert html.index("<h2>Space Race Files") < html.index("<h2>historybuffed") < html.index("<h2>Tests and examples")
+    assert "Doctors Said Never Fly" in html[html.index("<h2>historybuffed"):html.index("<h2>Tests and examples")]
+    only = client.get("/shorts?channel=spaceracefiles").get_data(as_text=True)
+    assert "Astronaut joke" in only and "Doctors Said Never Fly" not in only
+    flat = client.get("/shorts?sort=publish").get_data(as_text=True)
+    assert "<h2>" not in flat.split("<main>")[1].split("</main>")[0].replace("<h1>", "")
+
+
+def test_archive_moves_test_shorts_but_keeps_the_upload_plan(tmp_path, monkeypatch):
+    from meta import tclips
+    monkeypatch.setattr(tclips, "OUT", tmp_path)
+    (tmp_path / "made.json").write_text(json.dumps([{"short": "nasa-1a", "source": "s1", "sentences": [3, 5]}]))
+    (tmp_path / "nasa-1a.mp4").write_bytes(b"v")
+    (tmp_path / "examples").mkdir()
+    (tmp_path / "upload").mkdir()
+    (tmp_path / "upload-plan.json").write_text("[]")
+    (tmp_path / "channels").mkdir()
+    monkeypatch.setattr(tclips, "PLAN", tmp_path / "upload-plan.json")
+    dest = tclips.archive_current()
+    assert not (tmp_path / "made.json").exists() and not (tmp_path / "nasa-1a.mp4").exists()
+    assert (dest / "nasa-1a.mp4").exists() and (dest / "examples").is_dir()
+    assert (tmp_path / "upload").is_dir() and (tmp_path / "upload-plan.json").exists() and (tmp_path / "channels").is_dir()
+    assert tclips.used_lines() == {"s1": [(3, 5)]}  # moved Shorts still count as used lines
+    assert tclips.archive_current() is None

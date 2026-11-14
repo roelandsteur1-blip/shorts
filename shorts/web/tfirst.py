@@ -116,7 +116,8 @@ def all_shorts() -> list[dict]:
                 "source": m.get("title_source") or m.get("source") or "", "link": m.get("link") or "",
                 "year": m.get("year"), "at": m.get("at") or "", "rights": m.get("rights") or "",
                 "score": m.get("score"), "secs": next(iter((m.get("lengths") or {}).values()), m.get("secs")),
-                "in_plan": name in plan_paths, "row": row, "video": bool(video), "channel": m.get("channel", ""),
+                "in_plan": name in plan_paths, "row": row, "video": bool(video),
+                "channel": m.get("channel") or (CHANNEL if name in plan_paths or row else ""),
             }
     return list(seen.values())
 
@@ -348,6 +349,15 @@ STATES = {"all": "All", "live": "Live", "scheduled": "Scheduled", "planned": "In
           "made": "Made, not used", "example": "Examples", "failed": "Failed"}
 
 
+SORTS = {"channel": "Channel", "newest": "Newest", "publish": "Publish time"}
+
+
+def channel_names() -> dict[str, str]:
+    names = {c["id"]: c.get("name") or c["id"] for c in tchannels()}
+    names.setdefault(CHANNEL, CHANNEL)
+    return names
+
+
 @bp.get("/shorts")
 def shorts_page():
     now = now_iso()
@@ -358,14 +368,31 @@ def shorts_page():
     pick = pick if pick in STATES else "all"
     kind = request.args.get("kind", "")
     chan = request.args.get("channel", "")
+    sort = request.args.get("sort", "channel")
+    sort = sort if sort in SORTS else "channel"
+    names = channel_names()
     counts = {k: (len(shorts) if k == "all" else sum(1 for s in shorts if s["state"] == k)) for k in STATES}
     shown = [s for s in shorts if (pick == "all" or s["state"] == pick) and (not kind or s["kind"] == kind)
              and (not chan or s["channel"] == chan)]
-    shown.sort(key=lambda s: ((s["row"] or {}).get("publish_at") or "9", s["name"]))
+    order = list(names)
+    pub = lambda s: (s["row"] or {}).get("publish_at") or "9"  # noqa: E731
+    if sort == "publish":
+        shown.sort(key=lambda s: (pub(s), s["name"]))
+    else:
+        shown.sort(key=lambda s: s["name"], reverse=True)  # names carry the make time: newest first
+        if sort == "channel":
+            shown.sort(key=lambda s: order.index(s["channel"]) if s["channel"] in order else len(order))
+    groups: list[tuple[str, list[dict]]] = []
+    for s in shown:
+        label = names.get(s["channel"], "Tests and examples") if sort == "channel" else ""
+        if not groups or groups[-1][0] != label:
+            groups.append((label, []))
+        groups[-1][1].append(s)
+    per_chan = {c: sum(1 for s in shorts if s["channel"] == c) for c in names}
     kinds = sorted({s["kind"] for s in shorts if s["kind"]})
-    return render_template("t_shorts.html", shorts=shown, states=STATES, counts=counts, pick=pick, kind=kind,
-                           kinds=kinds, labels=KIND_LABELS, chan=chan,
-                           chans=[c for c in tchannels() if any(x["channel"] == c["id"] for x in shorts)])
+    return render_template("t_shorts.html", groups=groups, total=len(shown), states=STATES, counts=counts, pick=pick,
+                           kind=kind, kinds=kinds, labels=KIND_LABELS, chan=chan, sort=sort, sorts=SORTS,
+                           chans=[(c, names[c], n) for c, n in per_chan.items() if n])
 
 
 @bp.get("/shorts/<name>")

@@ -84,6 +84,8 @@ ALLOWLIST = {
     "classicpurge": ("meta.classicpurge", [], None),
     # transcript-first channels: a trial make for Weird Newsreels (same step as the dashboard's Make button)
     "tchannelweird": ("meta.tclips", ["channel", "--channel", "weirdnewsreels", "-n", "{n}"], (1, 2)),
+    # Roeland 2026-11-14 "remove all current shorts": test/example Shorts to ~/meta-out/tclips/old/<time> (a move)
+    "tclipsarchive": ("meta.tclips", ["archive"], None),
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
