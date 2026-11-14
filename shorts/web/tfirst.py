@@ -196,6 +196,13 @@ def dash_jobs(base: Path | None = None) -> list[dict]:
         if meta.get("kind") == "connect":
             meta["full"] = "\n".join(lines[-60:])
         meta["ready"] = sum("[channel] READY" in ln for ln in lines)
+        exit_file = folder / f"{meta['id']}.exit"
+        meta["ended_at"] = (datetime.fromtimestamp(exit_file.stat().st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                            if exit_file.exists() else None)
+        meta["silent"] = sum("only 0 sentences, skipped" in ln for ln in lines)
+        meta["limit"] = any("usage limit" in ln.lower() for ln in lines)
+        meta["whisper_s"] = sum(float(m.group(1)) for ln in lines
+                                if (m := re.search(r"whisper, \d+ sentences, \d+ words in ([0-9.]+) s", ln)))
         out.append(meta)
     out.sort(key=lambda j: j.get("seq") or 0, reverse=True)
     return out
@@ -211,6 +218,8 @@ def queue_job(base: Path, channel: str, n: int, **extra) -> dict:
 
 
 def command_for(meta: dict) -> list[str]:
+    if meta.get("kind") == "stats":
+        return [sys.executable, "-m", "meta.tstats"]
     if meta.get("kind") == "connect":
         return [sys.executable, "-m", "shorts", "--channel", meta["channel"], "connect",
                 *(["--fresh"] if meta.get("fresh") else [])]
@@ -234,10 +243,15 @@ def launch(base: Path, meta: dict) -> dict:
     return clean
 
 
+def is_make(job: dict) -> bool:
+    """A Make job (connect and stats jobs run beside the makes, they don't queue)."""
+    return not job.get("kind")
+
+
 def start_next(base: Path) -> dict | None:
     """Start the oldest queued make when no make is running: one make at a time. Connect jobs don't
     queue (they only wait for a login) and don't count."""
-    jobs = [j for j in dash_jobs(base) if j.get("kind") != "connect"]
+    jobs = [j for j in dash_jobs(base) if is_make(j)]
     if any(j["state"] == "running" for j in jobs):
         return None
     queued = [j for j in jobs if j["state"] == "queued"]
@@ -254,16 +268,42 @@ def stop_pid(pid: int | None) -> None:
 
 
 def start_queue_thread(app) -> None:
-    """Every 20 s: start the next queued make when the last one has ended."""
+    """Every 20 s: start the next queued make when the last one has ended; every STATS_EVERY
+    seconds fetch the YouTube numbers of the connected channels."""
     def loop():
         while True:
             try:
                 with app.app_context():
                     start_next(out_dir())
+                    if stats_due(out_dir()):
+                        start_stats(out_dir())
             except Exception:  # noqa: BLE001 - keep the loop alive
                 pass
             time.sleep(20)
     threading.Thread(target=loop, name="tclips-queue", daemon=True).start()
+
+
+STATS_EVERY = 6 * 3600
+
+
+def any_connected() -> bool:
+    from ..upload import token_path
+    st = settings()
+    return any(token_path(st, c["id"]).exists() for c in tchannels())
+
+
+def start_stats(base: Path) -> dict | None:
+    """Fetch YouTube numbers now (meta/tstats.py), unless a fetch is already running."""
+    if any(j.get("kind") == "stats" and j["state"] in ("running", "queued") for j in dash_jobs(base)):
+        return None
+    return launch(base, queue_job(base, "stats", 0, kind="stats"))
+
+
+def stats_due(base: Path) -> bool:
+    last = next((j for j in dash_jobs(base) if j.get("kind") == "stats"), None)
+    if last and time.time() - (last.get("seq") or 0) / 1e9 < STATS_EVERY:
+        return False
+    return any_connected()
 
 
 def runner_jobs(limit: int | None = None) -> list[dict]:
@@ -444,11 +484,11 @@ def channels_page():
         for x in mine:
             x["state"] = state_of(x, now)
         c["shorts"] = sorted(mine, key=lambda x: x["name"], reverse=True)
-        c["jobs"] = [j for j in jobs if j["channel"] == c["id"] and j.get("kind") != "connect"][:3]
+        c["jobs"] = [j for j in jobs if j["channel"] == c["id"] and is_make(j)][:3]
         c["busy"] = any(j["state"] in ("running", "queued") for j in c["jobs"])
         c["yt"] = youtube_state(c["id"], jobs)
-    running = next((j for j in jobs if j["state"] == "running" and j.get("kind") != "connect"), None)
-    waiting = sorted((j for j in jobs if j["state"] == "queued" and j.get("kind") != "connect"), key=lambda j: j.get("seq") or 0)
+    running = next((j for j in jobs if j["state"] == "running" and is_make(j)), None)
+    waiting = sorted((j for j in jobs if j["state"] == "queued" and is_make(j)), key=lambda j: j.get("seq") or 0)
     return render_template("t_channels.html", chans=chans, running=running, waiting=waiting, jobs=jobs[:10], max_n=MAX_N,
                            labels=KIND_LABELS, msg=request.args.get("msg"))
 
@@ -577,3 +617,82 @@ def sources_page():
 @bp.get("/jobs")
 def jobs_page():
     return render_template("t_jobs.html", jobs=runner_jobs(60))
+
+
+# ---------- Stats (Roeland 2026-11-14 "add a stats page") ----------
+
+def minutes_between(a: str | None, b: str | None) -> float | None:
+    try:
+        t0 = datetime.fromisoformat(a.replace("Z", "+00:00"))
+        t1 = datetime.fromisoformat(b.replace("Z", "+00:00")) if b else datetime.now(timezone.utc)
+    except (AttributeError, ValueError):
+        return None
+    return max(0.0, (t1 - t0).total_seconds() / 60)
+
+
+def youtube_numbers(ids: list[str]) -> tuple[dict, list[dict], dict]:
+    """Per channel totals of its live Shorts, the live Shorts themselves (most views first) and the
+    last fetch per channel, from what meta/tstats.py stored."""
+    marks = ",".join("?" * len(ids))
+    try:
+        c = conn()
+        totals = {r["channel"]: dict(r) for r in c.execute(
+            f"""SELECT channel, COUNT(*) AS live, SUM(views) AS views, SUM(likes) AS likes, SUM(comments) AS comments,
+                       SUM(engaged_views) AS engaged, AVG(avg_view_pct) AS pct, SUM(subs_gained) AS subs
+                  FROM yt_videos WHERE channel IN ({marks}) AND state = 'live' AND is_short AND NOT hidden
+                 GROUP BY channel""", ids)}
+        videos = [dict(r) for r in c.execute(
+            f"""SELECT youtube_id, channel, title, publish_at, duration_s, views, likes, comments, engaged_views,
+                       avg_view_pct, avg_view_dur, shares, subs_gained
+                  FROM yt_videos WHERE channel IN ({marks}) AND state = 'live' AND is_short AND NOT hidden
+                 ORDER BY views DESC NULLS LAST LIMIT 100""", ids)]
+        sync = {r["channel"]: dict(r) for r in c.execute(f"SELECT * FROM yt_sync WHERE channel IN ({marks})", ids)}
+    except Exception:  # noqa: BLE001 - an empty or older database: production stats still show
+        return {}, [], {}
+    return totals, videos, sync
+
+
+@bp.get("/stats")
+def stats_page():
+    chans = tchannels()
+    ids = [c["id"] for c in chans]
+    names = {c["id"]: c.get("name") or c["id"] for c in chans}
+    shorts = [s for s in all_shorts() if s["channel"] in names]
+    jobs = dash_jobs()
+    makes = [j for j in jobs if is_make(j) and j["state"] != "queued"]
+    for j in makes:
+        j["minutes"] = minutes_between(j.get("started_at"), j.get("ended_at") if j["state"] != "running" else None)
+        j["per_short"] = j["minutes"] / j["ready"] if j["minutes"] is not None and j["ready"] else None
+        j["name"] = names.get(j["channel"], j["channel"])
+    totals, videos, sync = youtube_numbers(ids) if ids else ({}, [], {})
+    from ..upload import token_path
+    st = settings()
+    rows = []
+    for c in chans:
+        mine = [s for s in shorts if s["channel"] == c["id"]]
+        mk = [j for j in makes if j["channel"] == c["id"]]
+        mins = sum(j["minutes"] or 0 for j in mk)
+        ready = sum(j["ready"] for j in mk)
+        secs = [s["secs"] for s in mine if isinstance(s.get("secs"), (int, float))]
+        rows.append({"id": c["id"], "name": names[c["id"]], "made": len(mine), "makes": len(mk),
+                     "per_short": mins / ready if ready else None, "avg_len": sum(secs) / len(secs) if secs else None,
+                     "silent": sum(j["silent"] for j in mk), "connected": token_path(st, c["id"]).exists(),
+                     "yt": totals.get(c["id"]), "sync": sync.get(c["id"])})
+    all_ready = sum(j["ready"] for j in makes)
+    all_mins = sum(j["minutes"] or 0 for j in makes)
+    summary = {"made": len(shorts), "makes": len(makes), "per_short": all_mins / all_ready if all_ready else None,
+               "whisper_min": sum(j["whisper_s"] for j in makes) / 60, "silent": sum(j["silent"] for j in makes),
+               "limit": sum(1 for j in makes if j["limit"]),
+               "live": sum((t or {}).get("live") or 0 for t in totals.values()),
+               "views": sum((t or {}).get("views") or 0 for t in totals.values())}
+    fetch = next((j for j in jobs if j.get("kind") == "stats"), None)
+    return render_template("t_stats.html", rows=rows, summary=summary, makes=makes[:25], videos=videos,
+                           names=names, fetch=fetch, connected=any(r["connected"] for r in rows),
+                           every_h=STATS_EVERY // 3600, msg=request.args.get("msg"))
+
+
+@bp.post("/stats/fetch")
+def stats_fetch():
+    started = start_stats(out_dir())
+    return redirect("/stats?msg=" + ("Fetching YouTube numbers now; reload in a minute." if started
+                                     else "A fetch is already running."))

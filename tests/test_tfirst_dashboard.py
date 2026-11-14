@@ -83,7 +83,7 @@ def test_schedule_sources_and_jobs_pages(client):
 
 
 def test_classic_pages_are_gone(client):
-    for path in ("/review", "/make", "/library", "/stats", "/music", "/voices", "/bench"):
+    for path in ("/review", "/make", "/library", "/music", "/voices", "/bench"):
         assert client.get(path).status_code == 404, path
 
 
@@ -323,3 +323,41 @@ def test_silent_sources_are_skipped_by_channels(tmp_path, monkeypatch):
     (tmp_path / "tx" / "a.json").write_text(json.dumps({"id": "silent-1930", "sentences": []}))
     (tmp_path / "tx" / "b.json").write_text(json.dumps({"id": "talky", "sentences": [{}] * 40}))
     assert tclips.all_used_sources() == {"silent-1930"}
+
+
+def test_stats_page_shows_make_times_and_youtube_numbers(client, out, conn, settings, monkeypatch):
+    from shorts.web import tfirst
+    base = out[0]
+    d = base / "channels" / "weirdnewsreels"
+    d.mkdir(parents=True)
+    (d / "made.json").write_text(json.dumps([{"short": f"weirdnewsreels-11141308-{i}-newsreel-1a", "channel": "weirdnewsreels",
+                                              "kind": "newsreel", "lengths": {"x.mp4": 20.0}} for i in (1, 2)]))
+    jobs = base / "dashjobs"
+    jobs.mkdir()
+    jid = "20261114-130835-weirdnewsreels"
+    (jobs / f"{jid}.json").write_text(json.dumps({"id": jid, "channel": "weirdnewsreels", "n": 2, "pid": 1, "seq": 1,
+                                                  "started_at": "2026-11-14T13:08:35Z"}))
+    (jobs / f"{jid}.log").write_text("[channel] READY 1 of 2: a\nx: whisper, 0 sentences, 0 words in 70.0 s\n"
+                                     "[newsreel] x: only 0 sentences, skipped\n[channel] READY 2 of 2: b\n")
+    (jobs / f"{jid}.exit").write_text("0\n")
+    import os
+    stamp = 1794662962  # 2026-11-14 13:29:22 UTC: 20.8 minutes after the start
+    os.utime(jobs / f"{jid}.exit", (stamp, stamp))
+    conn.execute("""INSERT INTO yt_videos (youtube_id, channel, title, state, is_short, views, likes, avg_view_pct)
+                    VALUES ('abc123', 'weirdnewsreels', 'Ski Race With Meatballs', 'live', 1, 12345, 67, 81.5)""")
+    conn.execute("INSERT INTO yt_videos (youtube_id, channel, title, state, is_short, views) VALUES ('zzz', 'space', 'Classic one', 'live', 1, 9)")
+    conn.commit()
+    html = client.get("/stats").get_data(as_text=True)
+    assert 'href="/stats"' in html and "Weird Newsreels" in html
+    assert "10.4 min" in html                    # 20.8 minutes for 2 Shorts
+    assert "12,345" in html and "Ski Race With Meatballs" in html and "82%" in html
+    assert "Classic one" not in html             # classic channels stay off
+    assert "silent sources skipped" in html and "not connected" in html
+    started = []
+    monkeypatch.setattr(tfirst, "launch", lambda b, meta: started.append(meta) or meta)
+    r = client.post("/stats/fetch")
+    assert r.status_code == 302 and started and started[0]["kind"] == "stats"
+    assert tfirst.command_for({"kind": "stats"})[-1] == "meta.tstats"
+    with client.application.app_context():
+        assert not tfirst.stats_due(base)        # nothing connected: no fetch every 6 hours
+        assert tfirst.start_next(base) is None   # the stats job never counts as a make

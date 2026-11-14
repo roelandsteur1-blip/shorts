@@ -467,3 +467,8 @@ name = "update"
 [[job]]
 id = "2026-11-14-tchanneljobs-2"
 name = "tchanneljobs"
+
+# Roeland 2026-11-14 "add a stats page": Stats page on the dashboard. Put it live.
+[[job]]
+id = "2026-11-14-update-6"
+name = "update"

@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% block title %}Stats{% endblock %}{% block head %}{% if fetch and fetch.state == 'running' %}<meta http-equiv="refresh" content="30">{% endif %}{% endblock %}{% block body %}
+<h1>Stats</h1>{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+{% macro num(v) %}{{ '{:,}'.format(v) if v is defined and v is not none else '–' }}{% endmacro %}
+{% macro mins(v) %}{{ '%.1f min'|format(v) if v is not none else '–' }}{% endmacro %}
+<div class="stats" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+<span class="stat"><b>{{ summary.made }}</b>Shorts made</span>
+<span class="stat"><b>{{ mins(summary.per_short) }}</b>per Short (make time)</span>
+<span class="stat"><b>{{ summary.makes }}</b>makes</span>
+<span class="stat"><b>{{ '%.0f'|format(summary.whisper_min) }} min</b>spent transcribing</span>
+<span class="stat"><b>{{ summary.silent }}</b>silent sources skipped</span>
+<span class="stat"><b>{{ summary.live }}</b>live on YouTube</span>
+<span class="stat"><b>{{ num(summary.views) }}</b>YouTube views</span>
+</div>
+{% if summary.limit %}<p class="warn">{{ summary.limit }} make{{ 's' if summary.limit > 1 }} hit the Claude usage limit; those made fewer Shorts.</p>{% endif %}
+
+<h2>Per channel</h2>
+<table class="stack labels"><tr><th>Channel</th><th>Made</th><th>Per Short</th><th>Avg length</th><th>YouTube</th><th>Live</th><th>Views</th><th>Likes</th><th>Engaged</th><th>Avg viewed</th><th>Subs</th></tr>
+{% for r in rows %}{% set y = r.yt or {} %}<tr><td><a href="/channels#{{ r.id }}"><b>{{ r.name }}</b></a></td>
+<td>{{ r.made }}</td><td>{{ mins(r.per_short) }}</td><td>{{ '%.0f s'|format(r.avg_len) if r.avg_len else '–' }}</td>
+<td>{% if not r.connected %}<span class="muted">not connected</span>{% elif r.sync and r.sync.error and (not r.sync.ok_at or r.sync.error_at > r.sync.ok_at) %}<span class="bad" title="{{ r.sync.error }}">fetch failed</span>{% elif r.sync and r.sync.ok_at %}<span class="ok">{{ r.sync.ok_at[:16] }} UTC</span>{% else %}<span class="muted">not fetched yet</span>{% endif %}</td>
+<td>{{ y.live or 0 }}</td><td>{{ num(y.views) }}</td><td>{{ num(y.likes) }}</td><td>{{ num(y.engaged) }}</td>
+<td>{{ '%.0f%%'|format(y.pct) if y.pct is not none and y.pct is defined else '–' }}</td><td>{{ num(y.subs) }}</td></tr>{% endfor %}</table>
+<form method="post" action="/stats/fetch" class="actions" style="margin-top:10px"><button class="primary" {{ 'disabled' if not connected }}>Fetch YouTube numbers now</button>
+<span class="muted">{% if not connected %}Connect a channel on the Channels page first.{% else %}Also fetched by itself every {{ every_h }} hours.{% endif %}
+{% if fetch %} Last fetch: <b>{{ fetch.state }}</b> {{ (fetch.started_at or '')[:16].replace('T', ' ') }} UTC.{% endif %}
+YouTube Analytics (engaged views, avg viewed, subs) lags 1-3 days.</span></form>
+{% if fetch and fetch.state != 'done' and fetch.tail %}<details><summary>Fetch log</summary><pre class="log">{{ fetch.tail }}</pre></details>{% endif %}
+
+<h2>Shorts on YouTube</h2>
+{% if videos %}<table class="stack labels"><tr><th>Short</th><th>Channel</th><th>Published</th><th>Views</th><th>Likes</th><th>Comments</th><th>Engaged</th><th>Avg viewed</th><th>Subs</th></tr>
+{% for v in videos %}<tr><td><a href="https://youtube.com/shorts/{{ v.youtube_id }}" target="_blank" rel="noopener">{{ v.title or v.youtube_id }}</a></td>
+<td>{{ names.get(v.channel, v.channel) }}</td><td>{{ (v.publish_at or '')[:10] }}</td><td>{{ num(v.views) }}</td><td>{{ num(v.likes) }}</td><td>{{ num(v.comments) }}</td>
+<td>{{ num(v.engaged_views) }}</td><td>{{ '%.0f%%'|format(v.avg_view_pct) if v.avg_view_pct is not none else '–' }}</td><td>{{ num(v.subs_gained) }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">No live Shorts on the connected channels yet.</p>{% endif %}
+
+<h2>Recent makes</h2>
+{% if makes %}<table class="stack labels"><tr><th>Channel</th><th>Started</th><th>State</th><th>Ready</th><th>Time</th><th>Per Short</th><th>Transcribing</th><th>Silent skipped</th></tr>
+{% for j in makes %}<tr><td>{{ j.name }}</td><td>{{ (j.started_at or '')[:16].replace('T', ' ') }} UTC</td>
+<td>{% if j.state == 'done' %}done{% elif j.state == 'running' %}<span class="warn">running</span>{% else %}<span class="bad">{{ j.state }}</span>{% endif %}{% if j.limit %} <span class="bad">Claude limit</span>{% endif %}</td>
+<td>{{ j.ready }} of {{ j.n }}</td><td>{{ mins(j.minutes) }}</td><td>{{ mins(j.per_short) }}</td><td>{{ mins(j.whisper_s / 60) }}</td><td>{{ j.silent }}</td></tr>{% endfor %}</table>
+{% else %}<p class="muted">No makes yet.</p>{% endif %}
+{% endblock %}
