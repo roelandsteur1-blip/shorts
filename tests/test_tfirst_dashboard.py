@@ -310,3 +310,14 @@ def test_connect_youtube_like_the_old_dashboard(client, settings, out, monkeypat
     client.post("/channels/spaceracefiles/confirm")
     assert load_channel("spaceracefiles", cfg).youtube_channel_id == "UCabc"
     assert "connected to Space Race Files" in client.get("/channels").get_data(as_text=True)
+
+
+def test_silent_sources_are_skipped_by_channels(tmp_path, monkeypatch):
+    from meta import tclips
+    monkeypatch.setattr(tclips, "OUT", tmp_path / "out")
+    monkeypatch.setattr(tclips, "CH_DIR", tmp_path / "out" / "channels")
+    monkeypatch.setattr(tclips.tx, "CACHE", tmp_path / "tx")
+    (tmp_path / "tx").mkdir()
+    (tmp_path / "tx" / "a.json").write_text(json.dumps({"id": "silent-1930", "sentences": []}))
+    (tmp_path / "tx" / "b.json").write_text(json.dumps({"id": "talky", "sentences": [{}] * 40}))
+    assert tclips.all_used_sources() == {"silent-1930"}
