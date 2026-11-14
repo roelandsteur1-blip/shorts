@@ -567,6 +567,45 @@ def connect_youtube(cid: str):
     return redirect(f"/channels?msg=Connect started for {c.get('name', cid)}: open the login link below.#{cid}")
 
 
+LOGIN_PORT = 8765
+
+
+def finish_login(pasted: str, port: int = LOGIN_PORT) -> str | None:
+    """Google sends the login back to http://localhost:8765/?state=...&code=... . Without the ssh
+    tunnel that page doesn't open on the laptop, but its address holds everything the waiting
+    Connect needs: pass it on to the login server on this machine. Returns an error, or None."""
+    from urllib.error import URLError
+    from urllib.parse import parse_qs, urlencode, urlsplit
+    from urllib.request import urlopen
+    parts = urlsplit(pasted.strip())
+    query = parse_qs(parts.query)
+    if parts.hostname not in ("localhost", "127.0.0.1") or "code" not in query or "state" not in query:
+        return "That is not the address Google sent you to (it starts with http://localhost:8765/?state=...)."
+    clean = urlencode({k: v[0] for k, v in query.items() if k in ("state", "code", "scope", "iss", "authuser", "prompt")})
+    try:
+        with urlopen(f"http://127.0.0.1:{port}/?{clean}", timeout=30) as r:
+            r.read()
+    except URLError as e:
+        return f"The Connect on the server is no longer waiting ({e.reason}): press Connect YouTube again."
+    except OSError as e:
+        return f"Could not pass the login on: {e}"
+    return None
+
+
+@bp.post("/channels/<cid>/login")
+def paste_login(cid: str):
+    if not any(c["id"] == cid for c in tchannels()):
+        abort(404)
+    err = finish_login(request.form.get("url", ""))
+    if err:
+        return redirect(f"/channels?msg={err}#{cid}")
+    for _ in range(20):  # the Connect saves which channel it is a moment later
+        if not any(j["channel"] == cid and j.get("kind") == "connect" and j["state"] == "running" for j in dash_jobs()):
+            break
+        time.sleep(0.5)
+    return redirect(f"/channels?msg=Logged in. Check the channel below and confirm it.#{cid}")
+
+
 @bp.post("/channels/<cid>/confirm")
 def confirm_youtube(cid: str):
     from .. import tomlw

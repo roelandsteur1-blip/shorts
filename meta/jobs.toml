@@ -472,3 +472,8 @@ name = "tchanneljobs"
 [[job]]
 id = "2026-11-14-update-6"
 name = "update"
+
+# Connect YouTube without the ssh tunnel: paste the localhost:8765 address on the Channels page. Put it live.
+[[job]]
+id = "2026-11-14-update-7"
+name = "update"
