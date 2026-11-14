@@ -452,3 +452,8 @@ name = "update"
 [[job]]
 id = "2026-11-14-update-4"
 name = "update"
+
+# Roeland 2026-11-14 "making for more than one hour and nothing is done": read-only look at the Make jobs.
+[[job]]
+id = "2026-11-14-tchanneljobs-1"
+name = "tchanneljobs"
