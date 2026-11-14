@@ -424,3 +424,9 @@ name = "classicpurge"
 [[job]]
 id = "2026-11-14-update-2"
 name = "update"
+
+# Trial of the new channel step on the server: 1 Short for Weird Newsreels (lands on the dashboard's Channels page).
+[[job]]
+id = "2026-11-14-tchannelweird-1"
+name = "tchannelweird"
+n = 1
