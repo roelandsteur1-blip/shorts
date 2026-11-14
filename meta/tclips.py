@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import tempfile
 import tomllib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import mean
@@ -49,6 +50,7 @@ SUB_EXT = (".srt", ".vtt")
 MIN_LEN, MAX_LEN, CAP = 15.0, 45.0, 58.0   # paper 7.2/8: 15-45 s, never over 60 s (Content ID)
 AIR = 0.3                                   # seconds of air before the first and after the last word
 KEEP_SIGNAL = 5                             # candidates that go on to the frame pass
+CUT_WORKERS = 3                             # candidate pieces cut at the same time
 LAYER = ("context", "verdict", "payoff_fact", "story_frame", "comparison", "commentary")
 BLOCK = ("killed", "kill", "dead", "death", "deaths", "died", "dying", "corpse", "corpses", "murder",
          "murdered", "suicide", "massacre", "executed", "execution", "lynched", "slaughter")
@@ -578,6 +580,13 @@ def signals(piece: str, offset: float, length: float) -> dict:
     return out
 
 
+def cut_piece(film: str, p0: float, secs: float, out: str) -> None:
+    """A local piece of the film (from p0, secs long, at most 720 high) that the render works from."""
+    from shorts import media
+    media.run(["-ss", f"{p0:.2f}", "-t", f"{secs:.2f}", "-i", film, "-vf", "scale=-2:min(720\\,ih)", "-c:v", "libx264",
+               "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "160k", out])
+
+
 def sheet(piece: str, length: float, n: int = 6) -> bytes:
     times = [0.5 + (length - 1.0) * i / (n - 1) for i in range(n)]
     return grid([(f"{t:.0f}s", frame(piece, t, 320)) for t in times], cols=n)
@@ -815,6 +824,33 @@ def subtitle_track(words: list[list], start: float, end: float, look: dict, tmp:
     return lst, blank.height
 
 
+PRESET = "fast"  # same picture as "medium" at crf 20 (SSIM/PSNR against a lossless render, 2026-11-13), ~10% faster
+
+
+def band_graph(piece: str, pieces: list[dict], crop: str | None, band_h: int, has_audio: bool,
+               inputs: list[str]) -> tuple[str, str, str, int]:
+    """The film band (W x band_h, 30 fps, stereo 48 kHz) cut to the timeline, as part of the render's
+    own filter graph: every kept stretch is one input of the piece (exact seek), then one concat.
+    Same filters as build_band, without its encode per stretch and the encode of the joined band.
+    Appends to inputs; returns (graph so far, video label, audio label, next input index)."""
+    vf = f"{crop + ',' if crop else ''}scale={W}:{band_h},setsar=1"
+    first = sum(1 for a in inputs if a == "-i")
+    fc, legs = "", ""
+    for k, p in enumerate(pieces):
+        n = p["t1"] - p["t0"]
+        i = first + k
+        inputs += ["-ss", f"{p['t0']:.2f}", "-t", f"{n:.2f}", "-i", piece]
+        fc += f"[{i}:v]{vf},fps=30,trim=duration={n:.2f}[bv{k}];"
+        if has_audio:
+            fc += (f"[{i}:a]aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,"
+                   f"atrim=duration={n:.2f}[ba{k}];")
+        else:
+            fc += f"anullsrc=r=48000:cl=stereo,atrim=duration={n:.2f}[ba{k}];"
+        legs += f"[bv{k}][ba{k}]"
+    fc += f"{legs}concat=n={len(pieces)}:v=1:a=1[band][banda];"
+    return fc, "[band]", "[banda]", first + len(pieces)
+
+
 def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = False, look: str | None = None,
            theme: str = THEME, fx: bool | None = None, focus: dict | None = None) -> float:
     """One Short from a local piece of the source (times in piece time). bare = the same cut with
@@ -846,15 +882,23 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         crop = black_bars(piece, start)
-        probe = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-                                "stream=width,height", "-of", "csv=p=0", piece], capture_output=True, text=True)
-        cw, ch = map(int, probe.stdout.strip().split(",")[:2])
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,width,height",
+                                "-of", "csv=p=0", piece], capture_output=True, text=True)
+        rows = [r.split(",") for r in probe.stdout.split()]
+        cw, ch = next(map(int, r[1:3]) for r in rows if r[0] == "video")
+        has_audio = any(r[0] == "audio" for r in rows)
         if crop:
             cw, ch = map(int, crop.split("=")[1].split(":")[:2])
         band_h = min(int(W * ch / cw), 900) // 2 * 2
         band_y = 640
-        band = build_band(piece, pieces, crop, band_h, True, tmp)
         th = THEMES[theme]
+        inputs = ["-f", "lavfi", "-t", f"{total:.2f}", "-i", f"color={th['bg']}:s={W}x{H}:r=30"]
+        if fx:  # the freeze needs its own little clip: the band as a file, as before
+            band = build_band(piece, pieces, crop, band_h, True, tmp)
+            inputs += ["-i", str(band)]
+            fc, bandv, banda, idx = "", "[1:v]", "[1:a]", 2
+        else:  # the band straight from the piece, in this one pass: no in-between encodes
+            fc, bandv, banda, idx = band_graph(piece, pieces, crop, band_h, has_audio, inputs)
         base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         if not bare and plan.get("hook"):
             hook = styled_block(plan["hook"], th["hook"])
@@ -862,28 +906,30 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
         credit = text_block(plan.get("credit", ""), 30, th["credit"])
         base.alpha_composite(credit, (0, H - 200))
         base.save(tmp / "base.png")
-        inputs = ["-f", "lavfi", "-t", f"{total:.2f}", "-i", f"color={th['bg']}:s={W}x{H}:r=30",
-                  "-i", str(band), "-loop", "1", "-t", f"{total:.2f}", "-i", str(tmp / "base.png")]
+        # still pictures go in as ONE frame each: the overlay keeps showing it (eof_action=repeat), so
+        # ffmpeg doesn't decode the same PNG 30 times a second (that was a third of the render time)
+        inputs += ["-i", str(tmp / "base.png")]
+        base_i, idx = idx, idx + 1
         subs, sub_h = subtitle_track(words, 0.0, total, LOOKS[look or th['subs']], tmp)
         inputs += ["-f", "concat", "-safe", "0", "-i", str(subs)]
-        bandv = "[1:v]"
+        subs_i, idx = idx, idx + 1
         if fx:  # punch-in on the hook: zoom 1 -> 1.12 over the first seconds, then a cut back to 1x
-            dur, amt = HOOK_ZOOM
-            fc_band = (f"[1:v]scale={W * 2}:{band_h * 2},zoompan=z='if(lt(on/30,{dur}),1+{amt}*on/30/{dur},1)':d=1"
-                       f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={W}x{band_h}:fps=30[bz];")
+            dur, amt = HOOK_ZOOM  # only the zoomed seconds go through zoompan (it ran over the whole Short)
+            fc += (f"{bandv}split[zin][zrest];[zin]trim=0:{dur},setpts=PTS-STARTPTS,scale={W * 2}:{band_h * 2},"
+                   f"zoompan=z='if(lt(on/30,{dur}),1+{amt}*on/30/{dur},1)':d=1:x='iw/2-(iw/zoom/2)'"
+                   f":y='ih/2-(ih/zoom/2)':s={W}x{band_h}:fps=30[zz];[zrest]trim=start={dur},setpts=PTS-STARTPTS[zr];"
+                   f"[zz][zr]concat=n=2:v=1:a=0[bz];")
             bandv = "[bz]"
-        else:
-            fc_band = ""
-        fc = (fc_band + f"[0:v]{bandv}overlay=0:{band_y}[a0];[a0][2:v]overlay=0:0[b0];[3:v]format=rgba,fps=30[subs];"
-              f"[b0][subs]overlay=0:{band_y + band_h - sub_h - 16}:eof_action=repeat[c0]")
-        last, idx = "c0", 4
+        fc += (f"[0:v]{bandv}overlay=0:{band_y}[a0];[a0][{base_i}:v]overlay=0:0[b0];[{subs_i}:v]format=rgba,fps=30[subs];"
+               f"[b0][subs]overlay=0:{band_y + band_h - sub_h - 16}:eof_action=repeat[c0]")
+        last = "c0"
         overlays = []  # (png, y, t0, t1)
         if fx:
             first = tmp / "first.png"
             media.run(["-i", str(band), "-frames:v", "1", str(first)])
-            inputs += ["-loop", "1", "-t", f"{total:.2f}", "-i", str(first)]
-            fc += (f";[{idx}:v]format=rgba,fade=t=in:st={total - LOOP_FADE:.2f}:d={LOOP_FADE}:alpha=1[lp{idx}]"
-                   f";[{last}][lp{idx}]overlay=0:{band_y}[o{idx}]")
+            inputs += ["-loop", "1", "-t", f"{LOOP_FADE}", "-i", str(first)]  # only the fading half second
+            fc += (f";[{idx}:v]format=rgba,fade=t=in:st=0:d={LOOP_FADE}:alpha=1,setpts=PTS+{total - LOOP_FADE:.2f}/TB"
+                   f"[lp{idx}];[{last}][lp{idx}]overlay=0:{band_y}[o{idx}]")
             last, idx = f"o{idx}", idx + 1
             if frz is not None:
                 wait = tag("WAIT...")
@@ -904,10 +950,10 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
                     styled_block(text, th[name]).save(png)
                     overlays.append((png, band_y + band_h + 50, t0, t1))
         for png, y, t0, t1 in overlays:
-            inputs += ["-loop", "1", "-t", f"{total:.2f}", "-i", str(png)]
+            inputs += ["-i", str(png)]
             fc += f";[{last}][{idx}:v]overlay=0:{y}:enable='between(t,{t0:.2f},{t1:.2f})'[o{idx}]"
             last, idx = f"o{idx}", idx + 1
-        fc += f";[{last}]format=yuv420p[out];[1:a]{CLEAN_AUDIO if fx else PLAIN_AUDIO},aresample=48000[a1]"
+        fc += f";[{last}]format=yuv420p[out];{banda}{CLEAN_AUDIO if fx else PLAIN_AUDIO},aresample=48000[a1]"
         cues = []  # (sound file, at)
         if fx:
             cues.append((sfx("whoosh", tmp / "whoosh.wav"), 0.0))
@@ -923,7 +969,7 @@ def render(piece: str, plan: dict, words: list[list], out: Path, bare: bool = Fa
             idx += 1
         fc += (f";{mix}amix=inputs={len(cues) + 1}:duration=first:normalize=0[aud]" if cues else ";[a1]anull[aud]")
         media.run(inputs + ["-filter_complex", fc, "-map", "[out]", "-map", "[aud]", "-t", f"{total:.2f}",
-                            "-r", "30", "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-c:a", "aac",
+                            "-r", "30", "-c:v", "libx264", "-preset", PRESET, "-crf", "20", "-c:a", "aac",
                             "-b:a", "160k", "-movflags", "+faststart", str(out)])
     return total
 
@@ -954,18 +1000,28 @@ def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, b
     log(f"[{kind}] {src['id']}: Claude found {len(found)} moments, {len(cands)} fit {lo:.0f}-{hi:.0f} s and are ad-safe")
     if not cands:
         return []
-    from shorts import media
     work = OUT / "work"
     work.mkdir(parents=True, exist_ok=True)
     cands = sorted(cands, key=lambda c: -c["claude"])[:10]
-    for k, c in enumerate(cands):
+    film = tx.local(src)  # the copy kept at transcript time when there is one, else the URL
+
+    def cut(k_c):
         # a local piece with 1 s on each side, so the render never seeks over HTTP
+        k, c = k_c
         c["p0"] = max(0.0, c["start"] - 1.0)
         c["piece"] = str(work / f"{kind}-{si}-{k}.mp4")
         try:
-            media.run(["-ss", f"{c['p0']:.2f}", "-t", f"{c['end'] - c['p0'] + 1.0:.2f}", "-i", src["url"],
-                       "-vf", "scale=-2:min(720\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                       "-c:a", "aac", "-b:a", "160k", c["piece"]])
+            cut_piece(film, c["p0"], c["end"] - c["p0"] + 1.0, c["piece"])
+            return None
+        except Exception as e:  # noqa: BLE001
+            return e
+
+    with ThreadPoolExecutor(CUT_WORKERS) as pool:  # a few at once: each cut mostly waits on the network
+        errors = list(pool.map(cut, enumerate(cands)))
+    for k, (c, err) in enumerate(zip(cands, errors)):
+        try:
+            if err:
+                raise err
             c["signals"] = signals(c["piece"], c["start"] - c["p0"], c["end"] - c["start"])
         except Exception as e:  # noqa: BLE001
             log(f"[{kind}] {src['id']}: piece {k} failed ({e})")
@@ -985,28 +1041,46 @@ def make_source(src: dict, kind: str, si: int, settings, llm, per_source: int, b
     order += [lab for lab in labels if lab not in order]
     if ex.get("weird_first"):  # example round: the weirdest moment wins, the frame rank breaks ties
         order.sort(key=lambda lab: -float((labels[lab].get("scores") or {}).get("weird") or 0))
-    made = []
-    for lab in order:
-        if len(made) >= per_source:
-            break
-        c, chk = labels[lab], checks.get(lab, {})
-        c["check"] = chk
-        if chk.get("ok") is False or chk.get("era_ok") is False or chk.get("promo_risk") is True:
-            log(f"[{kind}] {src['id']} {lab}: dropped in the frame pass ({chk.get('why')})")
-            continue
-        try:
-            m = make_short(src, kind, si, len(made), c, info, settings, llm, t, bare=bare_first and not made, ex=ex)
-        except Exception as e:  # noqa: BLE001 - one bad Short must not end the source
-            log(f"[{kind}] {src['id']} {lab}: failed ({e})")
-            m = None
-        if m:
-            made.append(m)
+    # Claude works on the next moment while the last one renders (one render at a time). A render
+    # that fails frees its place, so the next moment in the order gets its turn, as before.
+    made: list[dict] = []
+    pending: list = []
+    todo = list(order)
+    next_k = 0  # letters stay unique even when a render fails
+    with ThreadPoolExecutor(1) as renders:
+        while todo or pending:
+            if todo and len(made) + len(pending) < per_source:
+                lab = todo.pop(0)
+                c, chk = labels[lab], checks.get(lab, {})
+                c["check"] = chk
+                if chk.get("ok") is False or chk.get("era_ok") is False or chk.get("promo_risk") is True:
+                    log(f"[{kind}] {src['id']} {lab}: dropped in the frame pass ({chk.get('why')})")
+                    continue
+                try:
+                    job = make_short(src, kind, si, next_k, c, info, settings, llm, t,
+                                     bare=bare_first and next_k == 0, ex=ex, renders=renders)
+                except Exception as e:  # noqa: BLE001 - one bad Short must not end the source
+                    log(f"[{kind}] {src['id']} {lab}: failed ({e})")
+                    job = None
+                if job:
+                    pending.append((lab, job))
+                    next_k += 1
+                continue
+            if not pending:
+                break
+            lab, job = pending.pop(0)
+            try:
+                made.append(job.result())
+            except Exception as e:  # noqa: BLE001
+                log(f"[{kind}] {src['id']} {lab}: failed ({e})")
     for c in cands:
         Path(c["piece"]).unlink(missing_ok=True)
     return made
 
 
-def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool, ex: dict | None = None) -> dict | None:
+def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool, ex: dict | None = None, renders=None):
+    """The Claude steps for one moment, then its render: run here, or handed to `renders` (an executor),
+    in which case a future of the made row comes back."""
     ex = ex or {}
     piece_len = c["end"] - c["p0"]
     sh = sheet(c["piece"], piece_len)
@@ -1041,22 +1115,25 @@ def make_short(src, kind, si, k, c, info, settings, llm, t, bare: bool, ex: dict
     lengths = {}
     out = ex.get("out", OUT) / f"{name}.mp4"
     focus = ask_focus(llm, settings, c["piece"], rplan, words, c["text"]) if FX else None
-    tmp_out = OUT / "work" / f"render-{name}.mp4"  # whole file appears at once (the runner shares finished ones live)
-    lengths[out.name] = round(render(c["piece"], rplan, words, tmp_out, focus=focus), 1)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(tmp_out), out)
-    if bare:
-        out_b = OUT / f"{name}-bare.mp4"
-        lengths[out_b.name] = round(render(c["piece"], rplan, words, out_b, bare=True), 1)
-    log(f"[{kind}] made {', '.join(lengths)} from {int(c['start'] // 60)}:{int(c['start'] % 60):02d} of '{src['title']}'")
-    return {"short": name, "kind": kind, "source": src["id"], "link": src.get("link"), "title_source": src["title"],
-            "year": src.get("year"), "rights": src.get("rights"), "transcript": t.get("origin"),
-            "at": f"{int(c['start'] // 60)}:{int(c['start'] % 60):02d}", "sentences": [c["from"], c["to"]],
-            "lengths": lengths, "said": c["text"], "why": c["why"], "scores": c["scores"], "claude": c["claude"],
-            "signals": c["signals"], "score": c["score"], "frame_check": c.get("check"), "layer": have,
-            "hook": plan.get("hook"), "context": plan.get("context"), "payoff": plan.get("payoff"),
-            "yt_title": plan.get("title"), "credit": plan.get("credit"), "review": review.get("notes"),
-            "focus": focus, "weird": (c.get("scores") or {}).get("weird")}
+    def finish() -> dict:
+        tmp_out = OUT / "work" / f"render-{name}.mp4"  # whole file appears at once (the runner shares finished ones live)
+        lengths[out.name] = round(render(c["piece"], rplan, words, tmp_out, focus=focus), 1)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(tmp_out), out)
+        if bare:
+            out_b = OUT / f"{name}-bare.mp4"
+            lengths[out_b.name] = round(render(c["piece"], rplan, words, out_b, bare=True), 1)
+        log(f"[{kind}] made {', '.join(lengths)} from {int(c['start'] // 60)}:{int(c['start'] % 60):02d} of '{src['title']}'")
+        return {"short": name, "kind": kind, "source": src["id"], "link": src.get("link"), "title_source": src["title"],
+                "year": src.get("year"), "rights": src.get("rights"), "transcript": t.get("origin"),
+                "at": f"{int(c['start'] // 60)}:{int(c['start'] % 60):02d}", "sentences": [c["from"], c["to"]],
+                "lengths": lengths, "said": c["text"], "why": c["why"], "scores": c["scores"], "claude": c["claude"],
+                "signals": c["signals"], "score": c["score"], "frame_check": c.get("check"), "layer": have,
+                "hook": plan.get("hook"), "context": plan.get("context"), "payoff": plan.get("payoff"),
+                "yt_title": plan.get("title"), "credit": plan.get("credit"), "review": review.get("notes"),
+                "focus": focus, "weird": (c.get("scores") or {}).get("weird")}
+
+    return renders.submit(finish) if renders else finish()
 
 
 # ---------- the two steps ----------
@@ -1136,7 +1213,6 @@ def share() -> list[Path]:
 def looks(names: list[str] | None = None) -> list[Path]:
     """Roeland's look test: the Shorts in config/look-test.toml, re-cut from their sources with the
     texts listed there, once in every theme of TEST_THEMES. Into looks/<short>-<theme>.mp4."""
-    from shorts import media
     test = tomllib.loads(LOOK_TEST.read_text(encoding="utf-8"))["short"]
     made = {m["short"]: m for m in json.loads((OUT / "made.json").read_text(encoding="utf-8")) if m.get("short")}
     srcs = {s["id"]: s for f in OUT.glob("sources-*.json") for s in json.loads(f.read_text(encoding="utf-8"))}
@@ -1162,9 +1238,7 @@ def looks(names: list[str] | None = None) -> list[Path]:
             continue
         p0 = max(0.0, c["start"] - 1.0)
         piece = work / f"looks-{name}.mp4"
-        media.run(["-ss", f"{p0:.2f}", "-t", f"{c['end'] - p0 + 1.0:.2f}", "-i", src["url"],
-                   "-vf", "scale=-2:min(720\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                   "-c:a", "aac", "-b:a", "160k", str(piece)])
+        cut_piece(tx.local(src), p0, c["end"] - p0 + 1.0, str(piece))
         words = [[w[0], w[1] - p0, w[2] - p0] for s in sents[c["from"]:c["to"] + 1] for w in s["words"]]
         plan = {**{k: m.get(k) for k in ("hook", "context", "payoff")},  # a row without texts uses the made ones
                 **{k: row[k] for k in ("hook", "context", "payoff") if row.get(k)},
@@ -1185,7 +1259,6 @@ COMPARE = ("newsreel-1a", "newsreel-2a", "prelinger-1a", "nasa-2a", "feature-2a"
 def compare(names: list[str] | None = None) -> list[Path]:
     """Every made Short twice, from the same cut and texts: <short>-plain.mp4 without the engagement
     elements and <short>-fx.mp4 with them, into compare/ (Roeland's side-by-side, 2026-11-13)."""
-    from shorts import media
     from .common import open_library
     settings, _conn, llm = open_library()
     made = [m for m in json.loads((OUT / "made.json").read_text(encoding="utf-8")) if m.get("short")]
@@ -1210,9 +1283,7 @@ def compare(names: list[str] | None = None) -> list[Path]:
                 continue
             p0 = max(0.0, c["start"] - 1.0)
             piece = work / f"compare-{name}.mp4"
-            media.run(["-ss", f"{p0:.2f}", "-t", f"{c['end'] - p0 + 1.0:.2f}", "-i", src["url"],
-                       "-vf", "scale=-2:min(720\\,ih)", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-                       "-c:a", "aac", "-b:a", "160k", str(piece)])
+            cut_piece(tx.local(src), p0, c["end"] - p0 + 1.0, str(piece))
             words = [[w[0], w[1] - p0, w[2] - p0] for s in sents[c["from"]:c["to"] + 1] for w in s["words"]]
             plan = {**{k: m.get(k) for k in ("hook", "context", "payoff", "credit")},
                     "start": c["start"] - p0, "end": c["end"] - p0}

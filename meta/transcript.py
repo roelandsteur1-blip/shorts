@@ -29,6 +29,9 @@ import time
 from pathlib import Path
 
 CACHE = Path.home() / "meta-out" / "transcripts"
+VIDEOS = Path.home() / "meta-out" / "videos"  # the film itself, kept from the transcript download (no re-encode)
+VIDEO_CACHE_GB = 25.0       # oldest copies go first above this
+VIDEO_MIN_FREE_GB = 30.0    # no copy kept when the disk is fuller than this
 MODEL = "distil-large-v3"   # paper 6.4: as fast as small.en, with sentences; turbo hallucinated
 THREADS = 4                 # leaves 2 cores for the dashboard
 MAX_SECONDS = 3600          # never more than an hour of audio per source
@@ -181,16 +184,72 @@ def fetch_text(url: str) -> str:
     return r.text
 
 
-def fetch_audio(url: str, out: Path, seconds: float = MAX_SECONDS) -> float:
-    """16 kHz mono WAV of the first `seconds` of a video URL; returns its length."""
+def fetch_audio(url: str, out: Path, seconds: float = MAX_SECONDS, keep: Path | None = None) -> float:
+    """16 kHz mono WAV of the first `seconds` of a video URL; returns its length. keep = also save the
+    film itself there (stream copy, the same download), so the Shorts are cut from disk later."""
     # aresample=async fills gaps in the audio timestamps with silence, so a second of WAV is a second
     # of the film: without it Reefer Madness (2026-11-12) came out 1.6% short and the subtitles ran ahead
-    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-t", str(int(seconds)), "-i", url, "-vn",
-                    "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
-                    str(out)], check=True, timeout=3600)
+    wav = ["-vn", "-af", "aresample=async=1:first_pts=0", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(out)]
+    head = ["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-t", str(int(seconds)), "-i", url]
+    part = keep.with_name(keep.name + ".part.mkv") if keep else None
+    if part and room_for_video(keep.parent):
+        try:
+            subprocess.run(head + ["-map", "0:v:0", "-map", "0:a:0?", "-c", "copy", str(part)] + wav,
+                           check=True, timeout=3600, capture_output=True)
+            if same_timeline(url, part):
+                part.replace(keep)
+                prune_videos()
+            else:
+                log(f"{keep.stem}: saved copy starts at another time than the film, not kept")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            out.unlink(missing_ok=True)  # can't be copied as is (odd codec): the audio-only download below
+        finally:
+            part.unlink(missing_ok=True)
+    if not out.exists() or out.stat().st_size == 0:
+        subprocess.run(head + wav, check=True, timeout=3600)
     p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(out)],
                        capture_output=True, text=True, timeout=60)
     return float(p.stdout.strip() or 0)
+
+
+def video_path(source_id: str) -> Path:
+    return VIDEOS / (re.sub(r"[^A-Za-z0-9_.-]+", "_", source_id)[:120] + ".mkv")
+
+
+def local(source: dict) -> str:
+    """Where to cut a source from: the copy kept at transcript time when there is one, else its URL."""
+    p = video_path(source["id"])
+    return str(p) if p.exists() else source["url"]
+
+
+def room_for_video(folder: Path) -> bool:
+    import shutil
+    folder.mkdir(parents=True, exist_ok=True)
+    return shutil.disk_usage(folder).free / 1e9 > VIDEO_MIN_FREE_GB
+
+
+def start_time(path: str) -> float | None:
+    p = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=start_time",
+                        "-of", "csv=p=0", path], capture_output=True, text=True, timeout=120)
+    try:
+        return float(p.stdout.strip().splitlines()[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def same_timeline(url: str, copy: Path) -> bool:
+    """The copy seeks like the film: its picture starts at the same time (else the subtitles would drift)."""
+    a, b = start_time(url), start_time(str(copy))
+    return a is not None and b is not None and abs(a - b) < 0.04
+
+
+def prune_videos(cap_gb: float = VIDEO_CACHE_GB) -> None:
+    files = sorted(VIDEOS.glob("*.mkv"), key=lambda f: f.stat().st_mtime)
+    total = sum(f.stat().st_size for f in files)
+    while files and total > cap_gb * 1e9:
+        f = files.pop(0)
+        total -= f.stat().st_size
+        f.unlink(missing_ok=True)
 
 
 def timeline(url: str, seconds: float = MAX_SECONDS) -> float | None:
@@ -298,7 +357,7 @@ def get(source: dict, refresh: bool = False) -> dict:
     if not segs:
         with tempfile.TemporaryDirectory() as tmp:
             wav = Path(tmp) / "a.wav"
-            secs = fetch_audio(source["url"], wav)
+            secs = fetch_audio(source["url"], wav, keep=video_path(source["id"]))
             log(f"{source['id']}: Whisper {MODEL} on {secs / 60:.1f} min of audio")
             out = whisper(wav)
             segs, flags = clean(out["segments"], loudness_of(load_wav(str(wav))))
