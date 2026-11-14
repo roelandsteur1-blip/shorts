@@ -175,6 +175,8 @@ def test_channels_page_make_button_runs_one_make_at_a_time(client, out, monkeypa
     assert r.status_code == 302 and "Started" in r.headers["Location"]
     r = client.post("/channels/classicmoments/make", data={"n": "99"})  # second one waits its turn
     assert "Queued" in r.headers["Location"]
+    page = client.get("/channels").get_data(as_text=True)
+    assert 'http-equiv="refresh"' in page and "10 for classicmoments" in page  # reloads itself, shows the line
     jobs = tfirst.dash_jobs(base)
     assert [j["channel"] for j in jobs if j["state"] == "queued"] == ["classicmoments"] and jobs[-1]["channel"] == "weirdnewsreels"
     assert next(j for j in jobs if j["channel"] == "classicmoments")["n"] == 10  # capped

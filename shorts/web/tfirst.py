@@ -448,7 +448,8 @@ def channels_page():
         c["busy"] = any(j["state"] in ("running", "queued") for j in c["jobs"])
         c["yt"] = youtube_state(c["id"], jobs)
     running = next((j for j in jobs if j["state"] == "running" and j.get("kind") != "connect"), None)
-    return render_template("t_channels.html", chans=chans, running=running, jobs=jobs[:10], max_n=MAX_N,
+    waiting = sorted((j for j in jobs if j["state"] == "queued" and j.get("kind") != "connect"), key=lambda j: j.get("seq") or 0)
+    return render_template("t_channels.html", chans=chans, running=running, waiting=waiting, jobs=jobs[:10], max_n=MAX_N,
                            labels=KIND_LABELS, msg=request.args.get("msg"))
 
 
