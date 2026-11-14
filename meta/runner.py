@@ -80,11 +80,13 @@ ALLOWLIST = {
     # and report disk use; diskinfo only reports. Neither deletes a file.
     "classicoff": ("meta.classicoff", [], None),
     "diskinfo": ("meta.classicoff", ["--report"], None),
+    # Roeland 2026-11-14 picked "also footage and renders (~105 GB)": deletes the fixed list in meta/classicpurge.py.
+    "classicpurge": ("meta.classicpurge", [], None),
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_DIR = {"diskinfo": "classicoff", "round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsexamples": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
-JSON_JOBS = ("classicoff", "diskinfo", "collectprobe", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsexamples", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_DIR = {"diskinfo": "classicoff", "classicpurge": "classicoff", "round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsexamples": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
+JSON_JOBS = ("classicoff", "diskinfo", "classicpurge", "collectprobe", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsexamples", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

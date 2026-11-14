@@ -412,3 +412,10 @@ name = "classicoff"
 [[job]]
 id = "2026-11-14-update-1"
 name = "update"
+
+# Roeland 2026-11-14 picked "also footage and renders (~105 GB)" after the classicoff disk report:
+# delete classic footage, renders, keyframes, bench data + venv and old research output (fixed list in
+# meta/classicpurge.py). Database, backups and everything transcript-first stay.
+[[job]]
+id = "2026-11-14-classicpurge-1"
+name = "classicpurge"

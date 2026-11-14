@@ -1,4 +1,5 @@
 """The transcript-first dashboard (shorts/web/tfirst.py) on files like the maker and runner leave."""
+import pathlib
 import json
 
 import pytest
@@ -128,3 +129,27 @@ def test_classicoff_pauses_every_channel(settings, tmp_path, monkeypatch):
     assert classicoff.pause_all(settings) == []  # again: nothing left to pause
     rep = classicoff.disk_report(settings)
     assert rep["disk"]["total"] > 0 and any(r["label"] == "shorts-data" for r in rep["folders"])
+
+
+def test_classicpurge_deletes_only_the_fixed_list(settings, tmp_path, monkeypatch):
+    from meta import classicpurge
+    home = tmp_path / "home"
+    monkeypatch.setattr(classicpurge, "HOME", home)
+    data = settings.data_dir
+    for d in ("footage/nasa", "renders", "keyframes", "bench", "music", "backups", "secrets"):
+        (data / d).mkdir(parents=True, exist_ok=True)
+        (data / d / "f").write_bytes(b"x" * 10)
+    (data / "shorts.db").write_bytes(b"db")
+    for d in ("tclips", "transcripts", "videos", "clips", "pieces", "quiz"):
+        (home / "meta-out" / d).mkdir(parents=True)
+        (home / "meta-out" / d / "f").write_bytes(b"x")
+    (home / "meta-out" / "samples.tar.gz").write_bytes(b"x")
+    (home / "bench-venv").mkdir()
+    (home / "research-venv").mkdir()
+    assert classicpurge.purge(settings, dry=True) and (data / "footage").exists()  # dry run deletes nothing
+    gone = {pathlib.Path(r["path"]).name for r in classicpurge.purge(settings)}
+    assert gone == {"footage", "renders", "keyframes", "bench", "bench-venv", "pieces", "quiz", "samples.tar.gz"}
+    for kept in (data / "music", data / "backups", data / "secrets", data / "shorts.db", home / "research-venv",
+                 *(home / "meta-out" / d for d in ("tclips", "transcripts", "videos", "clips"))):
+        assert kept.exists(), kept
+    assert not classicpurge.safe(data, settings) and not classicpurge.safe(home, settings)
