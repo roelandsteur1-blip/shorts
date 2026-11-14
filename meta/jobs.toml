@@ -437,6 +437,12 @@ n = 1
 id = "2026-11-14-tclipsarchive-1"
 name = "tclipsarchive"
 
+# Roeland 2026-11-14 picked "everything, also what is on YouTube": no more historybuffed uploads; the upload
+# plan and its videos to old/, the tclips rows in the database rejected. He deletes the 10 scheduled in Studio.
+[[job]]
+id = "2026-11-14-tclipsarchiveplan-1"
+name = "tclipsarchiveplan"
+
 # Put the sortable Shorts page live.
 [[job]]
 id = "2026-11-14-update-3"
