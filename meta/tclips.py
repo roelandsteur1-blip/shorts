@@ -1336,7 +1336,7 @@ year, no emoji, no film name. The on-screen hook keeps the ragebait tone."""
 def used_lines() -> dict[str, list[tuple[int, int]]]:
     """Sentence ranges per source that earlier Shorts used (made.json and the upload plan)."""
     rows = []
-    for f in (OUT / "made.json", PLAN):
+    for f in (OUT / "made.json", PLAN, *sorted(OUT.glob("old/*/made.json")), *sorted(OUT.glob("old/*/examples.json"))):
         if f.exists():
             rows += json.loads(f.read_text(encoding="utf-8"))
     out: dict[str, list[tuple[int, int]]] = {}
@@ -1404,6 +1404,27 @@ def examples() -> list[dict]:
             log(f"[examples] {kind}: only {got} of {want}")
     log(f"[examples] {len(made)} example Shorts in {EX_DIR}")
     return made
+
+
+# ---------- archive the test Shorts (Roeland 2026-11-14: "remove all current shorts") ----------
+
+ARCHIVE_ITEMS = ("made.json", "examples.json", "examples", "compare", "compare.json", "looks", "share")
+
+
+def archive_current() -> Path | None:
+    """Move every test and example Short (the MP4s in OUT, examples/, compare/, looks/, share/ and their
+    json) to OUT/old/<time>/, so the dashboard no longer lists them. Kept in place: the upload plan and
+    upload/ (historybuffed), sources-*.json, transcripts, channels/ and work/. Undo: move them back."""
+    items = [OUT / n for n in ARCHIVE_ITEMS if (OUT / n).exists()] + sorted(OUT.glob("*.mp4"))
+    if not items:
+        log("[archive] nothing to move")
+        return None
+    dest = OUT / "old" / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    dest.mkdir(parents=True, exist_ok=True)
+    for p in items:
+        shutil.move(str(p), dest / p.name)
+    log(f"[archive] moved {len(items)} files/folders ({sum(1 for p in items if p.suffix == '.mp4')} loose MP4s) to {dest}")
+    return dest
 
 
 # ---------- channels (config/tchannels.toml; Roeland 2026-11-14: 5 channels, Shorts per channel from the dashboard) ----------
@@ -1791,7 +1812,7 @@ def clear(channel_id: str = UPLOAD_CHANNEL, delete: bool = False) -> list[dict]:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "examples", "batch", "upload", "clear", "clearnow", "uploadall", "channel"])
+    ap.add_argument("step", choices=["prep", "make", "share", "looks", "compare", "examples", "batch", "upload", "clear", "clearnow", "uploadall", "channel", "archive"])
     ap.add_argument("--channel", help="channel id from config/tchannels.toml (step channel)")
     ap.add_argument("-n", type=int, default=1, help="Shorts to make (step channel, 1-10)")
     ap.add_argument("--part", type=int, choices=sorted(PARTS))
@@ -1810,6 +1831,9 @@ def main(argv=None) -> None:
         return
     if a.step == "examples":
         examples()
+        return
+    if a.step == "archive":
+        archive_current()
         return
     if a.step == "channel":
         if not a.channel:
