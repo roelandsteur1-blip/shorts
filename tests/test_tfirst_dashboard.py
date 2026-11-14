@@ -394,3 +394,69 @@ def test_login_finishes_by_pasting_the_localhost_address(client, monkeypatch):
     r = client.post("/channels/oldschooladvice/login", data={"url": url})
     assert r.status_code == 302 and "Logged%20in" in r.headers["Location"]
     assert client.post("/channels/nope/login", data={"url": url}).status_code == 404
+
+
+def test_channel_upload_one_a_day_with_switch_skip_and_approve(client, out, conn, settings, monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    import shorts.config
+    from meta import tclips, tupload
+    from shorts import upload as up
+    base = out[0]
+    d = base / "channels" / "oldschooladvice"
+    d.mkdir(parents=True)
+    names = ["oldschooladvice-1-a", "oldschooladvice-2-b", "oldschooladvice-3-c"]
+    (d / "made.json").write_text(json.dumps([{"short": n, "channel": "oldschooladvice", "kind": "prelinger", "score": s,
+                                              "hook": f"hook {n}"} for n, s in zip(names, (3.0, 4.5, 4.0))]))
+    for n in names:
+        (d / f"{n}.mp4").write_bytes(b"v")
+    # off by default: nothing happens, and the hourly upload round isn't due
+    assert tupload.upload_channel("oldschooladvice", conn, settings, base=base) == []
+    with client.application.app_context():
+        from shorts.web import tfirst
+        assert not tfirst.upload_due(base)
+    # the order: best score first
+    assert [m["short"] for m in tupload.queue(base, "oldschooladvice", set())] == [names[1], names[2], names[0]]
+    client.post(f"/channels/oldschooladvice/skip/{names[1]}")
+    client.post("/channels/oldschooladvice/upload", data={"on": "1", "per_day": "1", "mode": "auto"})
+    cfg = tupload.load_cfg(base, "oldschooladvice")
+    assert cfg["on"] and cfg["skip"] == [names[1]]
+    with client.application.app_context():
+        assert tfirst.upload_due(base)
+    inserted = []
+
+    class Req:
+        def next_chunk(self):
+            return None, {"id": f"yt{len(inserted) - 1}"}
+
+    class Videos:
+        def insert(self, part, body, media_body):
+            inserted.append(body)
+            return Req()
+
+    ch = SimpleNamespace(id="oldschooladvice", name="Old School Advice", youtube_channel_id="UCx")
+    monkeypatch.setattr(shorts.config, "load_channel", lambda cid, cfgdir=None: ch)
+    monkeypatch.setattr(up, "token_path", lambda s, cid: tmp_path / "token.json")
+    (tmp_path / "token.json").write_text("{}")
+    monkeypatch.setattr(up, "youtube", lambda s, c, interactive=True: SimpleNamespace(videos=lambda: Videos()))
+    monkeypatch.setattr(up, "check_channel", lambda yt, c: None)
+    monkeypatch.setattr(up, "blocked_until", lambda s, c, now=None: None)
+    monkeypatch.setattr(tclips, "upload_meta", lambda m, c, s: {"title": m["hook"], "description": "d", "tags": []})
+    now = datetime(2026, 11, 14, 17, 0, tzinfo=timezone.utc)
+    assert tupload.upload_channel("oldschooladvice", conn, settings, now=now, base=base) == ["yt0"]
+    assert inserted[0]["snippet"]["title"] == f"hook {names[2]}"            # the skipped one never goes up
+    assert inserted[0]["status"]["publishAt"].startswith("2026-11-15T16:00")  # tomorrow 16:00 UTC
+    assert tupload.upload_channel("oldschooladvice", conn, settings, now=now, base=base) == []  # one ahead is enough
+    up_state = None
+    with client.application.app_context():
+        monkeypatch.setattr(tfirst, "now_iso", lambda: "2026-11-14T17:00:00Z")
+        up_state = tfirst.upload_state("oldschooladvice")
+    assert [p["youtube_id"] for p in up_state["planned"]] == ["yt0"] and up_state["next"][0]["short"] == names[0]
+    # approve mode: only approved ones go
+    client.post("/channels/oldschooladvice/upload", data={"on": "1", "mode": "approve"})
+    later = datetime(2026, 11, 15, 17, 0, tzinfo=timezone.utc)                  # yesterday's one published
+    assert tupload.upload_channel("oldschooladvice", conn, settings, now=later, base=base) == []
+    client.post(f"/channels/oldschooladvice/approve/{names[0]}")
+    assert tupload.upload_channel("oldschooladvice", conn, settings, now=later, base=base) == ["yt1"]
+    assert inserted[1]["status"]["publishAt"].startswith("2026-11-16T16:00")

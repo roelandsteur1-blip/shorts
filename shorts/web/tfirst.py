@@ -220,6 +220,8 @@ def queue_job(base: Path, channel: str, n: int, **extra) -> dict:
 def command_for(meta: dict) -> list[str]:
     if meta.get("kind") == "stats":
         return [sys.executable, "-m", "meta.tstats"]
+    if meta.get("kind") == "upload":
+        return [sys.executable, "-m", "meta.tupload"]
     if meta.get("kind") == "connect":
         return [sys.executable, "-m", "shorts", "--channel", meta["channel"], "connect",
                 *(["--fresh"] if meta.get("fresh") else [])]
@@ -277,6 +279,8 @@ def start_queue_thread(app) -> None:
                     start_next(out_dir())
                     if stats_due(out_dir()):
                         start_stats(out_dir())
+                    if upload_due(out_dir()):
+                        start_side_job(out_dir(), "upload")
             except Exception:  # noqa: BLE001 - keep the loop alive
                 pass
             time.sleep(20)
@@ -292,11 +296,27 @@ def any_connected() -> bool:
     return any(token_path(st, c["id"]).exists() for c in tchannels())
 
 
-def start_stats(base: Path) -> dict | None:
-    """Fetch YouTube numbers now (meta/tstats.py), unless a fetch is already running."""
-    if any(j.get("kind") == "stats" and j["state"] in ("running", "queued") for j in dash_jobs(base)):
+def start_side_job(base: Path, kind: str) -> dict | None:
+    """A stats fetch (meta/tstats.py) or upload round (meta/tupload.py) now, unless one is running."""
+    if any(j.get("kind") == kind and j["state"] in ("running", "queued") for j in dash_jobs(base)):
         return None
-    return launch(base, queue_job(base, "stats", 0, kind="stats"))
+    return launch(base, queue_job(base, kind, 0, kind=kind))
+
+
+def start_stats(base: Path) -> dict | None:
+    return start_side_job(base, "stats")
+
+
+UPLOAD_EVERY = 3600
+
+
+def upload_due(base: Path) -> bool:
+    """Hourly, while at least one channel has its upload switch on."""
+    from meta.tupload import load_cfg
+    last = next((j for j in dash_jobs(base) if j.get("kind") == "upload"), None)
+    if last and time.time() - (last.get("seq") or 0) / 1e9 < UPLOAD_EVERY:
+        return False
+    return any(load_cfg(base, c["id"])["on"] for c in tchannels())
 
 
 def stats_due(base: Path) -> bool:
@@ -487,6 +507,7 @@ def channels_page():
         c["jobs"] = [j for j in jobs if j["channel"] == c["id"] and is_make(j)][:3]
         c["busy"] = any(j["state"] in ("running", "queued") for j in c["jobs"])
         c["yt"] = youtube_state(c["id"], jobs)
+        c["up"] = upload_state(c["id"])
     running = next((j for j in jobs if j["state"] == "running" and is_make(j)), None)
     waiting = sorted((j for j in jobs if j["state"] == "queued" and is_make(j)), key=lambda j: j.get("seq") or 0)
     return render_template("t_channels.html", chans=chans, running=running, waiting=waiting, jobs=jobs[:10], max_n=MAX_N,
@@ -604,6 +625,63 @@ def paste_login(cid: str):
             break
         time.sleep(0.5)
     return redirect(f"/channels?msg=Logged in. Check the channel below and confirm it.#{cid}")
+
+
+def upload_state(cid: str) -> dict:
+    """The channel's upload switch, what goes up next and what waits on YouTube to publish."""
+    from meta import tupload
+    base = out_dir()
+    cfg = tupload.load_cfg(base, cid)
+    try:
+        c = conn()
+        done = tupload.done_paths(c, cid)
+        planned = [dict(r) for r in c.execute(
+            """SELECT title, youtube_id, publish_at FROM shorts WHERE channel=? AND format_id=? AND status='scheduled'
+                  AND publish_at > ? ORDER BY publish_at""", (cid, FORMAT_ID, now_iso()))]
+    except Exception:  # noqa: BLE001
+        done, planned = set(), []
+    auto = dict(cfg, mode="auto")
+    nxt = tupload.queue(base, cid, done, cfg)
+    pick = [m for m in tupload.queue(base, cid, done, auto) if m["short"] not in set(cfg["approved"])][:6]
+    return {"cfg": cfg, "next": nxt[:3], "left": len(nxt), "planned": planned, "to_approve": pick,
+            "times": tupload.TIMES[:cfg["per_day"]]}
+
+
+def _change_cfg(cid: str, change) -> None:
+    from meta import tupload
+    if not any(c["id"] == cid for c in tchannels()):
+        abort(404)
+    cfg = tupload.load_cfg(out_dir(), cid)
+    change(cfg)
+    tupload.save_cfg(out_dir(), cid, cfg)
+
+
+@bp.post("/channels/<cid>/upload")
+def upload_settings(cid: str):
+    def change(cfg):
+        cfg["on"] = request.form.get("on") == "1"
+        if request.form.get("per_day"):
+            cfg["per_day"] = 2 if request.form["per_day"] == "2" else 1
+        if request.form.get("mode") in ("auto", "approve"):
+            cfg["mode"] = request.form["mode"]
+    _change_cfg(cid, change)
+    return redirect(f"/channels?msg=Upload settings saved.#{cid}")
+
+
+@bp.post("/channels/<cid>/skip/<name>")
+def skip_short(cid: str, name: str):
+    if not NAME.fullmatch(name):
+        abort(404)
+    _change_cfg(cid, lambda cfg: cfg["skip"].append(name) if name not in cfg["skip"] else None)
+    return redirect(f"/channels?msg=Skipped: it won't be uploaded.#{cid}")
+
+
+@bp.post("/channels/<cid>/approve/<name>")
+def approve_short(cid: str, name: str):
+    if not NAME.fullmatch(name):
+        abort(404)
+    _change_cfg(cid, lambda cfg: cfg["approved"].append(name) if name not in cfg["approved"] else None)
+    return redirect(f"/channels?msg=Approved: it goes up in the next free slot.#{cid}")
 
 
 @bp.post("/channels/<cid>/confirm")

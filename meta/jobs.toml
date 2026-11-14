@@ -477,3 +477,8 @@ name = "update"
 [[job]]
 id = "2026-11-14-update-7"
 name = "update"
+
+# Per-channel upload (switch per channel on the Channels page, off by default; hourly round). Put it live.
+[[job]]
+id = "2026-11-14-update-8"
+name = "update"
