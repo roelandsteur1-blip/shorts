@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}Channels{% endblock %}{% block body %}
+<h1>Channels</h1>{% if msg %}<p class="ok">{{ msg }}</p>{% endif %}
+<p class="muted">Each channel makes its own kind of transcript-first Short (<code>config/tchannels.toml</code>). <b>Make</b> picks fresh long sources, finds the best moments for the channel and renders them; one make runs at a time (about 10-25 minutes per Short), the rest wait in line. New Shorts appear below as soon as each one is done. Nothing is uploaded.</p>
+{% if running %}<p class="warn">Making now: <b>{{ running.n }}</b> for <b>{{ running.channel }}</b> since {{ (running.started_at or '')[11:16] }} UTC, {{ running.ready }} done so far.</p>{% endif %}
+{% for c in chans %}<div class="card" id="{{ c.id }}">
+<h2 style="margin-top:0">{{ c.name }} <span class="muted" style="font-size:14px">{% for k in c.kinds %}{{ labels.get(k, k) }}{{ ' · ' if not loop.last }}{% endfor %}</span></h2>
+<p style="margin-top:0">{{ c.pitch }}</p>
+<form method="post" action="/channels/{{ c.id }}/make" class="actions">
+<label style="margin:0">Shorts <input type="number" name="n" value="1" min="1" max="{{ max_n }}" style="width:80px"></label>
+<button class="primary">Make</button>
+<span class="muted">{% if c.youtube %}uploads to {{ c.youtube }}{% else %}no YouTube channel linked yet{% endif %} · {{ c.shorts|length }} made</span></form>
+{% for j in c.jobs %}<details {{ 'open' if j.state == 'running' }}><summary>{{ j.n }} Short{{ 's' if j.n > 1 }} · <b class="{{ 'ok' if j.state == 'done' else ('warn' if j.state in ('running', 'queued') else 'bad') }}">{{ j.state }}</b>{% if j.state != 'queued' %} · {{ j.ready }} ready{% endif %} · <span class="muted">{{ (j.started_at or j.queued_at or '')[:16].replace('T', ' ') }} UTC</span>
+{% if j.state in ('running', 'queued') %}<form method="post" action="/channels/jobs/{{ j.id }}/stop" class="inline"><button class="pill">{{ 'Stop' if j.state == 'running' else 'Cancel' }}</button></form>{% endif %}</summary>
+{% if j.tail %}<pre class="log">{{ j.tail }}</pre>{% endif %}</details>{% endfor %}
+{% if c.shorts %}<div class="cards" style="margin-top:10px">{% for s in c.shorts[:6] %}{% include "_tcard.html" %}{% endfor %}</div>
+{% if c.shorts|length > 6 %}<p><a href="/shorts?channel={{ c.id }}">All {{ c.shorts|length }}</a></p>{% endif %}{% endif %}
+</div>{% else %}<p class="muted">No channels in config/tchannels.toml.</p>{% endfor %}
+{% endblock %}

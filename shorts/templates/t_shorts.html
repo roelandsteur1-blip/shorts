@@ -2,6 +2,7 @@
 <h1>Shorts <span class="muted">{{ shorts|length }}</span></h1>
 <div class="tabs">{% for k, label in states.items() %}{% if counts[k] or k == 'all' %}<a href="?state={{ k }}{% if kind %}&kind={{ kind }}{% endif %}" class="{{ 'on' if k == pick }}">{{ label }} {{ counts[k] }}</a>{% endif %}{% endfor %}</div>
 {% if kinds|length > 1 %}<div class="chipbar"><a class="chip {{ 'on' if not kind }}" href="?state={{ pick }}">All kinds</a>{% for k in kinds %}<a class="chip {{ 'on' if k == kind }}" href="?state={{ pick }}&kind={{ k }}">{{ labels.get(k, k) }}</a>{% endfor %}</div>{% endif %}
+{% if chans %}<div class="chipbar"><a class="chip {{ 'on' if not chan }}" href="?state={{ pick }}">All channels</a>{% for c in chans %}<a class="chip {{ 'on' if c.id == chan }}" href="?state={{ pick }}&channel={{ c.id }}">{{ c.name }}</a>{% endfor %}</div>{% endif %}
 {% if shorts %}<div class="cards">{% for s in shorts %}{% include "_tcard.html" %}{% endfor %}</div>
 {% else %}<p class="muted">No Shorts here.</p>{% endif %}
 {% endblock %}

@@ -26,6 +26,8 @@ def create_app(settings: Settings, runner: Runner | None = None, start_runner: b
     # Transcript-first only (Roeland, 2026-11-14). The classic pages: archive/classic-dashboard.
     from . import tfirst
     app.register_blueprint(tfirst.bp)
+    if start_runner:
+        tfirst.start_queue_thread(app)  # Make buttons on /channels: next queued make when the last one ends
 
     @app.teardown_appcontext
     def close_conn(_exc) -> None:

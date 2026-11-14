@@ -43,7 +43,8 @@ Het dashboard draait als dienst op de server en luistert alleen op 127.0.0.1; vi
 Sinds 14 november 2026 is het dashboard alleen nog voor de **transcript-first Shorts-maker** (`meta/tclips.py`, `shorts/web/tfirst.py`). Het leest wat de maker en de job-runner op de server achterlaten (`~/meta-out/tclips`, `~/meta-out/transcripts`, `~/meta-out/runner-done.json`, `meta/jobs.toml`) en de rijen met `format_id = 'tclips'` in de database:
 
 - **Overview**: live, ingepland, in het uploadplan en gemaakt-maar-niet-gebruikt, de volgende Shorts op YouTube, de laatst gepubliceerde met views, en welke server-jobs draaien of wachten.
-- **Shorts**: elke Short met video, filter op status en soort bron; per Short hook, context, payoff, bron, rechten en YouTube-cijfers.
+- **Channels**: de transcript-first kanalen uit `config/tchannels.toml` (Weird Newsreels, Old School Advice, Yesterday's Future, Space Race Files, Classic Movie Moments). Per kanaal de knop *Make* met een aantal (1-10): draait `python -m meta.tclips channel --channel <id> -n N` op de achtergrond (één tegelijk, de rest in de rij, met log en Stop). Nieuwe Shorts in `~/meta-out/tclips/channels/<id>/`; er wordt niets geüpload.
+- **Shorts**: elke Short met video, filter op status, kanaal en soort bron; per Short hook, context, payoff, bron, rechten en YouTube-cijfers.
 - **Schedule**: de transcript-first Shorts op historybuffed met publicatietijd en status.
 - **Sources**: de lange bronnen die de maker koos (met transcript ja/nee en aantal Shorts) en de met de hand gecheckte films uit `config/clip-titles.toml`.
 - **Jobs**: de jobs van de runner uit `meta/jobs.toml` met hun status.
