@@ -27,7 +27,10 @@ MANAGE = "https://www.googleapis.com/auth/youtube"  # change videos: upload via 
 
 def scopes_for(channel: Channel) -> list[str]:
     """A channel that uploads via the phone also needs to change its videos afterwards (drive.fill)."""
-    return SCOPES + [MANAGE] if (channel.upload_via or "api") == "phone" else SCOPES
+    # Transcript-first channels (Roeland 2026-11-14) may also change and delete their own videos, so a
+    # wrong upload can be taken back without YouTube Studio.
+    manage = (channel.upload_via or "api") == "phone" or channel.video_type == "transcript"
+    return SCOPES + [MANAGE] if manage else SCOPES
 
 
 def can_manage(settings: Settings, channel: Channel) -> bool:

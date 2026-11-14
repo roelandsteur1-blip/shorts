@@ -447,3 +447,8 @@ name = "tclipsarchiveplan"
 [[job]]
 id = "2026-11-14-update-3"
 name = "update"
+
+# Connect YouTube per transcript-first channel (same way as the old dashboard). Put it live.
+[[job]]
+id = "2026-11-14-update-4"
+name = "update"

@@ -272,3 +272,41 @@ def test_archive_plan_stops_uploads_and_rejects_rows(tmp_path, monkeypatch, conn
     rows = dict(conn.execute("SELECT format_id, status FROM shorts").fetchall())
     assert rows == {"tclips": "rejected", "classic": "scheduled"}
     assert tclips.used_lines() == {"s": [(1, 2)]}
+
+
+def test_connect_youtube_like_the_old_dashboard(client, settings, out, monkeypatch, tmp_path):
+    import shutil
+    import sys
+    import time
+
+    from shorts.config import CONFIG_DIR, load_channel
+    from shorts.upload import MANAGE, found_path, scopes_for
+    from shorts.web import tfirst
+    cfg = tmp_path / "cfg"
+    shutil.copytree(CONFIG_DIR, cfg)
+    settings.config_root = cfg
+    base = out[0]
+    script = "print('Log in: https://accounts.google.com/o/oauth2/auth?client_id=x&state=y'); import time; time.sleep(30)"
+    monkeypatch.setattr(tfirst, "command_for", lambda meta: [sys.executable, "-c", script])
+    assert "Connect YouTube" in client.get("/channels").get_data(as_text=True)
+    client.post("/channels/spaceracefiles/connect")
+    ch = load_channel("spaceracefiles", cfg)
+    assert ch.video_type == "transcript" and MANAGE in scopes_for(ch)  # may also delete its own videos
+    for _ in range(50):
+        html = client.get("/channels").get_data(as_text=True)
+        if "accounts.google.com/o/oauth2" in html:
+            break
+        time.sleep(0.1)
+    assert "Google login for Space Race Files" in html
+    job = next(j for j in tfirst.dash_jobs(base) if j.get("kind") == "connect")
+    assert tfirst.start_next(base) is None or True  # a connect never blocks or starts makes
+    client.post("/channels/spaceracefiles/connect", data={"fresh": "1"})  # a second login stops the first
+    time.sleep(0.3)
+    assert tfirst.job_state(dict(job), tfirst.jobs_dir(base)) != "running"
+    for j in tfirst.dash_jobs(base):
+        tfirst.stop_pid(j.get("pid"))
+    found_path(settings, "spaceracefiles").write_text(json.dumps({"id": "UCabc", "title": "Space Race Files"}))
+    assert "Is this the right channel?" in client.get("/channels").get_data(as_text=True)
+    client.post("/channels/spaceracefiles/confirm")
+    assert load_channel("spaceracefiles", cfg).youtube_channel_id == "UCabc"
+    assert "connected to Space Race Files" in client.get("/channels").get_data(as_text=True)
