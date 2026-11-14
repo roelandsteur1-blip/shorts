@@ -25,6 +25,23 @@
 <form method="post" action="/channels/{{ c.id }}/connect" class="inline"><button class="pill">Connect YouTube</button></form>{% endif %}
 {% if y.job and y.job.state != 'running' and y.job.state != 'done' %}<details><summary>Connect log</summary><pre class="log">{{ y.job.tail }}</pre></details>{% endif %}
 </div>
+{% set u = c.up %}<div style="margin:10px 0"><b>Upload</b>
+{% if not y.confirmed %}<span class="muted">connect YouTube first.</span>
+{% else %}<form method="post" action="/channels/{{ c.id }}/upload" class="inline">
+<input type="hidden" name="on" value="{{ '0' if u.cfg.on else '1' }}">
+{% if u.cfg.on %}<span class="ok">on</span>: {{ 'the best Short' if u.cfg.mode == 'auto' else 'Shorts you approve' }}, {{ u.cfg.per_day }} a day at {{ u.times|join(' and ') }} UTC <button class="pill">Turn off</button>
+{% else %}<span class="muted">off</span>
+<select name="per_day"><option value="1" {{ 'selected' if u.cfg.per_day == 1 }}>1 a day</option><option value="2" {{ 'selected' if u.cfg.per_day == 2 }}>2 a day</option></select>
+<select name="mode"><option value="auto" {{ 'selected' if u.cfg.mode == 'auto' }}>best Short first</option><option value="approve" {{ 'selected' if u.cfg.mode == 'approve' }}>only Shorts I approve</option></select>
+<button class="pill approve">Turn on</button>{% endif %}</form>
+{% for p in u.planned %}<div class="muted" style="font-size:13px">Publishes {{ p.publish_at[:16].replace('T', ' ') }} UTC: <a href="https://youtube.com/shorts/{{ p.youtube_id }}" target="_blank" rel="noopener">{{ p.title }}</a></div>{% endfor %}
+{% for m in u.next %}<div style="font-size:13px">{{ 'Next up' if loop.first else 'Then' }}: <a href="/shorts/{{ m.short }}">{{ m.yt_title or m.hook or m.short }}</a>
+<form method="post" action="/channels/{{ c.id }}/skip/{{ m.short }}" class="inline"><button class="pill">Skip</button></form></div>{% endfor %}
+{% if u.cfg.mode == 'approve' %}{% for m in u.to_approve %}<div style="font-size:13px">Waiting for you: <a href="/shorts/{{ m.short }}">{{ m.yt_title or m.hook or m.short }}</a>
+<form method="post" action="/channels/{{ c.id }}/approve/{{ m.short }}" class="inline"><button class="pill approve">Approve</button></form>
+<form method="post" action="/channels/{{ c.id }}/skip/{{ m.short }}" class="inline"><button class="pill">Skip</button></form></div>{% endfor %}{% endif %}
+<div class="muted" style="font-size:13px">{{ u.left }} Short{{ 's' if u.left != 1 }} left to upload.</div>{% endif %}
+</div>
 {% for j in c.jobs %}<details {{ 'open' if j.state == 'running' }}><summary>{{ j.n }} Short{{ 's' if j.n > 1 }} · <b class="{{ 'ok' if j.state == 'done' else ('warn' if j.state in ('running', 'queued') else 'bad') }}">{{ j.state }}</b>{% if j.state != 'queued' %} · {{ j.ready }} ready{% endif %} · <span class="muted">{{ (j.started_at or j.queued_at or '')[:16].replace('T', ' ') }} UTC</span>
 {% if j.state in ('running', 'queued') %}<form method="post" action="/channels/jobs/{{ j.id }}/stop" class="inline"><button class="pill">{{ 'Stop' if j.state == 'running' else 'Cancel' }}</button></form>{% endif %}</summary>
 {% if j.tail %}<pre class="log">{{ j.tail }}</pre>{% endif %}</details>{% endfor %}
