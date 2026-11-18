@@ -92,11 +92,14 @@ ALLOWLIST = {
     "tchanneljobs": ("meta.tchanneljobs", [], None),
     # Roeland 2026-11-14 "upload on the connected channels": switch on (1 a day, best first) + first upload round
     "tuploadon": ("meta.tupload", ["--enable"], None),
+    # Roeland 2026-11-18 "0 views": doubled uploads per channel (read-only), and deleting the later copies
+    "tdupes": ("meta.tdupes", [], None),
+    "tdupesdelete": ("meta.tdupes", ["--delete"], None),
     "update": (None, [], None),  # fixed steps in update_live(), not a module
 }
 SHEET_JOBS = ("probe", "sweep", "sweepx", "study")  # research jobs whose ~/meta-out/<name>/sheets go into the results
-JSON_DIR = {"tchannelweird": "tclips", "diskinfo": "classicoff", "classicpurge": "classicoff", "round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsexamples": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips"}  # jobs that write into another job's folder
-JSON_JOBS = ("classicoff", "diskinfo", "classicpurge", "collectprobe", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsexamples", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow")  # research jobs whose ~/meta-out/<name>/*.json go into the results
+JSON_DIR = {"tchannelweird": "tclips", "diskinfo": "classicoff", "classicpurge": "classicoff", "round3new": "round3", "transcribe2": "transcribe", "tclipsprep": "tclips", "tclipsbatch": "tclips", "tclipsexamples": "tclips", "tclipsupload": "tclips", "tclipsuploadall": "tclips", "tclipsclear": "tclips", "tclipsclearnow": "tclips", "tdupesdelete": "tdupes"}  # jobs that write into another job's folder
+JSON_JOBS = ("classicoff", "diskinfo", "classicpurge", "collectprobe", "pieces", "crops", "study", "marks", "round3", "round3new", "judgetest", "geminiprobe", "transcribe", "transcribe2", "tclipsprep", "tclips", "tclipsbatch", "tclipsexamples", "tclipsupload", "tclipsuploadall", "tclipsclear", "tclipsclearnow", "tdupes", "tdupesdelete")  # research jobs whose ~/meta-out/<name>/*.json go into the results
 SYSTEMCTL = "/usr/bin/systemctl"
 SERVICE = "shorts-dashboard"
 MAX_HOURS = 3

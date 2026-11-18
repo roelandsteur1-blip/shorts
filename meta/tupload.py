@@ -72,8 +72,11 @@ def queue(base: Path, cid: str, done_paths: set[str], cfg: dict | None = None) -
 
 
 def done_paths(conn, cid: str) -> set[str]:
+    """Every Short that went up once, whatever happened to it after. Only a failed upload may go again.
+    (Before 2026-11-18 this missed 'published', which the Stats sync sets once a Short is live, so each
+    published Short was uploaded again the next day: Roeland "0 views across the board".)"""
     return {r[0] for r in conn.execute(
-        "SELECT video_path FROM shorts WHERE channel=? AND format_id=? AND status IN ('scheduled', 'uploaded', 'rendered')",
+        "SELECT video_path FROM shorts WHERE channel=? AND format_id=? AND status != 'failed' AND video_path IS NOT NULL",
         (cid, FORMAT_ID))}
 
 

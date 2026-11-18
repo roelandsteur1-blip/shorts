@@ -487,3 +487,13 @@ name = "update"
 [[job]]
 id = "2026-11-14-tuploadon-1"
 name = "tuploadon"
+
+# Roeland 2026-11-18 "0 views across the board": the upload round re-uploaded every Short once it was
+# published (doubles). Put the fix live, then list the doubles per channel (read-only).
+[[job]]
+id = "2026-11-18-update-1"
+name = "update"
+
+[[job]]
+id = "2026-11-18-tdupes-1"
+name = "tdupes"

@@ -460,3 +460,15 @@ def test_channel_upload_one_a_day_with_switch_skip_and_approve(client, out, conn
     client.post(f"/channels/oldschooladvice/approve/{names[0]}")
     assert tupload.upload_channel("oldschooladvice", conn, settings, now=later, base=base) == ["yt1"]
     assert inserted[1]["status"]["publishAt"].startswith("2026-11-16T16:00")
+    # the Stats sync marks a live Short 'published': it must never go up again (2026-11-18 doubles)
+    conn.execute("UPDATE shorts SET status='published' WHERE youtube_id='yt0'")
+    conn.commit()
+    client.post("/channels/oldschooladvice/upload", data={"on": "1", "per_day": "1", "mode": "auto"})
+    assert all(m["short"] != names[2] for m in tupload.queue(base, "oldschooladvice", tupload.done_paths(conn, "oldschooladvice")))
+    from meta import tdupes
+    assert tdupes.doubles(conn, "oldschooladvice") == []
+    path = conn.execute("SELECT video_path FROM shorts WHERE youtube_id='yt0'").fetchone()[0]
+    conn.execute("""INSERT INTO shorts (channel, format_id, title, status, video_path, youtube_id, publish_at)
+                    VALUES ('oldschooladvice', 'tclips', 'again', 'scheduled', ?, 'ytdup', '2026-11-17T16:00:00Z')""", (path,))
+    conn.commit()
+    assert [(d["youtube_id"], d["first"]) for d in tdupes.doubles(conn, "oldschooladvice")] == [("ytdup", "yt0")]
